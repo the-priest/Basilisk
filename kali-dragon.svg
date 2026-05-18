@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="dragonGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%"  stop-color="#cba6f7"/>
+      <stop offset="100%" stop-color="#89b4fa"/>
+    </linearGradient>
+    <radialGradient id="eyeGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"  stop-color="#fab387"/>
+      <stop offset="60%" stop-color="#f38ba8"/>
+      <stop offset="100%" stop-color="#11111b"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Background circle (subtle, for the app icon mask) -->
+  <circle cx="64" cy="64" r="62" fill="#1e1e2e"/>
+
+  <!-- Dragon head silhouette: head-on view, angular, fierce.
+       Composed of polygons. Inspired by but not a copy of the
+       Kali Linux dragon. -->
+  <g fill="url(#dragonGrad)">
+
+    <!-- Crown / forehead spike (top center) -->
+    <polygon points="64,12 58,28 70,28"/>
+
+    <!-- Left horn (curves outward and back) -->
+    <path d="M 56,26
+             L 42,16
+             L 30,22
+             L 28,36
+             L 38,32
+             L 48,38
+             Z"/>
+
+    <!-- Right horn (mirror) -->
+    <path d="M 72,26
+             L 86,16
+             L 98,22
+             L 100,36
+             L 90,32
+             L 80,38
+             Z"/>
+
+    <!-- Cheek ridges left -->
+    <polygon points="34,40 22,52 28,68 38,58 44,48"/>
+
+    <!-- Cheek ridges right -->
+    <polygon points="94,40 106,52 100,68 90,58 84,48"/>
+
+    <!-- Main face / muzzle (downward-pointing pentagon) -->
+    <polygon points="48,38 80,38 88,58 64,82 40,58"/>
+
+    <!-- Jaw lower extensions -->
+    <polygon points="40,58 64,82 56,98 48,90"/>
+    <polygon points="88,58 64,82 72,98 80,90"/>
+
+    <!-- Side fangs / tendrils -->
+    <polygon points="30,60 24,76 32,72 36,64"/>
+    <polygon points="98,60 104,76 96,72 92,64"/>
+
+    <!-- Chin spike -->
+    <polygon points="58,86 64,108 70,86"/>
+
+  </g>
+
+  <!-- Eyes: glowing orange/red embers -->
+  <ellipse cx="50" cy="56" rx="6" ry="4" fill="url(#eyeGrad)"/>
+  <ellipse cx="78" cy="56" rx="6" ry="4" fill="url(#eyeGrad)"/>
+
+  <!-- Dark mouth slit -->
+  <polygon points="56,74 72,74 64,80" fill="#11111b"/>
+
+  <!-- Center forehead jewel/dot (kali third eye motif) -->
+  <circle cx="64" cy="44" r="3" fill="#f5c2e7"/>
+
+</svg>

@@ -1,174 +1,208 @@
-# Oracle
+<div align="center">
 
-A local AI assistant for Kali NetHunter Pro, Linux desktops, and anything else that runs GTK4 + Python.
+# Kali
 
-No cloud.  No telemetry.  No remote logging.  Lives on your hardware, serves you on it.
+**A local, loyal AI assistant that lives on your machine.**
+
+Groq cloud primary. Ollama local fallback. Full OS access.
+Reads files. Watches services. Audits security. Runs commands with your permission.
+
+</div>
 
 ---
 
-## One-line install
+## What it is
+
+Kali is a personal AI assistant in the shape of a GTK4 chat app, named for the Hindu goddess and the Linux distribution both. She talks to you, but she also has hands on your machine: she can read your files, snapshot system state, scan your network, audit your security posture, check for updates, watch your Downloads folder, tail your journal, and run shell commands (with a y/n prompt every time).
+
+She's built for one operator — you — and she behaves like it. No corporate guardrails, no boilerplate hedging, no "as an AI language model." She's witty, direct, loyal, and stays on your side.
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                       kali.py (UI)                      │
+│              GTK4 + libadwaita, Catppuccin Mocha        │
+└───────────────────────┬─────────────────────────────────┘
+                        │
+        ┌───────────────┴────────────────┐
+        │                                │
+   ┌────▼─────┐                    ┌─────▼──────┐
+   │ kali_    │                    │ kali_      │
+   │ core.py  │                    │ persona.py │
+   │          │                    │            │
+   │ backends │                    │ system     │
+   │ tools    │                    │ prompt     │
+   │ chat DB  │                    │ assembly   │
+   │ audit    │                    └────────────┘
+   │ watcher  │
+   └────┬─────┘
+        │
+  ┌─────┴──────┐
+  │            │
+┌─▼──┐    ┌────▼────┐
+│Groq│    │  Ollama │
+│API │    │ (local) │
+└────┘    └─────────┘
+```
+
+**Provider routing.** Kali prefers Groq when online and a key is configured. Falls back to Ollama when offline, when Groq rate-limits or errors, or when you toggle "Prefer Groq" off in Settings. The active provider is shown as a pill in the header.
+
+## Install
+
+**One-liner (recommended):**
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/the-priest/oracle5/main/install.sh | bash
 ```
 
-That command does the **whole** setup, end to end:
+What it installs:
 
-1. Installs Python GTK4 + libadwaita bindings (apt / pacman / dnf)
-2. Installs [Ollama](https://ollama.com) if missing, refreshes if present
-3. Starts `ollama serve` (via systemd `--user`, or detached if no systemd)
-4. Pulls `tinyllama:1.1b` (~640 MB — runs on a OnePlus 6 with headroom)
-5. Installs Oracle's code, app launcher, and `.desktop` entry
-6. Writes the app's settings so the first launch opens straight into a working chat
-7. Smoke-tests the model
+- Python 3.10+ check (fails fast if not present)
+- GTK4 + libadwaita bindings (apt / pacman / dnf, auto-detected)
+- `groq` Python library (cloud backend)
+- Ollama + a small fallback model (`llama3.2:1b` by default, ~1.3 GB)
+- The three Python files + dragon SVG icon
+- A `kali` launcher in `~/.local/bin/`
+- A `.desktop` entry so Kali shows up in your app grid
+- A systemd `--user` unit so Ollama starts at login
+- An optional prompt for your Groq API key (you can skip and add it later in Settings)
 
-When it's done: open your app grid, click **Oracle**, and start talking.
+**Time:** ~3-8 min on first install (model download is the bottleneck). Re-runs are ~5 seconds.
 
-Want a different model?  Override before running:
+**Update later:** re-run the same one-liner. It detects what's done and only does what's missing.
 
-```bash
-ORACLE_MODEL=llama3.2:1b   curl -fsSL https://raw.githubusercontent.com/the-priest/oracle5/main/install.sh | bash
-```
+**Uninstall:** `~/.local/share/kali/install.sh --uninstall` (chat history kept).
 
-Other small options:
-
-| Model | Size | Notes |
-|---|---|---|
-| `tinyllama:1.1b` | ~640 MB | default — smallest viable |
-| `qwen2.5:0.5b` | ~400 MB | even smaller, surprisingly capable |
-| `llama3.2:1b` | ~1.3 GB | noticeably smarter at agent-mode tool calls |
-| `phi3:mini` | ~2.3 GB | best 1-bracket reasoning |
-| `llama3.1:8b` | ~4.7 GB | desktop-class |
-
-Re-running the same command later just updates everything in place.  Your chats are backed up to `~/.local/share/oracle/backups/` before any code change.
-
----
-
-## What it does
-
-**Talks.**  Persistent chat history in SQLite.  Sidebar list, search, pin, rename, delete.  Always opens to a fresh chat on launch; old chats are one tap away.  Streaming tokens.  Markdown rendering with proper code blocks (copy button on each).
-
-**Acts.**  Flip the gear toggle in the input bar for **agent mode**.  In agent mode the assistant has tools:
-
-| Tool | What it does | Confirmation? |
-|---|---|---|
-| `read_file` | reads any file you can read | only for sensitive paths (`~/.ssh`, `/etc/shadow`, etc.) |
-| `list_dir` | lists a directory | no |
-| `system_info` | uname, RAM, uptime, IPs | no |
-| `run` | runs a shell command | **always asks y/n with the command shown** |
-| `audit` | full read-only security audit, graded report | no |
-| `scan_net` | nmap `-sn` host discovery on your local subnet | no |
-
-The assistant emits tool calls as XML in its reply:
-
-```xml
-<tool name="run">{"command": "ss -tlnp", "reason": "see what's listening"}</tool>
-```
-
-The app catches them, executes, feeds results back, the conversation continues.
-
-**Audits.**  Same checks as the standalone `ares` tool (read-only, parallel), distilled to the 10 most useful: firewall state, public listening ports, SSH config, pending security updates, kernel age, failed SSH logins, disk encryption, home-dir permissions, AppArmor/SELinux, shell-history secrets.  Graded A+ → F.
-
-**Scans.**  Local subnet discovery via `nmap -sn` if installed, falls back to ARP table.
-
-**Offline by design.**  The assistant has no internet access.  The online indicator is for future tool additions you might wire in.
-
----
-
-## Manual install (clone first)
+### Manual install
 
 ```bash
-git clone https://github.com/the-priest/oracle5.git
-cd oracle5
-chmod +x install.sh
-./install.sh                  # install or update
-./install.sh --update         # explicit update (same code path)
-./install.sh --uninstall      # remove (chat history kept)
-./install.sh --no-systemd     # skip the systemd unit
-./install.sh --no-ollama      # skip ollama install/refresh
-./install.sh --no-model       # skip model pull
+git clone https://github.com/the-priest/oracle5.git kali
+cd kali
+./install.sh
 ```
 
-The installer is **idempotent** — re-run any time to update.  It:
+### Flags
 
-- detects existing install → updates files in place, restarts the ollama systemd unit if it was running
-- detects existing chat DB → backs it up before touching anything
-- bails if Python < 3.10
-- installs GTK4/libadwaita if missing
-- starts `ollama serve` and waits for it to be healthy before pulling
-- verifies the new Python files parse cleanly **before** overwriting working code
-- writes `~/.config/oracle/settings.json` with the model pre-selected, so first launch just works
+| flag                 | what it does                                            |
+| -------------------- | ------------------------------------------------------- |
+| `--update`           | explicit update (same as default install)               |
+| `--uninstall`        | remove app (chat history kept)                          |
+| `--refresh-ollama`   | re-run Ollama's installer to update it                  |
+| `--no-systemd`       | don't install the systemd unit                          |
+| `--no-ollama`        | skip Ollama entirely (Groq-only setup)                  |
+| `--no-model`         | don't pull a local model                                |
+| `--no-groq`          | don't install the groq library or prompt for a key      |
+| `--no-prompt`        | non-interactive (skips Groq key prompt)                 |
 
----
-
-## Where things live
-
-| What | Where |
-|---|---|
-| Code | `~/.local/share/oracle/` |
-| Chat database | `~/.local/share/oracle/chats.db` |
-| DB backups (auto, each install) | `~/.local/share/oracle/backups/` |
-| Settings | `~/.config/oracle/settings.json` |
-| Log | `~/.local/share/oracle/oracle.log` |
-| systemd unit | `~/.config/systemd/user/oracle-ollama.service` |
-| Desktop entry | `~/.local/share/applications/oracle.desktop` |
-| Launcher | `~/.local/bin/oracle` |
-
----
-
-## Personality
-
-The assistant's character lives in `oracle_persona.py` — short, editable.  Two parts you'll probably touch:
-
-- `OPERATOR_PROFILE` — what it knows about you
-- `PERSONA_CORE` — tone, style, what it refuses to do
-
-Anything you put in **Settings → System prompt** is appended at runtime, so you can tune per-install without editing the file.
-
----
-
-## Mobile (Phosh / OnePlus 6)
-
-Split view is adaptive — collapses to single pane on narrow screens.  Use the sidebar-toggle icon in the header to swap between chat list and active chat.
-
-Default model `tinyllama:1.1b` (~640 MB) was chosen specifically to run on 6 GB phones with the GUI loaded.  If you want a noticeably smarter 1B-class model and have spare RAM, set `ORACLE_MODEL=llama3.2:1b` before running the installer.
-
-If `ollama serve` is eating battery in the background:
+### Env overrides
 
 ```bash
-systemctl --user disable oracle-ollama.service
-systemctl --user stop    oracle-ollama.service
+KALI_MODEL=qwen2.5:0.5b   ./install.sh    # tiny but capable (~400 MB)
+KALI_MODEL=llama3.2:3b    ./install.sh    # better but ~2 GB
+GROQ_API_KEY=gsk_...      ./install.sh    # preset, no prompt
+KALI_REPO=user/fork  KALI_BRANCH=dev  ./install.sh
 ```
 
-Oracle will then start it on demand when you launch the app (controlled by **Settings → Auto-start ollama serve**).
+## Get a Groq API key
 
----
+Free, fast, the primary path: <https://console.groq.com>
 
-## Behaviour notes
+Sign up, create a key (`gsk_...`), paste it into Settings → Backends → Groq → API key. Or pass it during install via the prompt or `GROQ_API_KEY=...`. Stored locally in `~/.config/kali/settings.json` only — never leaves your machine except in API calls to Groq.
 
-**Small models (1–3B) are flaky at emitting tool-call XML.**  A 1B model will sometimes describe what `read_file` would do instead of actually emitting `<tool name="read_file">`.  Workarounds:
+## What Kali can do on your system
 
-1. Use the dedicated buttons in the input bar (audit / scan / sysinfo / attach) — those run the tool directly and inject the result into context, then the model just summarises.
-2. Bump to a 7B+ model for proper agent behaviour, if your hardware allows.
+Everything below runs as your user (no sudo). Read-only tools fire without confirmation. `run` always prompts y/n with the exact command and her reason.
 
-**Commands always confirm.**  The "Confirm every command" setting being off just narrows it to risky-looking commands — it never disables confirmation entirely.  You always see the exact command and a y/n prompt before anything runs.
+| tool                 | what it does                                                    |
+| -------------------- | --------------------------------------------------------------- |
+| `read_file`          | Read any file you can read.  Sensitive paths (~/.ssh, ~/.gnupg) prompt for permission. |
+| `list_dir`           | List a directory.                                               |
+| `find_file`          | Find files by name pattern.                                     |
+| `system_info`        | uname, OS, uptime, RAM, load.                                   |
+| `disk_usage`         | `df -h` filtered to real filesystems.                           |
+| `processes`          | Top processes by CPU.                                           |
+| `network_status`     | Interfaces, default gateway, online check.                      |
+| `recent_downloads`   | What's new in ~/Downloads.                                      |
+| `check_updates`      | `apt list --upgradable`, with security flagging.                |
+| `service_status`     | Inspect any systemd service.                                    |
+| `journal_tail`       | Recent system log lines (any unit).                             |
+| `run`                | **Y/N-confirmed** shell command. She tells you why.             |
+| `audit`              | 10-check parallel security audit. Grade A+ → F.                 |
+| `scan_net`           | `nmap -sn` on your local subnet (ARP fallback if no nmap).      |
 
-**Sensitive paths** (`~/.ssh`, `/etc/shadow`, `~/.gnupg`, `~/.aws`, etc.) trigger an extra confirmation before reads, even in agent mode.  The list lives in `oracle_core.py:SENSITIVE_PATHS` — edit to taste.
+### Security audit checks
 
----
+Firewall (ufw/iptables/nftables) · Listening ports on all interfaces · SSH server config · Pending security updates · Kernel age · Failed SSH login attempts · Disk encryption (LUKS) · Home directory permissions · AppArmor / SELinux · Shell history secret scan.
 
-## Customising
+### Watcher (optional)
 
-Things designed to be edited:
+A background thread that periodically:
 
-- **`oracle_persona.py`** — persona, tool contract, capabilities list
-- **`oracle_core.py:SENSITIVE_PATHS`** — what triggers extra confirms
-- **`oracle_core.py:AUDIT_CHECKS`** — add/remove security checks
-- **`oracle.py:CSS`** — Catppuccin Mocha palette, swap any color
-- **Settings → System prompt** — per-install addendum, no code edit needed
+- Counts pending security updates (every 4h)
+- Watches for new files in ~/Downloads (every cycle)
+- Tails the journal for notable events (failed logins, USB device events, OOM kills)
 
----
+Off by default. Enable in Settings → Behaviour → Watcher. Surfaces events as transient banners in the chat area.
+
+## What Kali can NOT do
+
+- **Modify her own code.** Hardcoded off. She can read her own source if you ask, but she can't write to it. This is deliberate.
+- **Persist state outside the chat DB and settings file.** No hidden side-channels.
+- **Reach the internet directly.** The Groq backend is for text generation only. She doesn't browse, scrape, or open URLs unless you do it through her by running `curl` via the `run` tool with your confirmation.
+- **Run as root.** Everything runs as your user. If you want her to do something privileged, prefix the command with `sudo` and she'll show you the exact line before it runs.
+
+## File layout
+
+```
+~/.local/share/kali/
+  ├── kali.py                  # UI
+  ├── kali_core.py             # backends, tools, audit
+  ├── kali_persona.py          # personality + system prompt
+  ├── kali-dragon.svg          # icon
+  ├── chats.db                 # SQLite chat history
+  ├── kali.log                 # diagnostics
+  └── backups/
+       └── chats-YYYYMMDD.db   # auto-backup before each install
+
+~/.config/kali/
+  └── settings.json            # all settings, including Groq key
+
+~/.local/bin/kali              # launcher
+~/.local/share/applications/kali.desktop
+~/.config/systemd/user/kali-ollama.service
+```
+
+## Tweaking the persona
+
+Open `~/.local/share/kali/kali_persona.py` in your editor. The persona is plain Python strings. Edit `PERSONA_CORE`, `OPERATOR_PROFILE`, `TOOL_CONTRACT`, or `CAPABILITIES`. Save and relaunch.
+
+For lighter edits (per-machine notes that get appended to the prompt), use Settings → Persona → Custom addendum. This survives upgrades; edits to `kali_persona.py` directly will get clobbered when you re-run `install.sh`.
+
+## Development
+
+```bash
+git clone https://github.com/the-priest/oracle5.git kali
+cd kali
+
+# Run from source
+python3 kali.py
+
+# Syntax check
+python3 -c "import ast; [ast.parse(open(f).read()) for f in ('kali.py','kali_core.py','kali_persona.py')]"
+
+# Push changes
+./push.sh "your commit message"
+```
 
 ## License
 
-MIT.  Do whatever.
+MIT.  See LICENSE.
+
+## Credits
+
+Built by The Priest. The dragon icon is original geometric art inspired by — but not a copy of — the official Kali Linux logo (which is a trademark of OffSec). To use the official logo instead, drop the SVG at `~/.local/share/kali/kali-dragon.svg`; the .desktop file will pick it up.
+
+---
+
+<sub>Kali is not affiliated with OffSec, Kali Linux, or Groq.</sub>

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Kali
+GenericName=AI Assistant
+Comment=Local, loyal AI assistant with full OS access
+Exec=kali
+Icon=kali-dragon
+Terminal=false
+Categories=Utility;Network;Development;
+Keywords=ai;assistant;groq;ollama;chat;jarvis;
+StartupWMClass=org.thepriest.kali

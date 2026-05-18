@@ -1,0 +1,1499 @@
+#!/usr/bin/env python3
+"""
+kali_core — non-UI logic for Kali.
+
+  · Backend abstraction (Groq primary, Ollama fallback when offline)
+  · Streaming chat
+  · SQLite chat history
+  · Full system tools: file r, command exec, system info, package
+    management, service control, downloads watcher, journal tail,
+    process list, network state
+  · Security audit (parallel, read-only)
+  · Local network scan
+  · Background watcher daemon (optional)
+"""
+
+from __future__ import annotations
+
+import os
+import re
+import sys
+import json
+import time
+import shutil
+import socket
+import sqlite3
+import urllib.request
+import urllib.error
+import subprocess
+import threading
+import concurrent.futures
+import datetime
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import (List, Dict, Tuple, Optional, Any, Callable,
+                    Iterator, Protocol)
+
+try:
+    from groq import Groq
+    GROQ_LIB_OK = True
+except ImportError:
+    GROQ_LIB_OK = False
+    Groq = None  # type: ignore
+
+
+# ═════════════════════════════════════════════════════════════════════
+# PATHS & CONSTANTS
+# ═════════════════════════════════════════════════════════════════════
+
+HOME              = Path.home()
+DATA_DIR          = HOME / ".local" / "share" / "kali"
+CONFIG_DIR        = HOME / ".config" / "kali"
+CHATS_DB          = DATA_DIR / "chats.db"
+SETTINGS_JSON     = CONFIG_DIR / "settings.json"
+LOG_FILE          = DATA_DIR / "kali.log"
+WATCHER_STATE     = DATA_DIR / "watcher.json"
+
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+
+OLLAMA_HOST       = "http://127.0.0.1:11434"
+HTTP_TIMEOUT_S    = 600
+HEALTH_TIMEOUT_S  = 1.5
+
+GROQ_DEFAULT_MODEL = "llama-3.3-70b-versatile"
+GROQ_FALLBACK_CHAIN = [
+    "llama-3.3-70b-versatile",
+    "openai/gpt-oss-120b",
+    "llama-3.1-8b-instant",
+]
+OLLAMA_DEFAULT_MODEL = "llama3.2:1b"
+
+# Paths that need explicit operator confirmation even in agent mode
+SENSITIVE_PATHS = (
+    "/etc/shadow", "/etc/gshadow", "/etc/sudoers",
+    "/root/.ssh", str(HOME / ".ssh"),
+    str(HOME / ".gnupg"),
+    str(HOME / ".aws"), str(HOME / ".config" / "gh"),
+    str(HOME / ".password-store"),
+    "/proc/kcore", "/proc/kmem",
+)
+
+
+def log(msg: str) -> None:
+    try:
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(f"[{datetime.datetime.now().isoformat(timespec='seconds')}] {msg}\n")
+    except Exception:
+        pass
+
+
+# ═════════════════════════════════════════════════════════════════════
+# SETTINGS
+# ═════════════════════════════════════════════════════════════════════
+
+DEFAULT_SETTINGS = {
+    # Backends
+    "groq_api_key": "",
+    "groq_model": GROQ_DEFAULT_MODEL,
+    "prefer_groq": True,
+    "ollama_model": OLLAMA_DEFAULT_MODEL,
+
+    # Generation
+    "temperature": 0.7,
+    "top_p": 0.9,
+    "num_ctx": 4096,
+    "max_tokens": 2048,
+
+    # Behaviour
+    "system_prompt": "",
+    "auto_start_ollama": True,
+    "stop_ollama_on_quit": False,
+    "agent_mode_default": True,        # Kali defaults to agent on
+    "confirm_all_commands": True,
+
+    # Watcher
+    "watcher_enabled": False,
+    "watcher_check_updates": True,
+    "watcher_check_downloads": True,
+    "watcher_check_journal": False,
+    "watcher_interval_minutes": 60,
+
+    # UI
+    "theme": "mocha",
+    "ui_scale": 1.0,                   # 1.0 = standard, 1.2 = bigger
+    "show_token_count": False,
+    "show_provider_pill": True,
+}
+
+
+def load_settings() -> Dict[str, Any]:
+    if SETTINGS_JSON.exists():
+        try:
+            with open(SETTINGS_JSON, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            merged = dict(DEFAULT_SETTINGS)
+            merged.update(data)
+            return merged
+        except Exception:
+            pass
+    return dict(DEFAULT_SETTINGS)
+
+
+def save_settings(settings: Dict[str, Any]) -> None:
+    try:
+        with open(SETTINGS_JSON, "w", encoding="utf-8") as f:
+            json.dump(settings, f, indent=2)
+    except Exception as e:
+        log(f"save_settings error: {e}")
+
+
+# ═════════════════════════════════════════════════════════════════════
+# OFFLINE DETECTION
+# ═════════════════════════════════════════════════════════════════════
+
+_online_cache = {"value": False, "ts": 0.0}
+_online_lock = threading.Lock()
+
+
+def is_online(timeout: float = 1.0, max_age: float = 8.0) -> bool:
+    """Cached reachability check.  Refreshes every max_age seconds."""
+    now = time.time()
+    with _online_lock:
+        if now - _online_cache["ts"] < max_age:
+            return bool(_online_cache["value"])
+    result = False
+    for host, port in (("1.1.1.1", 53), ("8.8.8.8", 53)):
+        try:
+            with socket.create_connection((host, port), timeout=timeout):
+                result = True
+                break
+        except Exception:
+            continue
+    with _online_lock:
+        _online_cache["value"] = result
+        _online_cache["ts"] = now
+    return result
+
+
+# ═════════════════════════════════════════════════════════════════════
+# BACKENDS — Groq and Ollama, with a router on top
+# ═════════════════════════════════════════════════════════════════════
+
+class Backend(Protocol):
+    name: str
+    def is_available(self) -> bool: ...
+    def list_models(self) -> List[Dict[str, Any]]: ...
+    def stream_chat(self, model: str, messages: List[Dict[str, str]],
+                    on_token: Callable[[str], None],
+                    on_done: Callable[[Dict[str, Any]], None],
+                    on_error: Callable[[str], None],
+                    options: Optional[Dict[str, Any]] = None,
+                    cancel_event: Optional[threading.Event] = None) -> None: ...
+
+
+class OllamaBackend:
+    name = "ollama"
+
+    def __init__(self):
+        self._proc: Optional[subprocess.Popen] = None
+        self._started_by_us = False
+
+    def is_running(self) -> bool:
+        try:
+            req = urllib.request.Request(f"{OLLAMA_HOST}/api/version")
+            with urllib.request.urlopen(req, timeout=HEALTH_TIMEOUT_S) as r:
+                return r.status == 200
+        except Exception:
+            return False
+
+    def is_available(self) -> bool:
+        return self.is_running()
+
+    def start_serve(self) -> bool:
+        if self.is_running():
+            return True
+        if not shutil.which("ollama"):
+            return False
+        try:
+            self._proc = subprocess.Popen(
+                ["ollama", "serve"],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+            self._started_by_us = True
+            for _ in range(20):
+                time.sleep(0.25)
+                if self.is_running():
+                    return True
+            return False
+        except Exception as e:
+            log(f"ollama start_serve error: {e}")
+            return False
+
+    def stop_serve(self) -> None:
+        if not self._started_by_us or self._proc is None:
+            return
+        try:
+            self._proc.terminate()
+            try:
+                self._proc.wait(timeout=4)
+            except subprocess.TimeoutExpired:
+                self._proc.kill()
+        except Exception:
+            pass
+        finally:
+            self._proc = None
+            self._started_by_us = False
+
+    def list_models(self) -> List[Dict[str, Any]]:
+        try:
+            req = urllib.request.Request(f"{OLLAMA_HOST}/api/tags")
+            with urllib.request.urlopen(req, timeout=5) as r:
+                data = json.loads(r.read())
+            return sorted(data.get("models", []),
+                          key=lambda m: m.get("name", ""))
+        except Exception:
+            return []
+
+    def version(self) -> Optional[str]:
+        try:
+            req = urllib.request.Request(f"{OLLAMA_HOST}/api/version")
+            with urllib.request.urlopen(req, timeout=HEALTH_TIMEOUT_S) as r:
+                return json.loads(r.read()).get("version")
+        except Exception:
+            return None
+
+    def stream_chat(self, model, messages, on_token, on_done, on_error,
+                    options=None, cancel_event=None) -> None:
+        payload = {"model": model, "messages": messages, "stream": True}
+        if options:
+            payload["options"] = options
+        try:
+            data = json.dumps(payload).encode("utf-8")
+            req = urllib.request.Request(
+                f"{OLLAMA_HOST}/api/chat",
+                data=data,
+                headers={"Content-Type": "application/json"})
+            parts: List[str] = []
+            with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT_S) as r:
+                for line in r:
+                    if cancel_event and cancel_event.is_set():
+                        on_done({"cancelled": True, "text": "".join(parts),
+                                 "backend": "ollama"})
+                        return
+                    if not line:
+                        continue
+                    try:
+                        chunk = json.loads(line)
+                    except Exception:
+                        continue
+                    tok = chunk.get("message", {}).get("content", "")
+                    if tok:
+                        parts.append(tok)
+                        on_token(tok)
+                    if chunk.get("done"):
+                        on_done({
+                            "text": "".join(parts),
+                            "backend": "ollama",
+                            "model": model,
+                            "eval_count": chunk.get("eval_count"),
+                            "cancelled": False,
+                        })
+                        return
+            on_done({"text": "".join(parts), "backend": "ollama",
+                     "cancelled": False})
+        except urllib.error.URLError as e:
+            on_error(f"ollama connection: {e.reason}")
+        except Exception as e:
+            on_error(f"ollama {type(e).__name__}: {e}")
+
+
+class GroqBackend:
+    name = "groq"
+
+    def __init__(self, api_key: str = "",
+                 fallback_chain: List[str] = None):
+        self.api_key = api_key
+        self._client = None
+        self.fallback_chain = fallback_chain or list(GROQ_FALLBACK_CHAIN)
+        self._build_client()
+
+    def _build_client(self):
+        if not GROQ_LIB_OK or not self.api_key:
+            self._client = None
+            return
+        try:
+            self._client = Groq(api_key=self.api_key)
+        except Exception as e:
+            log(f"groq client error: {e}")
+            self._client = None
+
+    def set_api_key(self, key: str) -> None:
+        self.api_key = key
+        self._build_client()
+
+    def is_available(self) -> bool:
+        return GROQ_LIB_OK and bool(self._client) and is_online()
+
+    def list_models(self) -> List[Dict[str, Any]]:
+        return [{"name": m} for m in self.fallback_chain]
+
+    def stream_chat(self, model, messages, on_token, on_done, on_error,
+                    options=None, cancel_event=None) -> None:
+        if not self._client:
+            on_error("groq not configured")
+            return
+        opts = options or {}
+        temperature = opts.get("temperature", 0.7)
+        top_p = opts.get("top_p", 0.9)
+        max_tokens = opts.get("max_tokens", 2048)
+
+        # Build a model order: requested first, then any fallbacks not equal
+        order = [model] + [m for m in self.fallback_chain if m != model]
+        last_err = None
+
+        for attempt_model in order:
+            if cancel_event and cancel_event.is_set():
+                on_done({"cancelled": True, "text": "", "backend": "groq"})
+                return
+            try:
+                resp = self._client.chat.completions.create(
+                    model=attempt_model,
+                    messages=messages,
+                    temperature=temperature,
+                    top_p=top_p,
+                    max_tokens=max_tokens,
+                    stream=True,
+                )
+                parts: List[str] = []
+                for chunk in resp:
+                    if cancel_event and cancel_event.is_set():
+                        on_done({"cancelled": True,
+                                 "text": "".join(parts),
+                                 "backend": "groq",
+                                 "model": attempt_model})
+                        return
+                    delta = chunk.choices[0].delta
+                    tok = getattr(delta, "content", None) or ""
+                    if tok:
+                        parts.append(tok)
+                        on_token(tok)
+                on_done({
+                    "text": "".join(parts),
+                    "backend": "groq",
+                    "model": attempt_model,
+                    "cancelled": False,
+                })
+                return
+            except Exception as e:
+                last_err = e
+                msg = str(e).lower()
+                if any(s in msg for s in ("rate", "429", "quota", "limit")):
+                    log(f"groq {attempt_model} rate-limited, trying next")
+                    continue
+                if any(s in msg for s in ("404", "not_found",
+                                          "does not exist")):
+                    log(f"groq {attempt_model} not available, skipping")
+                    continue
+                if "cloudflare" in msg:
+                    continue
+                # otherwise, propagate
+                on_error(f"groq {type(e).__name__}: {str(e)[:200]}")
+                return
+
+        on_error(f"groq exhausted all models: {last_err}")
+
+
+class BackendRouter:
+    """Picks Groq if online & configured, else Ollama."""
+
+    def __init__(self, groq: GroqBackend, ollama: OllamaBackend,
+                 settings: Dict[str, Any]):
+        self.groq = groq
+        self.ollama = ollama
+        self.settings = settings
+
+    def pick(self) -> Tuple[Backend, str]:
+        """Returns (backend, model_name)."""
+        if self.settings.get("prefer_groq", True) and self.groq.is_available():
+            return self.groq, self.settings.get("groq_model",
+                                                GROQ_DEFAULT_MODEL)
+        return self.ollama, self.settings.get("ollama_model",
+                                              OLLAMA_DEFAULT_MODEL)
+
+    def stream_chat(self, messages, on_token, on_done, on_error,
+                    cancel_event=None) -> Tuple[str, str]:
+        backend, model = self.pick()
+        opts = {
+            "temperature": self.settings.get("temperature", 0.7),
+            "top_p": self.settings.get("top_p", 0.9),
+            "max_tokens": self.settings.get("max_tokens", 2048),
+            "num_ctx": self.settings.get("num_ctx", 4096),
+        }
+
+        # Wrap on_error so we can attempt Ollama fallback if Groq fails
+        def _on_err(err: str):
+            if backend.name == "groq" and self.ollama.is_available():
+                log(f"groq failed ({err}) — falling back to ollama")
+                self.ollama.stream_chat(
+                    self.settings.get("ollama_model", OLLAMA_DEFAULT_MODEL),
+                    messages, on_token, on_done, on_error, opts, cancel_event)
+            else:
+                on_error(err)
+
+        backend.stream_chat(model, messages, on_token, on_done, _on_err,
+                            opts, cancel_event)
+        return backend.name, model
+
+
+# ═════════════════════════════════════════════════════════════════════
+# CHAT DATABASE
+# ═════════════════════════════════════════════════════════════════════
+
+CHAT_DDL = """
+CREATE TABLE IF NOT EXISTS chats (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    title       TEXT NOT NULL,
+    model       TEXT,
+    created_at  REAL NOT NULL,
+    updated_at  REAL NOT NULL,
+    pinned      INTEGER NOT NULL DEFAULT 0,
+    agent_mode  INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS messages (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    chat_id     INTEGER NOT NULL,
+    role        TEXT NOT NULL,
+    content     TEXT NOT NULL,
+    ts          REAL NOT NULL,
+    meta        TEXT,
+    FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_messages_chat ON messages(chat_id, ts);
+"""
+
+
+@dataclass
+class Chat:
+    id: int
+    title: str
+    model: str
+    created_at: float
+    updated_at: float
+    pinned: int = 0
+    agent_mode: int = 0
+
+
+@dataclass
+class Message:
+    id: int
+    chat_id: int
+    role: str
+    content: str
+    ts: float
+    meta: Dict[str, Any] = field(default_factory=dict)
+
+
+class ChatStore:
+    def __init__(self, path: Path = CHATS_DB):
+        self.path = path
+        self._lock = threading.Lock()
+        with self._conn() as c:
+            c.executescript(CHAT_DDL)
+
+    def _conn(self) -> sqlite3.Connection:
+        c = sqlite3.connect(self.path, check_same_thread=False)
+        c.execute("PRAGMA foreign_keys=ON")
+        return c
+
+    def create_chat(self, title: str, model: str,
+                    agent_mode: bool = True) -> int:
+        now = time.time()
+        with self._lock, self._conn() as c:
+            cur = c.execute(
+                "INSERT INTO chats (title, model, created_at, updated_at, "
+                "agent_mode) VALUES (?, ?, ?, ?, ?)",
+                (title, model, now, now, 1 if agent_mode else 0))
+            return cur.lastrowid
+
+    def list_chats(self, limit: int = 200) -> List[Chat]:
+        with self._lock, self._conn() as c:
+            rows = c.execute(
+                "SELECT id, title, model, created_at, updated_at, pinned, "
+                "agent_mode FROM chats "
+                "ORDER BY pinned DESC, updated_at DESC LIMIT ?",
+                (limit,)).fetchall()
+        return [Chat(*r) for r in rows]
+
+    def get_chat(self, chat_id: int) -> Optional[Chat]:
+        with self._lock, self._conn() as c:
+            row = c.execute(
+                "SELECT id, title, model, created_at, updated_at, pinned, "
+                "agent_mode FROM chats WHERE id=?", (chat_id,)).fetchone()
+        return Chat(*row) if row else None
+
+    def rename_chat(self, chat_id: int, title: str) -> None:
+        with self._lock, self._conn() as c:
+            c.execute("UPDATE chats SET title=?, updated_at=? WHERE id=?",
+                      (title, time.time(), chat_id))
+
+    def set_pinned(self, chat_id: int, pinned: bool) -> None:
+        with self._lock, self._conn() as c:
+            c.execute("UPDATE chats SET pinned=? WHERE id=?",
+                      (1 if pinned else 0, chat_id))
+
+    def set_agent_mode(self, chat_id: int, agent: bool) -> None:
+        with self._lock, self._conn() as c:
+            c.execute("UPDATE chats SET agent_mode=? WHERE id=?",
+                      (1 if agent else 0, chat_id))
+
+    def delete_chat(self, chat_id: int) -> None:
+        with self._lock, self._conn() as c:
+            c.execute("DELETE FROM chats WHERE id=?", (chat_id,))
+
+    def add_message(self, chat_id: int, role: str, content: str,
+                    meta: Optional[Dict[str, Any]] = None) -> int:
+        meta_s = json.dumps(meta) if meta else None
+        with self._lock, self._conn() as c:
+            cur = c.execute(
+                "INSERT INTO messages (chat_id, role, content, ts, meta) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (chat_id, role, content, time.time(), meta_s))
+            c.execute("UPDATE chats SET updated_at=? WHERE id=?",
+                      (time.time(), chat_id))
+            return cur.lastrowid
+
+    def list_messages(self, chat_id: int) -> List[Message]:
+        with self._lock, self._conn() as c:
+            rows = c.execute(
+                "SELECT id, chat_id, role, content, ts, meta "
+                "FROM messages WHERE chat_id=? ORDER BY ts ASC, id ASC",
+                (chat_id,)).fetchall()
+        out = []
+        for r in rows:
+            meta = json.loads(r[5]) if r[5] else {}
+            out.append(Message(r[0], r[1], r[2], r[3], r[4], meta))
+        return out
+
+    def update_message(self, msg_id: int, content: str) -> None:
+        with self._lock, self._conn() as c:
+            c.execute("UPDATE messages SET content=? WHERE id=?",
+                      (content, msg_id))
+
+
+# ═════════════════════════════════════════════════════════════════════
+# TOOLS — file access, command exec, system info
+# ═════════════════════════════════════════════════════════════════════
+
+def is_sensitive_path(path: str) -> bool:
+    rp = os.path.realpath(os.path.expanduser(path))
+    for p in SENSITIVE_PATHS:
+        if rp.rstrip("/") == p.rstrip("/") or rp.startswith(p.rstrip("/") + "/"):
+            return True
+    return False
+
+
+def _ro(argv: List[str], timeout: int = 12) -> Tuple[int, str, str]:
+    try:
+        env = {
+            "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+            "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8",
+            "HOME": os.path.expanduser("~"),
+        }
+        p = subprocess.run(
+            argv, stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            timeout=timeout, env=env, text=True, errors="replace")
+        return (p.returncode, p.stdout or "", p.stderr or "")
+    except subprocess.TimeoutExpired:
+        return (124, "", "timeout")
+    except FileNotFoundError:
+        return (127, "", "not found")
+    except Exception as e:
+        return (1, "", f"err: {type(e).__name__}")
+
+
+def _have(c: str) -> bool:
+    return shutil.which(c) is not None
+
+
+def _read(path: str, max_bytes: int = 100_000) -> Optional[str]:
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            return f.read(max_bytes)
+    except Exception:
+        return None
+
+
+def _human_bytes(n: int) -> str:
+    for u in ("B", "KB", "MB", "GB", "TB"):
+        if n < 1024:
+            return f"{n:.1f}{u}"
+        n /= 1024
+    return f"{n:.1f}PB"
+
+
+def tool_read_file(path: str, max_bytes: int = 80_000) -> Dict[str, Any]:
+    try:
+        rp = os.path.expanduser(path)
+        if not os.path.exists(rp):
+            return {"ok": False, "error": f"no such file: {path}"}
+        if os.path.isdir(rp):
+            return {"ok": False, "error": f"is a directory: {path}"}
+        size = os.path.getsize(rp)
+        with open(rp, "rb") as f:
+            raw = f.read(max_bytes)
+        try:
+            text = raw.decode("utf-8")
+            kind = "text"
+        except UnicodeDecodeError:
+            text = raw[:1024].hex()
+            kind = "binary (hex preview)"
+        return {"ok": True, "path": rp, "size": size, "kind": kind,
+                "truncated": size > max_bytes, "content": text}
+    except PermissionError:
+        return {"ok": False, "error": f"permission denied: {path}"}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
+def tool_list_dir(path: str = ".") -> Dict[str, Any]:
+    try:
+        rp = os.path.expanduser(path)
+        if not os.path.isdir(rp):
+            return {"ok": False, "error": f"not a directory: {path}"}
+        entries = []
+        for name in sorted(os.listdir(rp)):
+            full = os.path.join(rp, name)
+            try:
+                st = os.stat(full, follow_symlinks=False)
+                is_dir = os.path.isdir(full)
+                entries.append({
+                    "name": name + ("/" if is_dir else ""),
+                    "size": st.st_size,
+                    "is_dir": is_dir,
+                    "mtime": st.st_mtime,
+                })
+            except Exception:
+                entries.append({"name": name, "size": -1, "is_dir": False,
+                                "mtime": 0})
+        return {"ok": True, "path": rp, "entries": entries}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
+def tool_run_command(command: str, timeout: int = 30,
+                     cwd: Optional[str] = None) -> Dict[str, Any]:
+    try:
+        p = subprocess.run(
+            command, shell=True,
+            cwd=cwd or os.path.expanduser("~"),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            timeout=timeout, text=True, errors="replace")
+        return {
+            "ok": True, "command": command, "rc": p.returncode,
+            "stdout": (p.stdout or "")[:80_000],
+            "stderr": (p.stderr or "")[:20_000],
+            "truncated_stdout": len(p.stdout or "") > 80_000,
+        }
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "command": command,
+                "error": f"timeout after {timeout}s"}
+    except Exception as e:
+        return {"ok": False, "command": command,
+                "error": f"{type(e).__name__}: {e}"}
+
+
+def tool_system_info() -> Dict[str, Any]:
+    info: Dict[str, Any] = {}
+    try:
+        info["hostname"] = socket.gethostname()
+    except Exception:
+        pass
+    try:
+        info["uname"] = " ".join(os.uname())
+    except Exception:
+        pass
+    try:
+        rel = {}
+        with open("/etc/os-release") as f:
+            for line in f:
+                if "=" in line:
+                    k, v = line.strip().split("=", 1)
+                    rel[k] = v.strip('"')
+        info["os"] = rel.get("PRETTY_NAME", "unknown")
+    except Exception:
+        pass
+    try:
+        with open("/proc/uptime") as f:
+            up = float(f.read().split()[0])
+        info["uptime_sec"] = int(up)
+    except Exception:
+        pass
+    try:
+        meminfo = {}
+        with open("/proc/meminfo") as f:
+            for line in f:
+                if ":" in line:
+                    k, v = line.split(":", 1)
+                    meminfo[k.strip()] = v.strip()
+        info["mem_total"]     = meminfo.get("MemTotal")
+        info["mem_available"] = meminfo.get("MemAvailable")
+    except Exception:
+        pass
+    try:
+        with open("/proc/loadavg") as f:
+            info["load"] = f.read().strip()
+    except Exception:
+        pass
+    return info
+
+
+# ═════════════════════════════════════════════════════════════════════
+# OS-LEVEL TOOLS — packages, services, downloads, processes, journal
+# ═════════════════════════════════════════════════════════════════════
+
+def tool_check_updates() -> Dict[str, Any]:
+    """List packages with pending updates.  apt-based systems only."""
+    if not _have("apt"):
+        return {"ok": False, "error": "apt not installed on this system"}
+    rc, out, _ = _ro(["apt", "list", "--upgradable"], timeout=30)
+    if rc != 0:
+        return {"ok": False, "error": "apt list failed (try sudo apt update first)"}
+    pkgs = []
+    sec_count = 0
+    for line in out.splitlines():
+        if "/" not in line or "[upgradable" not in line:
+            continue
+        name = line.split("/", 1)[0].strip()
+        is_security = "-security" in line.lower()
+        if is_security:
+            sec_count += 1
+        pkgs.append({"name": name, "security": is_security})
+    return {"ok": True, "count": len(pkgs), "security_count": sec_count,
+            "packages": pkgs}
+
+
+def tool_recent_downloads(limit: int = 20) -> Dict[str, Any]:
+    paths_to_check = [HOME / "Downloads", HOME / "downloads"]
+    found = None
+    for p in paths_to_check:
+        if p.is_dir():
+            found = p
+            break
+    if not found:
+        return {"ok": False, "error": "no Downloads folder found"}
+    files = []
+    try:
+        for entry in sorted(found.iterdir(),
+                            key=lambda x: x.stat().st_mtime,
+                            reverse=True)[:limit]:
+            try:
+                st = entry.stat()
+                files.append({
+                    "name": entry.name,
+                    "size_human": _human_bytes(st.st_size),
+                    "size": st.st_size,
+                    "mtime": st.st_mtime,
+                    "age_seconds": time.time() - st.st_mtime,
+                    "is_dir": entry.is_dir(),
+                })
+            except Exception:
+                continue
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+    return {"ok": True, "path": str(found), "files": files}
+
+
+def tool_service_status(name: Optional[str] = None) -> Dict[str, Any]:
+    if not _have("systemctl"):
+        return {"ok": False, "error": "systemctl not available"}
+    if name:
+        rc, out, _ = _ro(["systemctl", "status", "--no-pager", "-n", "0",
+                          name], timeout=8)
+        active = "active (running)" in out or "active (exited)" in out
+        return {"ok": True, "service": name, "active": active,
+                "raw": out[:4000]}
+    else:
+        rc, out, _ = _ro(["systemctl", "list-units", "--type=service",
+                          "--state=running", "--no-pager", "--plain",
+                          "--no-legend"], timeout=8)
+        services = []
+        for line in out.splitlines():
+            parts = line.split(None, 4)
+            if len(parts) >= 1 and parts[0].endswith(".service"):
+                services.append(parts[0])
+        return {"ok": True, "running_services": services,
+                "count": len(services)}
+
+
+def tool_journal_tail(lines: int = 50,
+                      unit: Optional[str] = None,
+                      since: Optional[str] = None) -> Dict[str, Any]:
+    if not _have("journalctl"):
+        return {"ok": False, "error": "journalctl not available"}
+    argv = ["journalctl", "--no-pager", "-n", str(lines)]
+    if unit:
+        argv += ["-u", unit]
+    if since:
+        argv += ["--since", since]
+    rc, out, _ = _ro(argv, timeout=15)
+    if rc != 0:
+        # might need user-mode
+        argv.insert(1, "--user")
+        rc, out, _ = _ro(argv, timeout=15)
+    if rc != 0:
+        return {"ok": False, "error": "journalctl failed"}
+    return {"ok": True, "lines": out.splitlines()[-lines:],
+            "raw": out[-20000:]}
+
+
+def tool_disk_usage() -> Dict[str, Any]:
+    if not _have("df"):
+        return {"ok": False, "error": "df not available"}
+    rc, out, _ = _ro(["df", "-h", "--output=source,size,used,avail,pcent,target"])
+    if rc != 0:
+        return {"ok": False, "error": "df failed"}
+    rows = []
+    lines = out.splitlines()[1:]
+    for line in lines:
+        parts = line.split(None, 5)
+        if len(parts) >= 6 and not parts[0].startswith(("tmpfs", "devtmpfs",
+                                                       "/dev/loop")):
+            rows.append({
+                "source": parts[0], "size": parts[1], "used": parts[2],
+                "avail": parts[3], "use_pct": parts[4],
+                "mount": parts[5],
+            })
+    return {"ok": True, "filesystems": rows}
+
+
+def tool_processes(top_n: int = 15) -> Dict[str, Any]:
+    if not _have("ps"):
+        return {"ok": False, "error": "ps not available"}
+    rc, out, _ = _ro(["ps", "-eo", "pid,pcpu,pmem,comm",
+                      "--sort=-pcpu"], timeout=5)
+    if rc != 0:
+        return {"ok": False, "error": "ps failed"}
+    lines = out.splitlines()
+    procs = []
+    for line in lines[1:top_n + 1]:
+        parts = line.split(None, 3)
+        if len(parts) >= 4:
+            procs.append({
+                "pid": parts[0],
+                "cpu_pct": parts[1],
+                "mem_pct": parts[2],
+                "comm": parts[3],
+            })
+    return {"ok": True, "processes": procs}
+
+
+def tool_network_status() -> Dict[str, Any]:
+    info: Dict[str, Any] = {"online": is_online()}
+    if _have("ip"):
+        rc, out, _ = _ro(["ip", "-4", "-o", "addr"])
+        ifaces = []
+        for line in out.splitlines():
+            m = re.match(r'\d+:\s+(\S+)\s+inet\s+(\S+)', line)
+            if m and m.group(1) != "lo":
+                ifaces.append({"name": m.group(1), "addr": m.group(2)})
+        info["interfaces"] = ifaces
+
+        rc, out, _ = _ro(["ip", "-4", "route", "show", "default"])
+        m = re.search(r'default via (\S+).*dev\s+(\S+)', out)
+        if m:
+            info["default_gateway"] = m.group(1)
+            info["default_iface"] = m.group(2)
+
+    if _have("ss"):
+        rc, out, _ = _ro(["ss", "-tnH"])
+        info["established_connections"] = len(out.splitlines())
+    return {"ok": True, **info}
+
+
+def tool_find_file(pattern: str,
+                   search_path: str = "~",
+                   max_results: int = 50) -> Dict[str, Any]:
+    """Find files by name pattern."""
+    if not _have("find"):
+        return {"ok": False, "error": "find not available"}
+    rp = os.path.expanduser(search_path)
+    if not os.path.isdir(rp):
+        return {"ok": False, "error": f"not a directory: {search_path}"}
+    rc, out, _ = _ro(["find", rp, "-name", pattern, "-type", "f"],
+                     timeout=30)
+    results = out.splitlines()[:max_results]
+    return {"ok": True, "pattern": pattern, "search_path": rp,
+            "found": results, "count": len(results),
+            "truncated": len(out.splitlines()) > max_results}
+
+
+# ═════════════════════════════════════════════════════════════════════
+# SECURITY AUDIT (from ares.py, abbreviated)
+# ═════════════════════════════════════════════════════════════════════
+
+SEVERITY_WEIGHTS = {"info": 0, "low": 1, "medium": 3, "high": 8, "critical": 20}
+
+
+@dataclass
+class Finding:
+    check_id: str
+    title: str
+    severity: str
+    evidence: str
+    fix_hint: str = ""
+    raw: str = ""
+
+    def __post_init__(self):
+        if self.severity not in SEVERITY_WEIGHTS:
+            self.severity = "info"
+        if self.raw and len(self.raw) > 1500:
+            self.raw = self.raw[:1500]
+
+
+def check_firewall() -> List[Finding]:
+    fs: List[Finding] = []
+    fw_active = False
+    if _have("ufw"):
+        rc, out, _ = _ro(["ufw", "status"])
+        if rc == 0 and re.search(r'status:\s*active', out, re.I):
+            fw_active = True
+            fs.append(Finding("FW-001", "UFW firewall is active", "info",
+                              "ufw status: active", raw=out))
+        elif rc == 0 and re.search(r'status:\s*inactive', out, re.I):
+            fs.append(Finding("FW-002", "UFW firewall is INACTIVE", "high",
+                              "ufw installed but not enabled",
+                              fix_hint="sudo ufw default deny incoming && "
+                                       "sudo ufw allow ssh && sudo ufw enable",
+                              raw=out))
+    if not fw_active and _have("iptables"):
+        rc, out, _ = _ro(["iptables", "-S"])
+        if rc == 0 and any(
+                re.search(r'-[PA]\s+\w+.*-j\s+(DROP|REJECT)', l)
+                or re.search(r'-P\s+\w+\s+(DROP|REJECT)', l)
+                for l in out.splitlines()):
+            fw_active = True
+            fs.append(Finding("FW-003", "iptables rules present", "info",
+                              "iptables rules configured", raw=out[:1200]))
+    if not fw_active and _have("nft"):
+        rc, out, _ = _ro(["nft", "list", "ruleset"])
+        if rc == 0 and out.strip():
+            fw_active = True
+            fs.append(Finding("FW-005", "nftables rules present", "info",
+                              "nftables ruleset loaded", raw=out[:1200]))
+    if not fw_active:
+        fs.append(Finding("FW-006", "No firewall detected", "high",
+                          "No active rules in ufw / iptables / nft",
+                          fix_hint="sudo apt install ufw && sudo ufw "
+                                   "default deny incoming && sudo ufw "
+                                   "allow ssh && sudo ufw enable"))
+    return fs
+
+
+def check_listening_ports() -> List[Finding]:
+    fs: List[Finding] = []
+    if not _have("ss"):
+        return fs
+    rc, out, _ = _ro(["ss", "-tlnH"])
+    if rc != 0:
+        return fs
+    risky = []
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) < 4:
+            continue
+        local = parts[3]
+        m = re.search(r':(\d+)$', local)
+        if not m:
+            continue
+        port = int(m.group(1))
+        if local.startswith(("0.0.0.0", "*", "[::]", "::")):
+            risky.append((port, local))
+    if risky:
+        details = "\n".join(f"  :{p} on {a}" for p, a in risky[:15])
+        sev = "high" if any(p in (21, 23, 2049, 5900) for p, _ in risky) else "medium"
+        fs.append(Finding("NET-001",
+                          f"{len(risky)} port(s) on all interfaces",
+                          sev, details,
+                          fix_hint="Bind services to 127.0.0.1 or firewall them"))
+    else:
+        fs.append(Finding("NET-OK", "No public listening ports", "info",
+                          "Only loopback or no TCP listeners."))
+    return fs
+
+
+def check_ssh_config() -> List[Finding]:
+    fs: List[Finding] = []
+    cfg = _read("/etc/ssh/sshd_config")
+    if not cfg:
+        return fs
+    def grab(key: str) -> Optional[str]:
+        for l in cfg.splitlines():
+            ls = l.strip()
+            if not ls or ls.startswith("#"):
+                continue
+            parts = ls.split(None, 1)
+            if len(parts) == 2 and parts[0].lower() == key.lower():
+                return parts[1].strip()
+        return None
+    pwd = (grab("PasswordAuthentication") or "yes").lower()
+    root = (grab("PermitRootLogin") or "yes").lower()
+    if pwd == "yes":
+        fs.append(Finding("SSH-001", "SSH password auth enabled", "medium",
+                          "PasswordAuthentication=yes",
+                          fix_hint="PasswordAuthentication no"))
+    if root in ("yes", "without-password"):
+        fs.append(Finding("SSH-002", f"PermitRootLogin = {root}", "high",
+                          "Root SSH login should be off",
+                          fix_hint="PermitRootLogin no"))
+    return fs
+
+
+def check_pending_updates_audit() -> List[Finding]:
+    fs: List[Finding] = []
+    if not _have("apt-get"):
+        return fs
+    rc, out, _ = _ro(["apt-get", "-s", "upgrade"], timeout=20)
+    if rc != 0:
+        return fs
+    sec = sum(1 for l in out.splitlines()
+              if l.startswith("Inst ") and "security" in l.lower())
+    if sec > 0:
+        fs.append(Finding("PATCH-001",
+                          f"{sec} security update(s) pending",
+                          "high" if sec > 5 else "medium",
+                          f"{sec} packages need security updates",
+                          fix_hint="sudo apt update && sudo apt upgrade"))
+    return fs
+
+
+def check_kernel() -> List[Finding]:
+    fs: List[Finding] = []
+    try:
+        kr = os.uname().release
+    except Exception:
+        return fs
+    m = re.match(r'(\d+)\.(\d+)', kr)
+    if not m:
+        return fs
+    major, minor = int(m.group(1)), int(m.group(2))
+    if (major, minor) < (5, 15):
+        fs.append(Finding("KERN-001", f"Old kernel ({kr})", "medium",
+                          "Kernel predates 5.15 LTS",
+                          fix_hint="sudo apt upgrade && reboot"))
+    else:
+        fs.append(Finding("KERN-OK", f"Kernel {kr}", "info", "Modern kernel"))
+    return fs
+
+
+def check_failed_logins() -> List[Finding]:
+    fs: List[Finding] = []
+    if not _have("journalctl"):
+        return fs
+    rc, out, _ = _ro(["journalctl", "_COMM=sshd", "--since", "24 hours ago",
+                      "--no-pager", "-q"], timeout=15)
+    if rc != 0:
+        return fs
+    fails = sum(1 for l in out.splitlines() if "Failed password" in l)
+    if fails > 50:
+        fs.append(Finding("AUTH-001",
+                          f"{fails} failed SSH logins last 24h", "high",
+                          "Possible brute force",
+                          fix_hint="Install fail2ban, keys-only auth"))
+    elif fails > 5:
+        fs.append(Finding("AUTH-002",
+                          f"{fails} failed SSH logins last 24h", "medium",
+                          "Some noise on SSH"))
+    return fs
+
+
+def check_disk_encryption() -> List[Finding]:
+    fs: List[Finding] = []
+    if not _have("lsblk"):
+        return fs
+    rc, out, _ = _ro(["lsblk", "-o", "NAME,TYPE,FSTYPE,MOUNTPOINT"])
+    if rc != 0:
+        return fs
+    has_root_crypt = bool(re.search(r'crypt\s+\S+\s+/$', out, re.M))
+    has_crypt = "crypt" in out.lower()
+    if has_root_crypt:
+        fs.append(Finding("CRYPTO-001", "Root filesystem encrypted", "info",
+                          "LUKS detected on /"))
+    elif has_crypt:
+        fs.append(Finding("CRYPTO-002", "Some volumes encrypted, root not",
+                          "medium", "Encrypted partitions exist; root /  "
+                          "appears unencrypted"))
+    else:
+        fs.append(Finding("CRYPTO-003", "No disk encryption", "medium",
+                          "No LUKS volumes found",
+                          fix_hint="FDE strongly recommended for phones/laptops"))
+    return fs
+
+
+def check_world_writable_home() -> List[Finding]:
+    fs: List[Finding] = []
+    home = os.path.expanduser("~")
+    try:
+        st = os.stat(home)
+        if st.st_mode & 0o002:
+            fs.append(Finding("PERM-001", "Home dir world-writable", "high",
+                              f"{home} allows other users to write",
+                              fix_hint=f"chmod 700 {home}"))
+    except Exception:
+        pass
+    return fs
+
+
+def check_mac() -> List[Finding]:
+    fs: List[Finding] = []
+    if _have("aa-status"):
+        rc, out, _ = _ro(["aa-status"])
+        if rc == 0 and "profiles are loaded" in out:
+            fs.append(Finding("MAC-001", "AppArmor active", "info",
+                              out.splitlines()[0] if out else ""))
+        else:
+            fs.append(Finding("MAC-002", "AppArmor not loaded", "low",
+                              "aa-status: no profiles"))
+    elif _have("getenforce"):
+        rc, out, _ = _ro(["getenforce"])
+        if "Enforcing" in out:
+            fs.append(Finding("MAC-003", "SELinux enforcing", "info",
+                              "getenforce: Enforcing"))
+        else:
+            fs.append(Finding("MAC-004", f"SELinux mode: {out.strip()}",
+                              "low", "SELinux not enforcing"))
+    else:
+        fs.append(Finding("MAC-005", "No MAC system detected", "low",
+                          "No AppArmor or SELinux"))
+    return fs
+
+
+def check_shell_history() -> List[Finding]:
+    fs: List[Finding] = []
+    secrets_re = re.compile(
+        r'(password|passwd|api[_-]?key|secret|token|bearer)\s*[=:]\s*\S+',
+        re.I)
+    home = Path.home()
+    for hf in (".bash_history", ".zsh_history"):
+        p = home / hf
+        if not p.exists():
+            continue
+        try:
+            data = p.read_text(errors="replace")
+        except Exception:
+            continue
+        hits = secrets_re.findall(data)
+        if hits:
+            fs.append(Finding("HIST-001", f"Possible secrets in {hf}",
+                              "medium",
+                              f"{len(hits)} suspicious line(s) found",
+                              fix_hint=f"Review {p}"))
+    return fs
+
+
+AUDIT_CHECKS: List[Tuple[str, str, Callable[[], List[Finding]]]] = [
+    ("FW",    "Firewall status",        check_firewall),
+    ("NET",   "Listening ports",        check_listening_ports),
+    ("SSH",   "SSH server config",      check_ssh_config),
+    ("PATCH", "Pending sec updates",    check_pending_updates_audit),
+    ("KERN",  "Kernel age",             check_kernel),
+    ("AUTH",  "Failed SSH logins",      check_failed_logins),
+    ("CRYPT", "Disk encryption",        check_disk_encryption),
+    ("PERM",  "Home dir perms",         check_world_writable_home),
+    ("MAC",   "AppArmor / SELinux",     check_mac),
+    ("HIST",  "Shell history secrets",  check_shell_history),
+]
+
+
+def run_security_audit(
+        on_progress: Optional[Callable[[str, int, int], None]] = None
+        ) -> Dict[str, Any]:
+    t0 = time.time()
+    all_findings: List[Finding] = []
+    total = len(AUDIT_CHECKS)
+    done = 0
+
+    def _safe(fn):
+        try:
+            return fn() or []
+        except Exception:
+            return []
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as ex:
+        future_to = {ex.submit(_safe, fn): (cid, title)
+                     for cid, title, fn in AUDIT_CHECKS}
+        for fut in concurrent.futures.as_completed(future_to, timeout=90):
+            cid, title = future_to[fut]
+            try:
+                all_findings.extend(fut.result())
+            except Exception:
+                pass
+            done += 1
+            if on_progress:
+                on_progress(title, done, total)
+
+    score = sum(SEVERITY_WEIGHTS[f.severity] for f in all_findings)
+    if   score == 0:  grade = "A+"
+    elif score <= 3:  grade = "A"
+    elif score <= 8:  grade = "B"
+    elif score <= 16: grade = "C"
+    elif score <= 30: grade = "D"
+    else:             grade = "F"
+    return {"findings": all_findings, "score": score, "grade": grade,
+            "elapsed": time.time() - t0}
+
+
+def format_audit_for_chat(audit: Dict[str, Any]) -> str:
+    findings: List[Finding] = audit["findings"]
+    sev_rank = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
+    findings = sorted(findings, key=lambda f: (sev_rank[f.severity],
+                                                f.check_id))
+    lines = [f"## Security audit — grade **{audit['grade']}** "
+             f"(score {audit['score']}, {audit['elapsed']:.1f}s)", ""]
+    counts: Dict[str, int] = {}
+    for f in findings:
+        counts[f.severity] = counts.get(f.severity, 0) + 1
+    lines.append("Findings: " +
+                 ", ".join(f"{n} {s}" for s, n in counts.items()))
+    lines.append("")
+    for f in findings:
+        lines.append(f"- `{f.severity.upper():8s}` **{f.title}** ({f.check_id})")
+        if f.evidence:
+            lines.append(f"  > {f.evidence}")
+        if f.fix_hint:
+            lines.append(f"  - fix: `{f.fix_hint}`")
+    return "\n".join(lines)
+
+
+# ═════════════════════════════════════════════════════════════════════
+# NETWORK SCAN
+# ═════════════════════════════════════════════════════════════════════
+
+def _detect_local_cidr() -> Optional[str]:
+    if not _have("ip"):
+        return None
+    rc, out, _ = _ro(["ip", "-4", "route", "show", "default"])
+    if rc != 0 or not out:
+        return None
+    m = re.search(r'dev\s+(\S+)', out)
+    if not m:
+        return None
+    iface = m.group(1)
+    rc, out, _ = _ro(["ip", "-4", "-o", "addr", "show", "dev", iface])
+    if rc != 0:
+        return None
+    m = re.search(r'inet\s+(\d+\.\d+\.\d+\.\d+/\d+)', out)
+    return m.group(1) if m else None
+
+
+def run_network_scan(cidr: Optional[str] = None,
+                     on_progress: Optional[Callable[[str], None]] = None
+                     ) -> Dict[str, Any]:
+    t0 = time.time()
+    target = cidr or _detect_local_cidr()
+    if not target:
+        return {"ok": False, "error": "could not detect local subnet"}
+    if on_progress:
+        on_progress(f"scanning {target}...")
+    hosts: List[Dict[str, Any]] = []
+    if _have("nmap"):
+        rc, out, err = _ro(["nmap", "-sn", "-T4", "-n", target], timeout=60)
+        if rc != 0:
+            return {"ok": False, "error": f"nmap failed: {err.strip()}"}
+        cur = None
+        for line in out.splitlines():
+            m = re.match(r'Nmap scan report for (\S+)', line)
+            if m:
+                if cur:
+                    hosts.append(cur)
+                cur = {"ip": m.group(1), "mac": None, "vendor": None}
+            m = re.match(r'MAC Address: (\S+)\s+\((.*)\)', line)
+            if m and cur:
+                cur["mac"] = m.group(1)
+                cur["vendor"] = m.group(2)
+        if cur:
+            hosts.append(cur)
+    else:
+        rc, out, _ = _ro(["ip", "neigh"])
+        if rc == 0:
+            for line in out.splitlines():
+                m = re.match(r'(\d+\.\d+\.\d+\.\d+).*lladdr\s+(\S+)', line)
+                if m:
+                    hosts.append({"ip": m.group(1), "mac": m.group(2),
+                                  "vendor": None})
+    return {"ok": True, "target": target, "hosts": hosts,
+            "elapsed": time.time() - t0,
+            "scanner": "nmap" if _have("nmap") else "ip-neigh"}
+
+
+def format_scan_for_chat(scan: Dict[str, Any]) -> str:
+    if not scan.get("ok"):
+        return f"Network scan failed: {scan.get('error')}"
+    lines = [f"## Network scan — {scan['target']} "
+             f"({len(scan['hosts'])} hosts, "
+             f"{scan['elapsed']:.1f}s, via {scan['scanner']})", ""]
+    if not scan["hosts"]:
+        lines.append("_No live hosts found._")
+    else:
+        lines.append("| IP | MAC | Vendor |")
+        lines.append("|---|---|---|")
+        for h in scan["hosts"]:
+            lines.append(f"| {h['ip']} | {h.get('mac') or '—'} "
+                         f"| {h.get('vendor') or '—'} |")
+    return "\n".join(lines)
+
+
+# ═════════════════════════════════════════════════════════════════════
+# TOOL CALL PARSING
+# ═════════════════════════════════════════════════════════════════════
+
+TOOL_TAG_RE = re.compile(
+    r'<tool\s+name="([a-zA-Z_]+)"\s*>(.*?)</tool>', re.DOTALL)
+
+
+@dataclass
+class ToolCall:
+    name: str
+    args: Dict[str, Any]
+    raw: str
+
+
+def parse_tool_calls(text: str) -> List[ToolCall]:
+    calls = []
+    for m in TOOL_TAG_RE.finditer(text):
+        name = m.group(1)
+        body = m.group(2).strip()
+        try:
+            args = json.loads(body) if body else {}
+        except json.JSONDecodeError:
+            args = {"_raw": body}
+        calls.append(ToolCall(name=name, args=args, raw=m.group(0)))
+    return calls
+
+
+def strip_tool_calls(text: str) -> str:
+    return TOOL_TAG_RE.sub("", text).strip()
+
+
+# ═════════════════════════════════════════════════════════════════════
+# BACKGROUND WATCHER — periodic system checks, surfaces to UI
+# ═════════════════════════════════════════════════════════════════════
+
+class Watcher:
+    """Periodic background system observer.
+    Generates events that the UI can pop as toasts."""
+
+    def __init__(self, settings: Dict[str, Any],
+                 on_event: Callable[[Dict[str, Any]], None]):
+        self.settings = settings
+        self.on_event = on_event
+        self._thread: Optional[threading.Thread] = None
+        self._stop = threading.Event()
+        self._last_update_check = 0.0
+        self._last_download_check = 0.0
+        self._known_downloads: set = set()
+
+    def start(self):
+        if not self.settings.get("watcher_enabled"):
+            return
+        if self._thread and self._thread.is_alive():
+            return
+        self._stop.clear()
+        self._thread = threading.Thread(target=self._loop, daemon=True)
+        self._thread.start()
+        log("watcher started")
+
+    def stop(self):
+        self._stop.set()
+        log("watcher stopping")
+
+    def _loop(self):
+        # First pass: prime known downloads so we don't spam on startup
+        try:
+            r = tool_recent_downloads(50)
+            if r.get("ok"):
+                self._known_downloads = {f["name"] for f in r["files"]}
+        except Exception:
+            pass
+
+        interval = self.settings.get("watcher_interval_minutes", 60) * 60
+        while not self._stop.is_set():
+            try:
+                self._tick()
+            except Exception as e:
+                log(f"watcher tick error: {e}")
+            # sleep in small slices so stop is responsive
+            for _ in range(int(interval)):
+                if self._stop.is_set():
+                    return
+                time.sleep(1)
+
+    def _tick(self):
+        if self.settings.get("watcher_check_downloads"):
+            self._check_downloads()
+        if self.settings.get("watcher_check_updates"):
+            self._check_updates_periodic()
+        if self.settings.get("watcher_check_journal"):
+            self._check_journal()
+
+    def _check_downloads(self):
+        r = tool_recent_downloads(50)
+        if not r.get("ok"):
+            return
+        new_files = []
+        current_names = set()
+        for f in r["files"]:
+            current_names.add(f["name"])
+            if f["name"] not in self._known_downloads and not f["is_dir"]:
+                if f["age_seconds"] < 3600:  # only flag new in last hour
+                    new_files.append(f)
+        self._known_downloads = current_names
+        if new_files:
+            self.on_event({
+                "kind": "downloads",
+                "title": f"{len(new_files)} new download(s)",
+                "detail": ", ".join(f["name"] for f in new_files[:3]),
+                "files": new_files,
+            })
+
+    def _check_updates_periodic(self):
+        # cheap: just count, no apt update
+        now = time.time()
+        if now - self._last_update_check < 4 * 3600:
+            return
+        self._last_update_check = now
+        r = tool_check_updates()
+        if r.get("ok") and r.get("security_count", 0) > 0:
+            self.on_event({
+                "kind": "security_updates",
+                "title": f"{r['security_count']} security updates pending",
+                "detail": "Tell me 'install updates' to apply them",
+                "count": r["security_count"],
+            })
+
+    def _check_journal(self):
+        r = tool_journal_tail(lines=100, since="10 minutes ago")
+        if not r.get("ok"):
+            return
+        interesting = []
+        for line in r.get("lines", []):
+            if "Failed password" in line:
+                interesting.append(line)
+            elif "USB disconnect" in line or "new high-speed USB device" in line:
+                interesting.append(line)
+            elif "Out of memory" in line:
+                interesting.append(line)
+        if interesting:
+            self.on_event({
+                "kind": "journal",
+                "title": f"{len(interesting)} notable event(s)",
+                "detail": interesting[0][-120:],
+                "lines": interesting,
+            })

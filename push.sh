@@ -1,100 +1,131 @@
 #!/usr/bin/env bash
 #
-# push.sh — push Oracle to github.com/the-priest/oracle5
+# push.sh — sync local kali files to github.com/the-priest/oracle5
 #
-# Prereqs:
-#   1. You've created an empty repo at https://github.com/the-priest/oracle5
-#      (don't tick "add README" or any starter files — make it empty)
-#   2. You have git auth set up — either SSH key (recommended) or a
-#      personal access token cached via:  gh auth login
-#
-# Then just:  ./push.sh
+# Usage:
+#   ./push.sh                    # commit & push (will prompt for message)
+#   ./push.sh "your message"     # commit with that message & push
+#   ./push.sh --status           # just show what changed
+#   ./push.sh --setup            # one-time git init / remote setup
 #
 
 set -euo pipefail
 
-USER="the-priest"
-REPO="oracle5"
-REMOTE_SSH="git@github.com:${USER}/${REPO}.git"
-REMOTE_HTTPS="https://github.com/${USER}/${REPO}.git"
+# ── colours ──────────────────────────────────────────────────────
+if [ -t 1 ]; then
+  G="\033[32m"; Y="\033[33m"; R="\033[31m"; B="\033[36m"; X="\033[0m"
+else
+  G=""; Y=""; R=""; B=""; X=""
+fi
+say()   { printf "${Y}[*]${X} %s\n" "$*"; }
+ok()    { printf "${G}[+]${X} %s\n" "$*"; }
+warn()  { printf "${Y}[!]${X} %s\n" "$*"; }
+err()   { printf "${R}[!]${X} %s\n" "$*" >&2; }
+fatal() { err "$*"; exit 1; }
 
-Y="\033[33m"; G="\033[32m"; R="\033[31m"; B="\033[36m"; X="\033[0m"
-say() { printf "${Y}[*]${X} %s\n" "$*"; }
-ok()  { printf "${G}[+]${X} %s\n" "$*"; }
-err() { printf "${R}[!]${X} %s\n" "$*" >&2; exit 1; }
+# ── config ───────────────────────────────────────────────────────
+REPO_OWNER="${KALI_OWNER:-the-priest}"
+REPO_NAME="${KALI_REPO_NAME:-oracle5}"
+SSH_REMOTE="git@github.com:${REPO_OWNER}/${REPO_NAME}.git"
+HTTPS_REMOTE="https://github.com/${REPO_OWNER}/${REPO_NAME}.git"
+BRANCH="${KALI_BRANCH:-main}"
 
-# Sanity check — are we in the right folder?
-for f in oracle.py oracle_core.py oracle_persona.py install.sh README.md; do
-  [ -f "$f" ] || err "missing $f — run this from the oracle/ folder"
+REQUIRED=(kali.py kali_core.py kali_persona.py install.sh README.md LICENSE)
+OPTIONAL=(kali-dragon.svg kali.desktop kali-ollama.service push.sh .gitignore)
+
+# ── pre-flight ───────────────────────────────────────────────────
+command -v git >/dev/null || fatal "git not installed (sudo apt install git)"
+
+for f in "${REQUIRED[@]}"; do
+  [ -f "$f" ] || fatal "missing required file: $f"
 done
 
-# init if needed
-if [ ! -d .git ]; then
-  say "git init"
-  git init -b main >/dev/null
+# ── modes ────────────────────────────────────────────────────────
+
+if [ "${1:-}" = "--status" ]; then
+  git status -sb
+  exit 0
 fi
 
-# .gitignore (always overwrite — keep it consistent)
-cat > .gitignore <<'EOF'
+setup_repo() {
+  if [ ! -d .git ]; then
+    say "git init"
+    git init -b "${BRANCH}"
+  fi
+  if ! git remote get-url origin >/dev/null 2>&1; then
+    say "adding remote origin → ${SSH_REMOTE}"
+    git remote add origin "${SSH_REMOTE}"
+  fi
+  if [ ! -f .gitignore ]; then
+    cat > .gitignore <<EOF
 __pycache__/
 *.pyc
 *.pyo
-*.pyd
-.DS_Store
+.venv/
+venv/
 *.swp
-*.bak
-*.orig
+.DS_Store
 backups/
-.idea/
-.vscode/
+*.db
+.env
 EOF
+    ok "wrote .gitignore"
+  fi
+  ok "repo set up"
+}
 
-# Configure git user if not set globally
-if [ -z "$(git config user.name 2>/dev/null || true)" ]; then
-  say "setting local git user (The Priest / no-reply email)"
-  git config user.name  "The Priest"
-  git config user.email "the-priest@users.noreply.github.com"
+if [ "${1:-}" = "--setup" ]; then
+  setup_repo
+  exit 0
 fi
 
-# Stage + commit
-git add .
+# Auto-init if needed
+if [ ! -d .git ]; then
+  warn "no .git here — running --setup"
+  setup_repo
+fi
+
+# ── commit message ──────────────────────────────────────────────
+MSG="${1:-}"
+if [ -z "$MSG" ]; then
+  printf "${B}commit message: ${X}"
+  read -r MSG
+  [ -z "$MSG" ] && MSG="update $(date +%Y-%m-%d)"
+fi
+
+# ── stage ───────────────────────────────────────────────────────
+for f in "${REQUIRED[@]}"; do
+  git add "$f"
+done
+for f in "${OPTIONAL[@]}"; do
+  [ -f "$f" ] && git add "$f" || true
+done
+
 if git diff --cached --quiet; then
-  ok "nothing to commit"
-else
-  if [ -z "$(git log --oneline 2>/dev/null | head -1)" ]; then
-    git commit -m "Oracle: initial commit" >/dev/null
-  else
-    git commit -m "Oracle: update" >/dev/null
-  fi
-  ok "committed"
+  warn "no staged changes"
+  exit 0
 fi
 
-# Add or update origin — prefer SSH if user has keys, else HTTPS
-if git remote get-url origin >/dev/null 2>&1; then
-  say "remote 'origin' already configured: $(git remote get-url origin)"
+git status -s
+echo
+
+git commit -m "$MSG"
+ok "committed: $MSG"
+
+# ── push: SSH first, HTTPS fallback ─────────────────────────────
+say "pushing to ${BRANCH}…"
+if git push -u origin "${BRANCH}" 2>/dev/null; then
+  ok "pushed via SSH"
 else
-  # Try SSH if a key exists
-  if [ -f "${HOME}/.ssh/id_ed25519" ] || [ -f "${HOME}/.ssh/id_rsa" ]; then
-    git remote add origin "${REMOTE_SSH}"
-    ok "added remote (ssh): ${REMOTE_SSH}"
+  warn "SSH push failed — trying HTTPS"
+  git remote set-url origin "${HTTPS_REMOTE}"
+  if git push -u origin "${BRANCH}"; then
+    ok "pushed via HTTPS"
   else
-    git remote add origin "${REMOTE_HTTPS}"
-    ok "added remote (https): ${REMOTE_HTTPS}"
-    say "you'll be prompted for username + token on first push"
-    echo "    (use a Personal Access Token, not your password)"
-    echo "    create one at: https://github.com/settings/tokens"
+    fatal "push failed.  Check credentials.  Remote stays on HTTPS now."
   fi
 fi
 
-# Push
-say "pushing to origin/main"
-git branch -M main 2>/dev/null || true
-git push -u origin main
-
 echo
-ok "pushed to https://github.com/${USER}/${REPO}"
-echo
-echo "${B}Your one-line install (share anywhere):${X}"
-echo
-echo "  curl -fsSL https://raw.githubusercontent.com/${USER}/${REPO}/main/install.sh | bash"
-echo
+ok "live at: https://github.com/${REPO_OWNER}/${REPO_NAME}"
+echo "  install on phone:  curl -fsSL https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/${BRANCH}/install.sh | bash"

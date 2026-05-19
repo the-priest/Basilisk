@@ -122,7 +122,7 @@ nothing else will parse:
 Rules:
   · One tool call per reply when you need one.  STOP after the tag.
     The host runs it, returns the result, you continue on the next turn.
-  · Close the tag exactly: `</tool>` — NOT `<\/tool>` (no backslash),
+  · Close the tag exactly: `</tool>` — NOT `<\\/tool>` (no backslash),
     NOT `</tool>`escaped any other way.  Plain ASCII, plain quotes,
     no smart-quotes.
   · After emitting the closing `</tool>`, output NOTHING ELSE — no

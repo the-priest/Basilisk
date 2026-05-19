@@ -44,7 +44,7 @@ from kali_persona import (
 
 APP_ID  = "org.thepriest.kali"
 APP_NAME = "Kali"
-VERSION = "0.3.6"
+VERSION = "0.3.8"
 
 
 # ═════════════════════════════════════════════════════════════════════
@@ -587,7 +587,7 @@ def _make_wrap_label() -> Gtk.Label:
     lbl.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
     lbl.set_xalign(0.0)
     lbl.set_hexpand(True)
-    lbl.set_max_width_chars(50)
+    lbl.set_max_width_chars(_MAX_BUBBLE_CHARS)
     try:
         lbl.set_natural_wrap_mode(Gtk.NaturalWrapMode.WORD)
     except (AttributeError, TypeError):
@@ -615,9 +615,20 @@ class MessageWidget(Gtk.Box):
 
     def _build_shell(self):
         if self.role == "user":
-            # right-aligned with avatar on the right
+            # User message: row fills the viewport, a left spacer pushes
+            # the bubble to the right.  The OLD layout used
+            # row.set_halign(Gtk.Align.END) which made the row claim
+            # its NATURAL width (the unwrapped one-line size of the
+            # message) and overflow the right edge of the screen on
+            # narrow phones.  The hexpand-row + spacer pattern keeps
+            # the row's own width equal to the viewport so the bubble
+            # can't escape.
             row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-            row.set_halign(Gtk.Align.END)
+            row.set_hexpand(True)
+
+            spacer = Gtk.Box()
+            spacer.set_hexpand(True)
+            row.append(spacer)
 
             content_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL,
                                   spacing=2)
@@ -640,6 +651,7 @@ class MessageWidget(Gtk.Box):
 
         elif self.role == "assistant":
             row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+            row.set_hexpand(True)
 
             row.append(Avatar("kali"))
 
@@ -1194,14 +1206,7 @@ class MainWindow(Adw.ApplicationWindow):
     def __init__(self, app: "KaliApp"):
         super().__init__(application=app)
         self.set_title(APP_NAME)
-        # Compute layout width = HALF the detected device width.  Phosh
-        # on the OP6 reports geometry in device pixels via Gdk even
-        # though the compositor applies a ~2× scale, so the layout
-        # engine thinks it has 1080 px to work with when only ~486 are
-        # actually on-screen.  Halving matches what's visible and stops
-        # bubbles/text from overflowing the right edge.
-        self._layout_width = self._compute_layout_width()
-        self.set_default_size(self._layout_width, 800)
+        self.set_default_size(440, 800)
         self.app = app
         self.settings = load_settings()
         self.ollama = OllamaBackend()
@@ -1230,24 +1235,6 @@ class MainWindow(Adw.ApplicationWindow):
         self._boot()
         GLib.idle_add(self._initial_chat_load)
         GLib.idle_add(self._refresh_sidebar)
-
-    def _compute_layout_width(self) -> int:
-        """Half the detected device width, in pixels, used as a hard
-        upper bound for the chat content.  See the comment in
-        MainWindow.__init__."""
-        try:
-            display = Gdk.Display.get_default()
-            if display:
-                mons = display.get_monitors()
-                if mons and mons.get_n_items() > 0:
-                    mon = mons.get_item(0)
-                    geo = mon.get_geometry()
-                    halved = geo.width // 2
-                    log(f"layout_width: device={geo.width} → half={halved}")
-                    return max(300, halved)
-        except Exception as e:
-            log(f"layout_width detection failed: {e}")
-        return 540  # OP6 portrait fallback
 
     def _initial_chat_load(self):
         """At launch, open the most recent chat if any exist; otherwise
@@ -1454,24 +1441,10 @@ class MainWindow(Adw.ApplicationWindow):
         self.msg_box.set_margin_bottom(12)
         self.msg_box.set_margin_start(8)
         self.msg_box.set_margin_end(8)
-        # Cap the chat area to _layout_width.  Adw.Clamp forces its child
-        # to never exceed maximum_size, regardless of what GTK thinks
-        # the window width is.  This is the hard fix for the phone:
-        # bubbles physically cannot extend beyond _layout_width pixels.
-        msg_clamp = Adw.Clamp()
-        msg_clamp.set_maximum_size(self._layout_width)
-        msg_clamp.set_tightening_threshold(self._layout_width)
-        msg_clamp.set_child(self.msg_box)
-        self.msg_scroll.set_child(msg_clamp)
+        self.msg_scroll.set_child(self.msg_box)
         main.append(self.msg_scroll)
 
-        # Cap the input area too, so the textbox lines up with the chat.
-        input_area = self._build_input_area()
-        input_clamp = Adw.Clamp()
-        input_clamp.set_maximum_size(self._layout_width)
-        input_clamp.set_tightening_threshold(self._layout_width)
-        input_clamp.set_child(input_area)
-        main.append(input_clamp)
+        main.append(self._build_input_area())
         return main
 
     def _build_input_area(self):
@@ -2437,6 +2410,8 @@ class KaliApp(Adw.Application):
         self.css_provider = Gtk.CssProvider()
         global _UI_SCALE
         _UI_SCALE = _detect_ui_scale()
+        # AFTER scale is set, derive viewport-dependent metrics.
+        _compute_viewport_metrics()
         self.css_provider.load_from_data(_scale_css(CSS, _UI_SCALE))
         log(f"ui_scale = {_UI_SCALE:.2f}")
         Gtk.StyleContext.add_provider_for_display(
@@ -2561,8 +2536,44 @@ def _detect_ui_scale() -> float:
 # uses for fonts/padding.
 _UI_SCALE: float = 1.0
 
+# Cached viewport width and derived max-chars for message bubbles.  Set
+# from real Gdk geometry in do_startup, used by _make_wrap_label.
+_VIEWPORT_WIDTH: int = 540   # OP6 portrait logical width
+_MAX_BUBBLE_CHARS: int = 25  # conservative default; recomputed at startup
+
+
 def _ui_scale() -> float:
     return _UI_SCALE
+
+
+def _compute_viewport_metrics() -> None:
+    """Pin down the actual logical viewport width via Gdk, then derive
+    a max-width-chars cap for message labels.  Without a cap that's
+    actually narrower than the viewport, Gtk.Label's natural width
+    blows the chat bubble out past the right edge of the screen on
+    the phone — see the message-bubble bug history."""
+    global _VIEWPORT_WIDTH, _MAX_BUBBLE_CHARS
+    try:
+        display = Gdk.Display.get_default()
+        if display:
+            mons = display.get_monitors()
+            if mons and mons.get_n_items() > 0:
+                mon = mons.get_item(0)
+                geo = mon.get_geometry()
+                _VIEWPORT_WIDTH = max(300, geo.width)
+                # Rough char width estimate.  The CSS default message
+                # font is 30 px; with a phone UI scale of 0.9 that
+                # renders ≈27 px, and avg glyph width is roughly
+                # half that → 13-14 px per char.  Leave ~100 px for
+                # avatar + margins.
+                avail = max(200, _VIEWPORT_WIDTH - 100)
+                char_w = max(8.0, 17.0 * _UI_SCALE)
+                _MAX_BUBBLE_CHARS = max(15, min(60, int(avail / char_w)))
+                log(f"viewport: {_VIEWPORT_WIDTH}px, scale={_UI_SCALE:.2f}"
+                    f" → max bubble chars: {_MAX_BUBBLE_CHARS}")
+                return
+    except Exception as e:
+        log(f"viewport detect failed: {e}")
 
 
 def _scaled(n: int, floor: int = 1) -> int:

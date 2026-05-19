@@ -162,7 +162,7 @@ headerbar {
     border-radius: 22px 22px 8px 22px;
     padding: 18px 22px;
     margin: 8px 12px 8px 60px;
-    font-size: 26px;
+    font-size: 30px;
     line-height: 1.45;
 }
 
@@ -172,7 +172,7 @@ headerbar {
     color: #cdd6f4;
     padding: 12px 18px;
     margin: 8px 12px;
-    font-size: 26px;
+    font-size: 30px;
     line-height: 1.55;
 }
 
@@ -270,7 +270,7 @@ headerbar {
 .input-frame textview {
     background-color: transparent;
     color: #cdd6f4;
-    font-size: 26px;
+    font-size: 30px;
     padding: 12px 0;
 }
 
@@ -410,6 +410,24 @@ passwordentry {
     margin: 8px 16px;
     color: #f9e2af;
     font-size: 17px;
+}
+
+.working-row {
+    background-color: rgba(203, 166, 247, 0.15);
+    border-radius: 16px;
+    padding: 10px 22px;
+}
+.working-label {
+    color: #cba6f7;
+    font-size: 18px;
+    font-style: italic;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+}
+.working-spinner {
+    color: #cba6f7;
+    min-width: 24px;
+    min-height: 24px;
 }
 """
 
@@ -1259,6 +1277,23 @@ class MainWindow(Adw.ApplicationWindow):
                                    spacing=0)
         main.append(self.banner_box)
 
+        # "Working..." status row, shown while assistant is generating or
+        # a tool is running.  Hidden by default.
+        self.working_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
+                                    spacing=12)
+        self.working_row.add_css_class("working-row")
+        self.working_row.set_halign(Gtk.Align.CENTER)
+        self.working_row.set_margin_top(8)
+        self.working_row.set_margin_bottom(8)
+        self.working_spinner = Gtk.Spinner()
+        self.working_spinner.add_css_class("working-spinner")
+        self.working_label = Gtk.Label(label="working…")
+        self.working_label.add_css_class("working-label")
+        self.working_row.append(self.working_spinner)
+        self.working_row.append(self.working_label)
+        self.working_row.set_visible(False)
+        main.append(self.working_row)
+
         # Messages
         self.msg_scroll = Gtk.ScrolledWindow()
         self.msg_scroll.set_policy(Gtk.PolicyType.NEVER,
@@ -1510,6 +1545,11 @@ class MainWindow(Adw.ApplicationWindow):
                 # follow-up message already conveys their content.
                 if kind == "tool_result":
                     continue
+                # Skip tool 'call' indicators (⚙ tool: …).  The user wants
+                # these hidden — the spinner banner tells them work is
+                # happening, and the assistant's follow-up describes what.
+                if m.role == "tool":
+                    continue
                 # Skip empty assistant placeholders — these are pre-allocated
                 # DB rows for in-flight streams.  Rendering them produces an
                 # empty bubble; the real content arrives when the stream
@@ -1635,6 +1675,17 @@ class MainWindow(Adw.ApplicationWindow):
 
         self._kick_assistant_turn()
 
+    def _set_working(self, working: bool, label: str = "working…"):
+        """Show or hide the 'working' spinner banner.  Called from the
+        UI thread."""
+        if working:
+            self.working_label.set_text(label)
+            self.working_spinner.start()
+            self.working_row.set_visible(True)
+        else:
+            self.working_spinner.stop()
+            self.working_row.set_visible(False)
+
     def _kick_assistant_turn(self):
         if not self.ollama.is_running() and not self.groq.is_available():
             self._show_toast(
@@ -1642,6 +1693,7 @@ class MainWindow(Adw.ApplicationWindow):
             self.send_btn.set_sensitive(True)
             self.streaming_chat_id = None
             self._tool_chain_depth = 0
+            self._set_working(False)
             return
 
         # Preserve streaming_chat_id across a tool chain.  Only snapshot
@@ -1658,6 +1710,7 @@ class MainWindow(Adw.ApplicationWindow):
             self.streaming_chat_id = None
             self._tool_chain_depth = 0
             self.send_btn.set_sensitive(True)
+            self._set_working(False)
             return
 
         chat_id = self.streaming_chat_id
@@ -1698,6 +1751,7 @@ class MainWindow(Adw.ApplicationWindow):
         self.streaming_thread = threading.Thread(target=_bg, daemon=True)
         self.streaming_thread.start()
         self.send_btn.set_sensitive(False)
+        self._set_working(True, "thinking…")
 
     def _on_stream_token(self, tok):
         if self.streaming_msg_widget:
@@ -1712,6 +1766,7 @@ class MainWindow(Adw.ApplicationWindow):
             self.send_btn.set_sensitive(True)
             self.streaming_chat_id = None
             self._tool_chain_depth = 0
+            self._set_working(False)
             return False
         final = self.streaming_msg_widget.finish_streaming()
         if self.streaming_msg_db_id:
@@ -1720,7 +1775,8 @@ class MainWindow(Adw.ApplicationWindow):
         # Honour the agent-mode toggle.  If the user turned it off,
         # don't execute even if the model emitted a tool tag.
         if calls and not meta.get("cancelled") and self.current_agent_mode:
-            # Keep send disabled — the tool will fire another turn
+            # Tool will fire — keep banner, change label to "running"
+            self._set_working(True, "running tool…")
             self._execute_tool_calls(calls)
         else:
             self.streaming_msg_widget = None
@@ -1728,6 +1784,7 @@ class MainWindow(Adw.ApplicationWindow):
             self.streaming_chat_id = None
             self._tool_chain_depth = 0
             self.send_btn.set_sensitive(True)
+            self._set_working(False)
         return False
 
     def _on_stream_error(self, err):
@@ -1749,6 +1806,7 @@ class MainWindow(Adw.ApplicationWindow):
         self.streaming_msg_db_id = None
         self.streaming_chat_id = None
         self._tool_chain_depth = 0
+        self._set_working(False)
         return False
 
     # ── tool execution ──────────────────────────────────────────
@@ -1759,12 +1817,10 @@ class MainWindow(Adw.ApplicationWindow):
         # one the user might have navigated to.
         chat_id = self.streaming_chat_id or self.current_chat_id
 
-        # UI: only render the indicator if user is still looking at this chat
-        if chat_id == self.current_chat_id:
-            self._append_message_widget(
-                "tool",
-                f"used {call.name}",
-                meta={"kind": "call", "tool_name": call.name})
+        # Update the working banner with the specific tool name so user
+        # knows what's happening.  Hidden tool indicators in the message
+        # stream stay hidden — they're noisy.
+        self._set_working(True, f"running {call.name}…")
 
         self.store.add_message(chat_id, "tool",
                                 f"⚙ tool: {call.name}({json.dumps(call.args)})",
@@ -1943,6 +1999,7 @@ class MainWindow(Adw.ApplicationWindow):
             self._new_chat()
         self.streaming_chat_id = self.current_chat_id
         self._tool_chain_depth = 0
+        self._set_working(True, "working…")
         return True
 
     def _maybe_set_title_from_first(self, chat_id: int, first_text: str):
@@ -2236,22 +2293,33 @@ class KaliApp(Adw.Application):
 
 
 def _detect_ui_scale() -> float:
-    """Pick a UI scale based on the screen we're on.
+    """Pick a UI scale based on physical screen size, not pixel width.
 
-    Phone (logical width < 800 px)   → 1.0  (keep big touch-friendly sizes)
-    Tablet/small laptop (< 1200 px)  → 0.85
-    Desktop                          → 0.7
+    The old logic compared logical-pixel width to a threshold, but logical
+    pixels vary wildly depending on whether the compositor reports device
+    pixels (no HiDPI scaling) or scaled application pixels.  A phone with
+    1080 device-pixels wide might report as 360 (Phosh, scale=3) OR 1080
+    (no scaling).  Both are phones and both need the LARGE UI.
 
-    Logical px are after GTK's own HiDPI scaling, so a Phosh phone with
-    1080×2160 physical pixels at 2x scale reports ~540×1080 logical here.
+    Use physical mm via width_mm if available — that's the actual screen
+    size and doesn't lie.  Fall back to monitor.get_scale_factor() (>1
+    means HiDPI which is almost always a phone or tablet) when width_mm
+    is 0 (some compositors don't report it).
+
+    Phone (< 100 mm wide)            → 1.15  (LARGER than current)
+    Tablet (100-200 mm)              → 1.0
+    Laptop (200-350 mm)              → 0.85
+    Desktop monitor (> 350 mm)       → 0.7
     """
+    # Explicit override always wins
     try:
-        # User override from settings.json takes precedence
         s = load_settings().get("ui_scale", 0)
-        if isinstance(s, (int, float)) and s > 0.3 and s < 3:
+        if isinstance(s, (int, float)) and 0.3 < s < 3:
+            log(f"ui_scale from settings: {s}")
             return float(s)
     except Exception:
         pass
+
     try:
         display = Gdk.Display.get_default()
         if not display:
@@ -2260,15 +2328,45 @@ def _detect_ui_scale() -> float:
         if monitors is None or monitors.get_n_items() == 0:
             return 1.0
         monitor = monitors.get_item(0)
+
+        # First try physical width (millimetres)
+        try:
+            width_mm = int(monitor.get_width_mm())
+        except Exception:
+            width_mm = 0
+
+        if width_mm > 0:
+            if width_mm < 100:
+                bucket = "phone"; scale = 1.15
+            elif width_mm < 200:
+                bucket = "tablet"; scale = 1.0
+            elif width_mm < 350:
+                bucket = "laptop"; scale = 0.85
+            else:
+                bucket = "desktop"; scale = 0.7
+            log(f"ui_scale: width_mm={width_mm} → {bucket} → {scale}")
+            return scale
+
+        # Fall back to scale_factor (HiDPI hint) + geometry
+        try:
+            sf = int(monitor.get_scale_factor())
+        except Exception:
+            sf = 1
         geo = monitor.get_geometry()
-        w = int(geo.width)
-        if w < 800:
-            return 1.0
-        elif w < 1200:
-            return 0.85
+        # device pixels = logical pixels × scale_factor
+        device_w = int(geo.width) * sf
+
+        if sf >= 2 or device_w < 1280:
+            bucket = "phone/hidpi"; scale = 1.15
+        elif device_w < 1920:
+            bucket = "laptop"; scale = 0.85
         else:
-            return 0.7
-    except Exception:
+            bucket = "desktop"; scale = 0.7
+        log(f"ui_scale: sf={sf} device_w={device_w} → {bucket} → {scale}")
+        return scale
+
+    except Exception as e:
+        log(f"ui_scale detection failed: {e} — defaulting to 1.0")
         return 1.0
 
 

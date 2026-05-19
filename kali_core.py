@@ -128,6 +128,7 @@ DEFAULT_SETTINGS = {
 
     # UI
     "theme": "mocha",
+    "ui_scale": 0,  # 0 = auto-detect; manual values 0.5 to 2.0
     "ui_scale": 1.0,                   # 1.0 = standard, 1.2 = bigger
     "show_token_count": False,
     "show_provider_pill": True,
@@ -1500,13 +1501,18 @@ def format_scan_for_chat(scan: Dict[str, Any]) -> str:
 # Permissive matcher: accepts <tool name="X">{json}</tool>,
 # <tool>{json with "name" or "tool" key}</tool>, OR an unnamed <tool>
 # whose JSON contains "cmd"/"command" (default to "run").
+# Also tolerates: <\/tool> (model-escaped slash), smart-quote attrs,
+# leading/trailing whitespace inside the tag.
 TOOL_TAG_RE = re.compile(
-    r'<tool(?:\s+name="([a-zA-Z_]+)")?\s*>(.*?)</tool>',
+    r'<tool(?:\s+name\s*=\s*["\u201c\u201d]([a-zA-Z_]+)["\u201c\u201d])?\s*>'
+    r'(.*?)'
+    r'<\\?\s*/\s*tool\s*>',
     re.DOTALL | re.IGNORECASE)
 
 # Also strip stray <tool> openings that never closed (mid-stream artefacts)
-TOOL_PARTIAL_RE = re.compile(r'<tool(?:\s[^>]*)?>\s*\{?[^<]*$',
-                              re.DOTALL | re.IGNORECASE)
+TOOL_PARTIAL_RE = re.compile(
+    r'<tool(?:\s[^>]*)?>\s*\{?[^<]*$',
+    re.DOTALL | re.IGNORECASE)
 
 
 @dataclass

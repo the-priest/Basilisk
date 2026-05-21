@@ -44,7 +44,7 @@ from kali_persona import (
 
 APP_ID  = "org.thepriest.kali"
 APP_NAME = "Kali"
-VERSION = "0.4.0"
+VERSION = "0.4.1"
 
 
 # ═════════════════════════════════════════════════════════════════════

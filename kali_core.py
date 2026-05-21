@@ -823,43 +823,125 @@ def command_needs_sudo(command: str) -> bool:
     return bool(_SUDO_RE.search(command))
 
 
-def _validate_sudo_password(password: str, timeout: int = 10) -> Tuple[bool, str]:
-    """Authenticate the operator's sudo credential WITHOUT running anything.
+# Same matcher, but capturing the leading boundary so we can inject an
+# askpass flag into each `sudo` invocation when we fall back to that path.
+_SUDO_INJECT_RE = re.compile(r'(^|[\n;&|(]\s*|&&\s*|\|\|\s*)sudo(?=\s|$)')
 
-    `sudo -S -v` reads the password from stdin (-S) and refreshes the
-    cached sudo timestamp (-v).  On success the timestamp is valid for
-    the sudoers `timestamp_timeout` window (default 15 min), so the
-    actual command — run moments later in the same no-tty process
-    context — finds a live ticket and never re-prompts.
 
-    The password is passed ONLY to sudo's stdin here.  It never touches
-    disk, the environment, the log, or the target command's stdin.
-    """
+def _inject_askpass(command: str) -> str:
+    """Turn each `sudo` invocation into `sudo -A` (use SUDO_ASKPASS).
+    Safe with any command — unlike `-S`, askpass never reads the
+    command's stdin, so `sudo -A tee file` still works correctly."""
+    if " -A" in command and "sudo -A" in command:
+        return command
+    return _SUDO_INJECT_RE.sub(r'\1sudo -A', command)
+
+
+def _ensure_askpass_helper() -> Optional[str]:
+    """Write (once) a tiny askpass helper that echoes $KALI_SUDO_PW.
+    The script itself holds NO secret — the password is handed to it
+    via the environment of the single sudo call, and only that call."""
+    path = DATA_DIR / ".kali-askpass.sh"
     try:
-        # -k first: invalidate any stale ticket so we genuinely test THIS
-        # password rather than silently passing on a previously-cached one.
-        subprocess.run(["sudo", "-k"], stdin=subprocess.DEVNULL,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                       timeout=5)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write('#!/bin/sh\nprintf "%s\\n" "$KALI_SUDO_PW"\n')
+        os.chmod(path, 0o700)
+        return str(path)
+    except Exception as e:
+        log(f"askpass helper write failed: {e}")
+        return None
+
+
+def _format_run_result(command: str, p, needs_sudo: bool) -> Dict[str, Any]:
+    stderr = p.stderr or ""
+    result = {
+        "ok": True, "command": command, "rc": p.returncode,
+        "stdout": (p.stdout or "")[:80_000],
+        "stderr": stderr[:20_000],
+        "truncated_stdout": len(p.stdout or "") > 80_000,
+        "needs_sudo": needs_sudo,
+    }
+    low = stderr.lower()
+    if needs_sudo and p.returncode != 0 and (
+            "a terminal is required" in low
+            or "no password was provided" in low
+            or "a password is required" in low
+            or "askpass" in low):
+        result["sudo_auth_failed"] = True
+    return result
+
+
+def _run_sudo_inline(command: str, password: str, timeout: int,
+                     cwd: Optional[str]) -> Dict[str, Any]:
+    """Authenticate and run in ONE shell session so the cached sudo
+    credential is guaranteed to apply to the command's own `sudo` calls.
+
+    The password is fed once on stdin and consumed by `sudo -S -v`; the
+    command then runs with that fresh credential.  Password never touches
+    disk, env, the log, or the command's stdin (sudo -v eats the single
+    line we send; the command sees EOF)."""
+    # rc 97 is our private sentinel for "authentication failed".
+    script = "sudo -S -p '' -v || exit 97\n" + command
+    try:
         p = subprocess.run(
-            ["sudo", "-S", "-p", "", "-v"],
-            input=(password + "\n"),
+            ["bash", "-c", script],
+            input=password + "\n",
+            cwd=cwd or os.path.expanduser("~"),
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             timeout=timeout, text=True, errors="replace")
-        if p.returncode == 0:
-            return True, ""
-        err = (p.stderr or "").strip().lower()
-        if "incorrect password" in err or "sorry, try again" in err:
-            return False, "incorrect sudo password"
-        if "not in the sudoers" in err or "not allowed" in err:
-            return False, "this account is not permitted to use sudo"
-        return False, (p.stderr or "sudo authentication failed").strip()[:200]
+        if p.returncode == 97:
+            err = (p.stderr or "").strip().lower()
+            if "not in the sudoers" in err or "not allowed" in err:
+                why = "this account is not permitted to use sudo"
+            else:
+                why = "incorrect sudo password"
+            return {"ok": False, "command": command, "rc": 97,
+                    "stdout": "", "stderr": p.stderr or why,
+                    "error": f"sudo: {why}", "needs_sudo": True,
+                    "auth_rejected": True}
+        return _format_run_result(command, p, needs_sudo=True)
     except subprocess.TimeoutExpired:
-        return False, "sudo authentication timed out"
+        return {"ok": False, "command": command,
+                "error": f"timeout after {timeout}s", "needs_sudo": True}
     except FileNotFoundError:
-        return False, "sudo is not installed on this system"
+        return {"ok": False, "command": command,
+                "error": "bash or sudo not found", "needs_sudo": True}
     except Exception as e:
-        return False, f"{type(e).__name__}: {e}"
+        return {"ok": False, "command": command,
+                "error": f"{type(e).__name__}: {e}", "needs_sudo": True}
+
+
+def _run_sudo_askpass(command: str, password: str, timeout: int,
+                      cwd: Optional[str]) -> Optional[Dict[str, Any]]:
+    """Fallback for hardened sudoers (e.g. timestamp_timeout=0) where the
+    inline cached credential won't carry to the command's sudo.  Uses
+    SUDO_ASKPASS, which authenticates each `sudo` independently and never
+    depends on a shared timestamp.  Returns None if the helper can't be
+    set up (so the caller can keep the inline result)."""
+    helper = _ensure_askpass_helper()
+    if not helper:
+        return None
+    cmd2 = _inject_askpass(command)
+    env = dict(os.environ)
+    env["SUDO_ASKPASS"] = helper
+    env["KALI_SUDO_PW"] = password
+    try:
+        p = subprocess.run(
+            cmd2, shell=True,
+            cwd=cwd or os.path.expanduser("~"),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            timeout=timeout, text=True, errors="replace", env=env)
+        return _format_run_result(command, p, needs_sudo=True)
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "command": command,
+                "error": f"timeout after {timeout}s", "needs_sudo": True}
+    except Exception as e:
+        return {"ok": False, "command": command,
+                "error": f"{type(e).__name__}: {e}", "needs_sudo": True}
+    finally:
+        # Drop the secret from our env copy promptly.
+        env["KALI_SUDO_PW"] = ""
 
 
 def tool_run_command(command: str, timeout: int = 30,
@@ -867,25 +949,29 @@ def tool_run_command(command: str, timeout: int = 30,
                      sudo_password: Optional[str] = None) -> Dict[str, Any]:
     """Run a shell command as the operator's user.
 
-    If `sudo_password` is supplied, the credential is validated and
-    cached up-front (see _validate_sudo_password) so any `sudo` inside
-    `command` runs non-interactively.  We never feed the password to the
-    command's own stdin — doing so could leak it into a command like
-    `sudo tee` — and we drop our reference to it the moment validation
-    completes.
+    If `sudo_password` is supplied and the command needs root, we
+    authenticate and run in the SAME shell session (so the credential
+    actually applies), and transparently fall back to SUDO_ASKPASS if a
+    hardened sudoers config defeats the cached credential.  The password
+    is never written to disk, the log, or the command's own stdin.
     """
     needs_sudo = command_needs_sudo(command)
 
     if needs_sudo and sudo_password is not None:
-        ok, why = _validate_sudo_password(sudo_password)
-        # Best-effort scrub of our local copy.  CPython strings are
-        # immutable so this only drops the reference, but it keeps the
-        # password out of any later traceback locals.
-        sudo_password = None
-        if not ok:
-            return {"ok": False, "command": command, "rc": 1,
-                    "stdout": "", "stderr": why,
-                    "error": f"sudo: {why}", "needs_sudo": True}
+        result = _run_sudo_inline(command, sudo_password, timeout, cwd)
+        # If the password was simply wrong, report that — don't retry.
+        if result.get("auth_rejected"):
+            sudo_password = None
+            return result
+        # If the inline path authenticated but the command's own sudo
+        # still couldn't get a credential (hardened sudoers), retry via
+        # askpass before giving up.
+        if result.get("sudo_auth_failed"):
+            alt = _run_sudo_askpass(command, sudo_password, timeout, cwd)
+            if alt is not None:
+                result = alt
+        sudo_password = None  # drop reference
+        return result
 
     try:
         p = subprocess.run(
@@ -894,23 +980,7 @@ def tool_run_command(command: str, timeout: int = 30,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             timeout=timeout, text=True, errors="replace")
-        stderr = (p.stderr or "")
-        result = {
-            "ok": True, "command": command, "rc": p.returncode,
-            "stdout": (p.stdout or "")[:80_000],
-            "stderr": stderr[:20_000],
-            "truncated_stdout": len(p.stdout or "") > 80_000,
-            "needs_sudo": needs_sudo,
-        }
-        # Surface the classic "sudo had no terminal / no cached creds"
-        # failure as a clear, actionable signal rather than a mystery rc.
-        low = stderr.lower()
-        if needs_sudo and p.returncode != 0 and (
-                "a terminal is required" in low
-                or "no password was provided" in low
-                or "a password is required" in low):
-            result["sudo_auth_failed"] = True
-        return result
+        return _format_run_result(command, p, needs_sudo)
     except subprocess.TimeoutExpired:
         return {"ok": False, "command": command,
                 "error": f"timeout after {timeout}s", "needs_sudo": needs_sudo}

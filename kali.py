@@ -35,7 +35,7 @@ from kali_core import (
     run_security_audit, format_audit_for_chat,
     run_network_scan, format_scan_for_chat,
     parse_tool_calls, strip_tool_calls, ToolCall,
-    is_online, is_sensitive_path, Watcher,
+    is_online, is_sensitive_path, command_needs_sudo, Watcher,
     DATA_DIR, GROQ_LIB_OK, OLLAMA_DEFAULT_MODEL, GROQ_DEFAULT_MODEL,
 )
 from kali_persona import (
@@ -44,7 +44,7 @@ from kali_persona import (
 
 APP_ID  = "org.thepriest.kali"
 APP_NAME = "Kali"
-VERSION = "0.3.8"
+VERSION = "0.4.0"
 
 
 # ═════════════════════════════════════════════════════════════════════
@@ -290,6 +290,22 @@ headerbar {
     background: #45475a;
     color: #6c7086;
 }
+/* Send button morphs into a stop button while Kali is working. */
+.send-button.stopping {
+    background: linear-gradient(135deg, #f38ba8, #eba0ac);
+    color: #1e1e2e;
+}
+.send-button.stopping:hover {
+    background: linear-gradient(135deg, #eba0ac, #f38ba8);
+}
+
+/* sudo password field inside the confirm dialog */
+.sudo-pass {
+    font-size: 20px;
+    border-radius: 12px;
+    margin-top: 4px;
+}
+.sudo-pass:focus-within { outline: 2px solid #f38ba8; }
 
 .icon-button {
     background-color: transparent;
@@ -428,6 +444,68 @@ passwordentry {
     min-width: 24px;
     min-height: 24px;
 }
+
+/* ===== Proposed-command card (advisory flow) ===== */
+
+.cmd-card {
+    background-color: #181825;
+    border: 1px solid #313244;
+    border-left: 4px solid #cba6f7;
+    border-radius: 14px;
+    padding: 14px 16px;
+    margin: 8px 0;
+}
+.cmd-card-header {
+    margin-bottom: 8px;
+}
+.cmd-card-title {
+    color: #cba6f7;
+    font-weight: bold;
+    font-size: 15px;
+    letter-spacing: 0.5px;
+}
+.risk-badge {
+    border-radius: 12px;
+    padding: 2px 12px;
+    font-size: 13px;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+}
+.risk-badge.low    { background-color: #a6e3a1; color: #1e1e2e; }
+.risk-badge.medium { background-color: #f9e2af; color: #1e1e2e; }
+.risk-badge.high   { background-color: #f38ba8; color: #1e1e2e; }
+.cmd-text {
+    background-color: #11111b;
+    color: #f9e2af;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 18px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    margin-bottom: 8px;
+}
+.cmd-explain {
+    color: #bac2de;
+    font-size: 16px;
+    margin-bottom: 12px;
+}
+.cmd-run-btn {
+    background: linear-gradient(135deg, #a6e3a1, #94e2d5);
+    color: #1e1e2e;
+    border-radius: 12px;
+    padding: 10px 22px;
+    font-weight: bold;
+    font-size: 16px;
+}
+.cmd-run-btn:hover { background: linear-gradient(135deg, #94e2d5, #a6e3a1); }
+.cmd-run-btn:disabled { background: #45475a; color: #6c7086; }
+.cmd-copy-btn {
+    background-color: #313244;
+    color: #cdd6f4;
+    border-radius: 12px;
+    padding: 10px 18px;
+    font-size: 16px;
+}
+.cmd-copy-btn:hover { background-color: #45475a; }
 """
 
 
@@ -542,6 +620,98 @@ class CodeBlockWidget(Gtk.Box):
             pass
 
 
+class ProposedCommandWidget(Gtk.Box):
+    """A command Kali wants to run, shown as an advisory card.
+
+    Nothing executes until the operator clicks Run.  on_run is called
+    with (command, explanation) when they do.
+    """
+    def __init__(self, command: str, explanation: str = "",
+                 risk: str = "medium",
+                 on_run: Optional[Callable[[str, str, Any], None]] = None):
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        self.add_css_class("cmd-card")
+        self.command = command
+        self.explanation = explanation
+        self._on_run = on_run
+
+        # Header: title + risk badge
+        header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        header.add_css_class("cmd-card-header")
+        title = Gtk.Label(label="⌘  PROPOSED COMMAND", xalign=0.0)
+        title.add_css_class("cmd-card-title")
+        title.set_hexpand(True)
+        header.append(title)
+        risk = (risk or "medium").lower()
+        if risk not in ("low", "medium", "high"):
+            risk = "medium"
+        badge = Gtk.Label(label=f"{risk} risk")
+        badge.add_css_class("risk-badge")
+        badge.add_css_class(risk)
+        badge.set_valign(Gtk.Align.CENTER)
+        header.append(badge)
+        self.append(header)
+
+        # The command itself
+        cmd_lbl = Gtk.Label(label=command, xalign=0.0)
+        cmd_lbl.add_css_class("cmd-text")
+        cmd_lbl.set_wrap(True)
+        cmd_lbl.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
+        cmd_lbl.set_selectable(True)
+        self.append(cmd_lbl)
+
+        # Explanation
+        if explanation:
+            exp = _make_wrap_label()
+            exp.add_css_class("cmd-explain")
+            try:
+                exp.set_markup(text_to_pango(explanation))
+            except Exception:
+                exp.set_text(explanation)
+            self.append(exp)
+
+        # Buttons
+        btn_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        self.run_btn = Gtk.Button(label="Run")
+        self.run_btn.add_css_class("cmd-run-btn")
+        self.run_btn.connect("clicked", self._on_run_clicked)
+        btn_row.append(self.run_btn)
+
+        copy_btn = Gtk.Button(label="Copy")
+        copy_btn.add_css_class("cmd-copy-btn")
+        copy_btn.connect("clicked", self._on_copy_clicked)
+        btn_row.append(copy_btn)
+
+        spacer = Gtk.Box()
+        spacer.set_hexpand(True)
+        btn_row.append(spacer)
+        self.append(btn_row)
+
+    def _on_run_clicked(self, _btn):
+        if self._on_run is None:
+            return
+        # One-shot visual: prevent a double-fire while the turn is in
+        # flight.  Reset by the host if it couldn't start (busy).
+        self.run_btn.set_sensitive(False)
+        self.run_btn.set_label("Running…")
+        self._on_run(self.command, self.explanation, self)
+
+    def reset_run_button(self):
+        self.run_btn.set_sensitive(True)
+        self.run_btn.set_label("Run")
+
+    def _on_copy_clicked(self, _btn):
+        try:
+            value = GObject.Value()
+            value.init(GObject.TYPE_STRING)
+            value.set_string(self.command)
+            provider = Gdk.ContentProvider.new_for_value(value)
+            display = self.get_display() or Gdk.Display.get_default()
+            display.get_clipboard().set_content(provider)
+        except Exception as e:
+            log(f"cmd copy failed: {e}")
+
+
 class Avatar(Gtk.Label):
     """A small circular avatar with initials or symbol."""
     def __init__(self, kind: str = "user"):
@@ -601,11 +771,13 @@ class MessageWidget(Gtk.Box):
     """A single chat message."""
 
     def __init__(self, role: str, content: str = "",
-                 meta: Optional[Dict[str, Any]] = None):
+                 meta: Optional[Dict[str, Any]] = None,
+                 on_run_command: Optional[Callable[[str, str], None]] = None):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         self.role = role
         self.meta = meta or {}
         self._content = content or ""
+        self._on_run_command = on_run_command
         self._blocks_container: Optional[Gtk.Box] = None
         self._streaming_label: Optional[Gtk.Label] = None
         self.add_css_class("msg-row")
@@ -709,10 +881,20 @@ class MessageWidget(Gtk.Box):
             child = nxt
         display_text = (strip_tool_calls(text)
                         if self.role == "assistant" else text)
+        # If the assistant message carries only tool calls, don't show a
+        # placeholder when at least one is a proposal — the card speaks for
+        # itself.  Only fall back to the placeholder for a bare execution
+        # tag with no prose and no card.
         if not display_text and self.role == "assistant":
-            display_text = "_(tool call only)_"
+            has_propose = False
+            try:
+                has_propose = any(c.name == "propose"
+                                  for c in parse_tool_calls(text))
+            except Exception:
+                pass
+            display_text = "" if has_propose else "_(working…)_"
 
-        blocks = split_message_into_blocks(display_text)
+        blocks = split_message_into_blocks(display_text) if display_text else []
         for b in blocks:
             if b["kind"] == "code":
                 self._blocks_container.append(
@@ -727,6 +909,27 @@ class MessageWidget(Gtk.Box):
                 except Exception:
                     lbl.set_text(b["content"])
                 self._blocks_container.append(lbl)
+
+        # Render any proposed-command cards from the raw text.  These are
+        # advisory only — the model emits <tool name="propose"> and the
+        # operator decides whether to run.  Parsed from the raw (un-
+        # stripped) content so the cards survive a chat reload.
+        if self.role == "assistant":
+            try:
+                for call in parse_tool_calls(text):
+                    if call.name != "propose":
+                        continue
+                    cmd = (call.args.get("command")
+                           or call.args.get("cmd") or "").strip()
+                    if not cmd:
+                        continue
+                    self._blocks_container.append(ProposedCommandWidget(
+                        cmd,
+                        explanation=str(call.args.get("explanation", "")),
+                        risk=str(call.args.get("risk", "medium")),
+                        on_run=self._on_run_command))
+            except Exception as e:
+                log(f"propose render failed: {e}")
 
     def start_streaming(self):
         child = self._blocks_container.get_first_child()
@@ -816,11 +1019,20 @@ class ChatRow(Gtk.ListBoxRow):
 # ═════════════════════════════════════════════════════════════════════
 
 def confirm_command_dialog(parent: Gtk.Window, command: str, reason: str,
-                            on_decision: Callable[[bool], None]):
-    dlg = Adw.AlertDialog.new(
-        "Run shell command?",
-        f"{reason}\n\nRuns as your user.  Output goes back to Kali.",
-    )
+                            on_decision: Callable[[bool, Optional[str]], None]):
+    """Confirm a shell command.  If it needs sudo, show an inline
+    password field so the operator can authenticate in one step.
+
+    on_decision(allow: bool, password: Optional[str]) — password is the
+    typed sudo password when the command needs sudo and the operator
+    approved; otherwise None.
+    """
+    needs_sudo = command_needs_sudo(command)
+    subtitle = (f"{reason}\n\nRuns as your user.  Output goes back to Kali."
+                if not needs_sudo else
+                f"{reason}\n\nThis needs root.  Enter your sudo password to "
+                f"let it through — Kali never stores or sees it.")
+    dlg = Adw.AlertDialog.new("Run shell command?", subtitle)
     body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
     cmd_lbl = Gtk.Label(label=command, xalign=0.0)
     cmd_lbl.set_wrap(True)
@@ -828,17 +1040,35 @@ def confirm_command_dialog(parent: Gtk.Window, command: str, reason: str,
     cmd_lbl.set_selectable(True)
     cmd_lbl.add_css_class("confirm-cmd")
     body.append(cmd_lbl)
+
+    pw_entry: Optional[Gtk.PasswordEntry] = None
+    if needs_sudo:
+        pw_entry = Gtk.PasswordEntry()
+        pw_entry.set_show_peek_icon(True)
+        pw_entry.add_css_class("sudo-pass")
+        pw_entry.set_property("placeholder-text", "sudo password")
+        body.append(pw_entry)
+
     dlg.set_extra_child(body)
     dlg.add_response("cancel", "Cancel")
-    dlg.add_response("run", "Run")
+    dlg.add_response("run", "Run" if not needs_sudo else "Authenticate & run")
     dlg.set_response_appearance("run", Adw.ResponseAppearance.SUGGESTED)
     dlg.set_default_response("run")
     dlg.set_close_response("cancel")
 
     def _cb(_dlg, response):
-        on_decision(response == "run")
+        allow = (response == "run")
+        pw = pw_entry.get_text() if (allow and pw_entry is not None) else None
+        on_decision(allow, pw)
     dlg.connect("response", _cb)
+
+    # Pressing Enter in the password field activates the run response.
+    if pw_entry is not None:
+        pw_entry.connect("activate", lambda *_: dlg.response("run"))
+
     dlg.present(parent)
+    if pw_entry is not None:
+        pw_entry.grab_focus()
 
 
 def confirm_sensitive_read_dialog(parent: Gtk.Window, path: str,
@@ -938,20 +1168,20 @@ class SettingsDialog(Adw.PreferencesDialog):
         temp_row.set_title("Temperature")
         temp_row.set_subtitle("Higher = more creative")
         temp_row.set_value(parent.settings["temperature"])
-        temp_row.connect("changed", self._on_temp)
+        temp_row.connect("notify::value", self._on_temp)
         gen_g.add(temp_row)
 
         ctx_row = Adw.SpinRow.new_with_range(512, 32768, 512)
         ctx_row.set_title("Local context window")
         ctx_row.set_subtitle("For the Ollama backend only.")
         ctx_row.set_value(parent.settings["num_ctx"])
-        ctx_row.connect("changed", self._on_ctx)
+        ctx_row.connect("notify::value", self._on_ctx)
         gen_g.add(ctx_row)
 
         max_row = Adw.SpinRow.new_with_range(256, 8192, 128)
         max_row.set_title("Max response tokens")
         max_row.set_value(parent.settings["max_tokens"])
-        max_row.connect("changed", self._on_max)
+        max_row.connect("notify::value", self._on_max)
         gen_g.add(max_row)
 
         gen_page.add(gen_g)
@@ -978,7 +1208,7 @@ class SettingsDialog(Adw.PreferencesDialog):
         scale_row.set_subtitle("1.0 = unmodified.  Higher = bigger.  0 = auto.")
         scale_row.set_value(float(ui_scale_current))
         scale_row.set_digits(2)
-        scale_row.connect("changed", self._on_ui_scale)
+        scale_row.connect("notify::value", self._on_ui_scale)
         dg.add(scale_row)
 
         # Reset button row
@@ -1059,9 +1289,9 @@ class SettingsDialog(Adw.PreferencesDialog):
         interval = Adw.SpinRow.new_with_range(5, 360, 5)
         interval.set_title("Check interval (minutes)")
         interval.set_value(parent.settings["watcher_interval_minutes"])
-        interval.connect("changed",
-                          lambda r: self._set("watcher_interval_minutes",
-                                              int(r.get_value())))
+        interval.connect("notify::value",
+                          lambda r, *_: self._set("watcher_interval_minutes",
+                                                  int(r.get_value())))
         wg.add(interval)
         b_page.add(wg)
         self.add(b_page)
@@ -1139,16 +1369,16 @@ class SettingsDialog(Adw.PreferencesDialog):
                 self.win.settings["ollama_model"] = name
                 save_settings(self.win.settings)
 
-    def _on_temp(self, row):
+    def _on_temp(self, row, *args):
         self._set("temperature", float(row.get_value()))
 
-    def _on_ctx(self, row):
+    def _on_ctx(self, row, *args):
         self._set("num_ctx", int(row.get_value()))
 
-    def _on_max(self, row):
+    def _on_max(self, row, *args):
         self._set("max_tokens", int(row.get_value()))
 
-    def _on_ui_scale(self, row):
+    def _on_ui_scale(self, row, *args):
         # Persist as float.  Then trigger a LIVE CSS reload so the
         # change is visible immediately — no app restart needed.
         # Debounce the reload by 200ms so rapid scrolling doesn't
@@ -1229,6 +1459,9 @@ class MainWindow(Adw.ApplicationWindow):
         # when the background work completes.
         self.streaming_chat_id: Optional[int] = None
         self._tool_chain_depth: int = 0
+        # Set when the operator hits the stop button.  Halts the current
+        # stream AND prevents the tool chain from kicking another turn.
+        self._stop_requested: bool = False
 
         self._build_ui()
         self._wire_actions()
@@ -1520,7 +1753,8 @@ class MainWindow(Adw.ApplicationWindow):
         self.send_btn.set_icon_name("send-to-symbolic")
         self.send_btn.add_css_class("send-button")
         self.send_btn.set_valign(Gtk.Align.END)
-        self.send_btn.connect("clicked", lambda *_: self._send_user_message())
+        self.send_btn.set_tooltip_text("Send")
+        self.send_btn.connect("clicked", lambda *_: self._on_send_or_stop())
         ibox.append(self.send_btn)
 
         area.append(ibox)
@@ -1749,7 +1983,8 @@ class MainWindow(Adw.ApplicationWindow):
         first = self.msg_box.get_first_child()
         if first is not None and not isinstance(first, MessageWidget):
             self.msg_box.remove(first)
-        w = MessageWidget(role, content, meta)
+        w = MessageWidget(role, content, meta,
+                          on_run_command=self._run_proposed_command)
         self.msg_box.append(w)
         # New message → force scroll.  This is when the user sent something
         # or a new assistant turn started; they want to see it.  Mid-stream
@@ -1787,12 +2022,69 @@ class MainWindow(Adw.ApplicationWindow):
             if not shift:
                 self._send_user_message()
                 return True
+        # Escape stops Kali mid-reply.
+        if keyval == Gdk.KEY_Escape and self._is_busy():
+            self._request_stop()
+            return True
         return False
+
+    def _on_send_or_stop(self):
+        """The primary button is Send when idle, Stop when Kali is working."""
+        if self._is_busy():
+            self._request_stop()
+        else:
+            self._send_user_message()
+
+    def _set_send_mode(self, working: bool):
+        """Morph the primary button between Send and Stop."""
+        if working:
+            self.send_btn.set_icon_name("media-playback-stop-symbolic")
+            self.send_btn.set_tooltip_text("Stop")
+            self.send_btn.add_css_class("stopping")
+        else:
+            self.send_btn.set_icon_name("send-to-symbolic")
+            self.send_btn.set_tooltip_text("Send")
+            self.send_btn.remove_css_class("stopping")
+        self.send_btn.set_sensitive(True)
+
+    def _request_stop(self):
+        """Operator pressed Stop.  Cancel the in-flight stream and make
+        sure the tool chain doesn't kick another turn behind our back."""
+        self._stop_requested = True
+        if self.streaming_cancel:
+            self.streaming_cancel.set()
+        self._show_toast("Stopping…")
+        # If a stream is live, the backend will fire on_done({cancelled})
+        # and _on_stream_done tears everything down.  If we're between
+        # tool turns (no live stream), tear down here so we don't hang.
+        if not (self.streaming_thread and self.streaming_thread.is_alive()):
+            self._finish_turn_cleanup(mark_partial=True)
+
+    def _finish_turn_cleanup(self, mark_partial: bool = False):
+        """Single teardown path for the end of an assistant turn —
+        whether it finished, errored, or was stopped."""
+        if mark_partial and self.streaming_msg_widget is not None:
+            partial = (self.streaming_msg_widget._content or "").strip()
+            final_text = partial if partial else "_(stopped)_"
+            try:
+                self.streaming_msg_widget.set_content(final_text)
+            except Exception:
+                pass
+            if self.streaming_msg_db_id:
+                self.store.update_message(self.streaming_msg_db_id, final_text)
+        self.streaming_msg_widget = None
+        self.streaming_msg_db_id = None
+        self.streaming_chat_id = None
+        self._tool_chain_depth = 0
+        self._set_working(False)
+        self._set_send_mode(False)
 
     def _send_user_message(self):
         if self._is_busy():
-            self._show_toast("Already replying — wait.")
+            self._show_toast("Already replying — hit stop first.")
             return
+        # Fresh turn — clear any leftover stop flag.
+        self._stop_requested = False
         buf = self.input_view.get_buffer()
         text = buf.get_text(buf.get_start_iter(), buf.get_end_iter(),
                             False).strip()
@@ -1821,13 +2113,18 @@ class MainWindow(Adw.ApplicationWindow):
             self.working_row.set_visible(False)
 
     def _kick_assistant_turn(self):
+        # If the operator hit stop between tool turns, don't start another.
+        if self._stop_requested:
+            self._finish_turn_cleanup()
+            return
+
         if not self.ollama.is_running() and not self.groq.is_available():
             self._show_toast(
                 "No backend.  Set a Groq key in Settings, or start Ollama.")
-            self.send_btn.set_sensitive(True)
             self.streaming_chat_id = None
             self._tool_chain_depth = 0
             self._set_working(False)
+            self._set_send_mode(False)
             return
 
         # Preserve streaming_chat_id across a tool chain.  Only snapshot
@@ -1843,8 +2140,8 @@ class MainWindow(Adw.ApplicationWindow):
             self._show_toast("Tool chain too long — stopping.")
             self.streaming_chat_id = None
             self._tool_chain_depth = 0
-            self.send_btn.set_sensitive(True)
             self._set_working(False)
+            self._set_send_mode(False)
             return
 
         chat_id = self.streaming_chat_id
@@ -1863,7 +2160,8 @@ class MainWindow(Adw.ApplicationWindow):
         else:
             # User has navigated away.  We still need a widget to buffer
             # tokens for finish_streaming, but don't attach it to msg_box.
-            self.streaming_msg_widget = MessageWidget("assistant", "")
+            self.streaming_msg_widget = MessageWidget(
+                "assistant", "", on_run_command=self._run_proposed_command)
             self.streaming_msg_widget.start_streaming()
 
         self.streaming_msg_db_id = self.store.add_message(
@@ -1884,7 +2182,7 @@ class MainWindow(Adw.ApplicationWindow):
 
         self.streaming_thread = threading.Thread(target=_bg, daemon=True)
         self.streaming_thread.start()
-        self.send_btn.set_sensitive(False)
+        self._set_send_mode(True)
         self._set_working(True, "thinking…")
 
     def _on_stream_token(self, tok):
@@ -1897,32 +2195,29 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _on_stream_done(self, meta):
         if not self.streaming_msg_widget:
-            self.send_btn.set_sensitive(True)
-            self.streaming_chat_id = None
-            self._tool_chain_depth = 0
-            self._set_working(False)
+            self._finish_turn_cleanup()
             return False
         final = self.streaming_msg_widget.finish_streaming()
         if self.streaming_msg_db_id:
             self.store.update_message(self.streaming_msg_db_id, final)
         calls = parse_tool_calls(final)
-        # Honour the agent-mode toggle.  If the user turned it off,
-        # don't execute even if the model emitted a tool tag.
-        if calls and not meta.get("cancelled") and self.current_agent_mode:
+        cancelled = meta.get("cancelled") or self._stop_requested
+        # `propose` is advisory — it renders a command card (already done by
+        # finish_streaming → set_content) and must NOT execute.  Only the
+        # sensing/run tools are executable here.
+        executable = [c for c in calls if c.name != "propose"]
+        # Honour the agent-mode toggle and the stop button.  If the user
+        # turned agent mode off or hit stop, don't execute even if the
+        # model emitted a tool tag.
+        if executable and not cancelled and self.current_agent_mode:
             # Tool will fire — keep banner, change label to "running"
             self._set_working(True, "running tool…")
-            self._execute_tool_calls(calls)
+            self._execute_tool_calls(executable)
         else:
-            self.streaming_msg_widget = None
-            self.streaming_msg_db_id = None
-            self.streaming_chat_id = None
-            self._tool_chain_depth = 0
-            self.send_btn.set_sensitive(True)
-            self._set_working(False)
+            self._finish_turn_cleanup()
         return False
 
     def _on_stream_error(self, err):
-        self.send_btn.set_sensitive(True)
         if self.streaming_msg_widget:
             # Preserve any tokens that already streamed in.  Wiping the
             # widget and replacing with just the error text discards
@@ -1936,17 +2231,25 @@ class MainWindow(Adw.ApplicationWindow):
                 self.store.update_message(self.streaming_msg_db_id,
                                           final_text)
         self._show_toast(f"Error: {err}")
+        # Clear widget refs without re-marking the message (we just wrote
+        # the error into it above), then restore the button/banner.
         self.streaming_msg_widget = None
         self.streaming_msg_db_id = None
         self.streaming_chat_id = None
         self._tool_chain_depth = 0
         self._set_working(False)
+        self._set_send_mode(False)
         return False
 
     # ── tool execution ──────────────────────────────────────────
 
     def _execute_tool_calls(self, calls):
         call = calls[0]
+        # `propose` is advisory and never executes — if one slips through,
+        # just end the turn so the card stands on its own.
+        if call.name == "propose":
+            self._finish_turn_cleanup()
+            return
         # Always write to the chat this turn was started in, not whichever
         # one the user might have navigated to.
         chat_id = self.streaming_chat_id or self.current_chat_id
@@ -1997,6 +2300,11 @@ class MainWindow(Adw.ApplicationWindow):
                                 meta={"kind": "tool_result"})
         self.streaming_msg_widget = None
         self.streaming_msg_db_id = None
+        # If the operator stopped while the tool was running, record the
+        # result for context but don't start another model turn.
+        if self._stop_requested:
+            self._finish_turn_cleanup()
+            return
         # streaming_chat_id stays set — _kick_assistant_turn will preserve it
         self._kick_assistant_turn()
 
@@ -2062,27 +2370,96 @@ class MainWindow(Adw.ApplicationWindow):
         threading.Thread(target=_bg, daemon=True).start()
 
     def _tool_run(self, command, reason):
+        # Reached only when the model emits <tool name="run"> after the
+        # operator approved.  Goes through the same gate as the card.
+        self._execute_command(command, reason)
+
+    def _run_proposed_command(self, command, explanation="", card=None):
+        """Called when the operator clicks Run on a proposed-command card.
+        The click IS the approval — we set up a turn context and execute,
+        then Kali interprets the output."""
+        if not command:
+            if card is not None:
+                card.reset_run_button()
+            return
+        if self._is_busy():
+            self._show_toast("Busy — let the current task finish or stop it.")
+            if card is not None:
+                card.reset_run_button()
+            return
+        self._stop_requested = False
+        if self.current_chat_id is None:
+            self._new_chat()
+        # This is the start of a turn — capture the chat and show the
+        # stop affordance so a long command can be interrupted.
+        self.streaming_chat_id = self.current_chat_id
+        self._tool_chain_depth = 0
+        self._set_working(True, "running…")
+        self._set_send_mode(True)
+        # The click on the card IS the approval, so don't re-confirm a safe
+        # command — only stop for a sudo password when root is required.
+        self._execute_command(command, explanation or "operator approved",
+                              from_card=True)
+
+    def _execute_command(self, command, reason, from_card=False):
+        """Confirm (with sudo password if needed), run, feed result back.
+        Shared by the model's `run` tool and the card's Run button.
+
+        from_card=True means the operator already approved by clicking Run,
+        so we skip the redundant y/n and only surface a dialog when the
+        command needs root (to collect the password)."""
         if not command:
             self._feed_tool_result("error: no command")
             return
-        def decide(allow):
-            if not allow:
-                self._feed_tool_result(f"operator declined: {command}")
-                return
+
+        # Long-running ops (package work, scans, builds) need more than the
+        # old hard 60s or they time out mid-apt and look broken.
+        low = command.lower()
+        if any(k in low for k in ("apt", "dpkg", "upgrade", "dist-upgrade",
+                                  "install", "nmap", "make", "pip ",
+                                  "git clone", "rsync", "dd ")):
+            timeout = 1800   # 30 min
+        else:
+            timeout = 120
+
+        def run_bg(password=None):
             def _bg():
-                r = tool_run_command(command, timeout=60)
+                r = tool_run_command(command, timeout=timeout,
+                                     sudo_password=password)
                 if r.get("ok"):
                     parts = [f"$ {command}", f"(rc={r['rc']})"]
                     if r["stdout"]:
                         parts.append(r["stdout"])
                     if r["stderr"]:
                         parts.append(f"stderr:\n{r['stderr']}")
+                    if r.get("sudo_auth_failed"):
+                        parts.append(
+                            "\n[note] sudo could not authenticate "
+                            "non-interactively. The password may have been "
+                            "wrong, or sudo timed out its cached credential.")
                     out = "\n".join(parts)
                 else:
                     out = f"$ {command}\nerror: {r.get('error')}"
                 GLib.idle_add(self._feed_tool_result, out)
             threading.Thread(target=_bg, daemon=True).start()
-        confirm_command_dialog(self, command, reason or "no reason", decide)
+
+        def decide(allow, password=None):
+            if not allow:
+                self._feed_tool_result(f"operator declined: {command}")
+                return
+            run_bg(password)
+
+        # The card click already counts as approval, so for an ordinary
+        # command we just run.  We still surface the confirm dialog when
+        # the command needs root (to collect the password), or — for a
+        # model-initiated run — when the operator asked to confirm every
+        # command.
+        needs_confirm = command_needs_sudo(command) or (
+            self.settings.get("confirm_all_commands", True) and not from_card)
+        if needs_confirm:
+            confirm_command_dialog(self, command, reason or "no reason", decide)
+        else:
+            run_bg(None)
 
     def _tool_audit(self):
         self._show_toast("Auditing…")
@@ -2120,11 +2497,11 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _begin_chip_action(self) -> bool:
         """Snapshot the current chat for an upcoming chip-triggered tool
-        and disable send.  Returns False if we're already busy."""
+        and switch the primary button to Stop.  Returns False if busy."""
         if self._is_busy():
-            self._show_toast("Already busy — wait.")
+            self._show_toast("Already busy — stop the current task first.")
             return False
-        self.send_btn.set_sensitive(False)
+        self._stop_requested = False
         # Capture the chat NOW so that when the async tool finishes and
         # _feed_tool_result fires (could be many seconds later), the
         # result lands in the chat the user clicked from, not whichever
@@ -2134,6 +2511,7 @@ class MainWindow(Adw.ApplicationWindow):
         self.streaming_chat_id = self.current_chat_id
         self._tool_chain_depth = 0
         self._set_working(True, "working…")
+        self._set_send_mode(True)
         return True
 
     def _maybe_set_title_from_first(self, chat_id: int, first_text: str):
@@ -2302,11 +2680,13 @@ class MainWindow(Adw.ApplicationWindow):
             if self.streaming_chat_id == deleted_id:
                 if self.streaming_cancel:
                     self.streaming_cancel.set()
+                self._stop_requested = True
                 self.streaming_msg_widget = None
                 self.streaming_msg_db_id = None
                 self.streaming_chat_id = None
                 self._tool_chain_depth = 0
-                self.send_btn.set_sensitive(True)
+                self._set_working(False)
+                self._set_send_mode(False)
 
             self.store.delete_chat(deleted_id)
             self.current_chat_id = None

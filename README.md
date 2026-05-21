@@ -13,9 +13,11 @@ Reads files. Watches services. Audits security. Runs commands with your permissi
 
 ## What it is
 
-Kali is a personal AI assistant in the shape of a GTK4 chat app, named for the Hindu goddess and the Linux distribution both. She talks to you, but she also has hands on your machine: she can read your files, snapshot system state, scan your network, audit your security posture, check for updates, watch your Downloads folder, tail your journal, and run shell commands (with a y/n prompt every time).
+Kali is a personal AI assistant in the shape of a GTK4 chat app, named for the Hindu goddess and the Linux distribution both. She talks to you, but she also has hands on your machine: she can read your files, snapshot system state, scan your network, audit your security posture, check for updates, watch your Downloads folder, and tail your journal — all read-only, all without nagging you.
 
-She's built for one operator — you — and she behaves like it. No corporate guardrails, no boilerplate hedging, no "as an AI language model." She's witty, direct, loyal, and stays on your side.
+When something needs to *change* — installing a package, editing a config, anything as root — she does **not** run it on her own. She explains what she'd do and why, then proposes the exact command as a card with a **Run** button and a risk level. Nothing executes until you click Run or tell her to. Commands that need root show an inline password field; your sudo password is validated and used to cache the credential, and is never stored, logged, or shown to her.
+
+She's built for one operator — you — and she behaves like it. No corporate guardrails, no boilerplate hedging, no "as an AI language model." She's witty, direct, loyal, reasons things through with you, and stays on your side.
 
 ## Architecture
 
@@ -138,9 +140,12 @@ Everything below runs as your user (no sudo). Read-only tools fire without confi
 | `check_updates`      | `apt list --upgradable`, with security flagging.                |
 | `service_status`     | Inspect any systemd service.                                    |
 | `journal_tail`       | Recent system log lines (any unit).                             |
-| `run`                | **Y/N-confirmed** shell command. She tells you why.             |
+| `propose`            | Suggest a command as a card (explanation + risk + **Run** button). Runs nothing. |
+| `run`                | Execute an **approved** command. Sudo commands show a password field. |
 | `audit`              | 10-check parallel security audit. Grade A+ → F.                 |
 | `scan_net`           | `nmap -sn` on your local subnet (ARP fallback if no nmap).      |
+
+Read-only tools fire on their own so Kali can see the system and reason. Anything that changes state goes through `propose` → your approval → `run`. Clicking **Run** is your approval; you only get a second prompt when a command needs your sudo password. You can stop Kali mid-reply any time with the stop button (the send button turns into it) or the **Esc** key.
 
 ### Security audit checks
 
@@ -161,7 +166,7 @@ Off by default. Enable in Settings → Behaviour → Watcher. Surfaces events as
 - **Modify her own code.** Hardcoded off. She can read her own source if you ask, but she can't write to it. This is deliberate.
 - **Persist state outside the chat DB and settings file.** No hidden side-channels.
 - **Reach the internet directly.** The Groq backend is for text generation only. She doesn't browse, scrape, or open URLs unless you do it through her by running `curl` via the `run` tool with your confirmation.
-- **Run as root.** Everything runs as your user. If you want her to do something privileged, prefix the command with `sudo` and she'll show you the exact line before it runs.
+- **Run as root without you.** She can't. Privileged commands are proposed, never auto-run, and when you approve one she asks for your sudo password in the confirmation dialog. The password is validated against `sudo` and used to cache the credential for that command; it is never written to disk, the log, the environment, or the command's own input.
 
 ## File layout
 

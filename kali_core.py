@@ -809,8 +809,84 @@ def tool_list_dir(path: str = ".") -> Dict[str, Any]:
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 
 
+# Matches a `sudo` invocation at the start of the command or after a
+# shell separator (; | & && || ( newline), so we don't false-positive on
+# e.g. `echo "pseudo"` or a path like /opt/sudoku.  `sudo` followed by a
+# word boundary only.
+_SUDO_RE = re.compile(r'(?:^|[\n;&|(]\s*|\b&&\s*|\b\|\|\s*)sudo\b')
+
+
+def command_needs_sudo(command: str) -> bool:
+    """True if the command contains a real `sudo` invocation."""
+    if not command:
+        return False
+    return bool(_SUDO_RE.search(command))
+
+
+def _validate_sudo_password(password: str, timeout: int = 10) -> Tuple[bool, str]:
+    """Authenticate the operator's sudo credential WITHOUT running anything.
+
+    `sudo -S -v` reads the password from stdin (-S) and refreshes the
+    cached sudo timestamp (-v).  On success the timestamp is valid for
+    the sudoers `timestamp_timeout` window (default 15 min), so the
+    actual command — run moments later in the same no-tty process
+    context — finds a live ticket and never re-prompts.
+
+    The password is passed ONLY to sudo's stdin here.  It never touches
+    disk, the environment, the log, or the target command's stdin.
+    """
+    try:
+        # -k first: invalidate any stale ticket so we genuinely test THIS
+        # password rather than silently passing on a previously-cached one.
+        subprocess.run(["sudo", "-k"], stdin=subprocess.DEVNULL,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                       timeout=5)
+        p = subprocess.run(
+            ["sudo", "-S", "-p", "", "-v"],
+            input=(password + "\n"),
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            timeout=timeout, text=True, errors="replace")
+        if p.returncode == 0:
+            return True, ""
+        err = (p.stderr or "").strip().lower()
+        if "incorrect password" in err or "sorry, try again" in err:
+            return False, "incorrect sudo password"
+        if "not in the sudoers" in err or "not allowed" in err:
+            return False, "this account is not permitted to use sudo"
+        return False, (p.stderr or "sudo authentication failed").strip()[:200]
+    except subprocess.TimeoutExpired:
+        return False, "sudo authentication timed out"
+    except FileNotFoundError:
+        return False, "sudo is not installed on this system"
+    except Exception as e:
+        return False, f"{type(e).__name__}: {e}"
+
+
 def tool_run_command(command: str, timeout: int = 30,
-                     cwd: Optional[str] = None) -> Dict[str, Any]:
+                     cwd: Optional[str] = None,
+                     sudo_password: Optional[str] = None) -> Dict[str, Any]:
+    """Run a shell command as the operator's user.
+
+    If `sudo_password` is supplied, the credential is validated and
+    cached up-front (see _validate_sudo_password) so any `sudo` inside
+    `command` runs non-interactively.  We never feed the password to the
+    command's own stdin — doing so could leak it into a command like
+    `sudo tee` — and we drop our reference to it the moment validation
+    completes.
+    """
+    needs_sudo = command_needs_sudo(command)
+
+    if needs_sudo and sudo_password is not None:
+        ok, why = _validate_sudo_password(sudo_password)
+        # Best-effort scrub of our local copy.  CPython strings are
+        # immutable so this only drops the reference, but it keeps the
+        # password out of any later traceback locals.
+        sudo_password = None
+        if not ok:
+            return {"ok": False, "command": command, "rc": 1,
+                    "stdout": "", "stderr": why,
+                    "error": f"sudo: {why}", "needs_sudo": True}
+
     try:
         p = subprocess.run(
             command, shell=True,
@@ -818,18 +894,29 @@ def tool_run_command(command: str, timeout: int = 30,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             timeout=timeout, text=True, errors="replace")
-        return {
+        stderr = (p.stderr or "")
+        result = {
             "ok": True, "command": command, "rc": p.returncode,
             "stdout": (p.stdout or "")[:80_000],
-            "stderr": (p.stderr or "")[:20_000],
+            "stderr": stderr[:20_000],
             "truncated_stdout": len(p.stdout or "") > 80_000,
+            "needs_sudo": needs_sudo,
         }
+        # Surface the classic "sudo had no terminal / no cached creds"
+        # failure as a clear, actionable signal rather than a mystery rc.
+        low = stderr.lower()
+        if needs_sudo and p.returncode != 0 and (
+                "a terminal is required" in low
+                or "no password was provided" in low
+                or "a password is required" in low):
+            result["sudo_auth_failed"] = True
+        return result
     except subprocess.TimeoutExpired:
         return {"ok": False, "command": command,
-                "error": f"timeout after {timeout}s"}
+                "error": f"timeout after {timeout}s", "needs_sudo": needs_sudo}
     except Exception as e:
         return {"ok": False, "command": command,
-                "error": f"{type(e).__name__}: {e}"}
+                "error": f"{type(e).__name__}: {e}", "needs_sudo": needs_sudo}
 
 
 def tool_system_info() -> Dict[str, Any]:

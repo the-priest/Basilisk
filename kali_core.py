@@ -333,7 +333,21 @@ class OllamaBackend:
                     options=None, cancel_event=None) -> None:
         payload = {"model": model, "messages": messages, "stream": True}
         if options:
-            payload["options"] = options
+            # Translate our generic option names to Ollama's.  Critically,
+            # Ollama caps generation length with `num_predict`, NOT
+            # `max_tokens` — passing max_tokens did nothing, so the local
+            # model ignored the user's token limit entirely.
+            ol_opts: Dict[str, Any] = {}
+            for src, dst in (("temperature", "temperature"),
+                             ("top_p", "top_p"),
+                             ("top_k", "top_k"),
+                             ("num_ctx", "num_ctx"),
+                             ("max_tokens", "num_predict"),
+                             ("num_predict", "num_predict")):
+                if options.get(src) is not None:
+                    ol_opts[dst] = options[src]
+            if ol_opts:
+                payload["options"] = ol_opts
         try:
             data = json.dumps(payload).encode("utf-8")
             req = urllib.request.Request(
@@ -811,9 +825,12 @@ def tool_list_dir(path: str = ".") -> Dict[str, Any]:
 
 # Matches a `sudo` invocation at the start of the command or after a
 # shell separator (; | & && || ( newline), so we don't false-positive on
-# e.g. `echo "pseudo"` or a path like /opt/sudoku.  `sudo` followed by a
-# word boundary only.
-_SUDO_RE = re.compile(r'(?:^|[\n;&|(]\s*|\b&&\s*|\b\|\|\s*)sudo\b')
+# e.g. `echo "pseudo"` or a path like /opt/sudoku.  Also tolerates one or
+# more leading environment assignments (`FOO=bar sudo ...`), which are
+# still command-position invocations.  `sudo` followed by a word boundary
+# only.
+_SUDO_RE = re.compile(
+    r'(?:^|[\n;&|(]\s*|\b&&\s*|\b\|\|\s*)(?:\w+=\S*\s+)*sudo\b')
 
 
 def command_needs_sudo(command: str) -> bool:

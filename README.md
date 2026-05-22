@@ -175,7 +175,7 @@ Off by default. Enable in Settings → Behaviour → Watcher. Surfaces events as
   ├── kali.py                  # UI
   ├── kali_core.py             # backends, tools, audit
   ├── kali_persona.py          # personality + system prompt
-  ├── kali-dragon.svg          # icon
+  ├── org.thepriest.kali.svg   # icon
   ├── chats.db                 # SQLite chat history
   ├── kali.log                 # diagnostics
   └── backups/
@@ -185,7 +185,8 @@ Off by default. Enable in Settings → Behaviour → Watcher. Surfaces events as
   └── settings.json            # all settings, including Groq key
 
 ~/.local/bin/kali              # launcher
-~/.local/share/applications/kali.desktop
+~/.local/share/applications/org.thepriest.kali.desktop
+~/.local/share/icons/hicolor/scalable/apps/org.thepriest.kali.svg
 ~/.config/systemd/user/kali-ollama.service
 ```
 
@@ -217,7 +218,7 @@ MIT.  See LICENSE.
 
 ## Credits
 
-Built by The Priest. The dragon icon is original geometric art inspired by — but not a copy of — the official Kali Linux logo (which is a trademark of OffSec). To use the official logo instead, drop the SVG at `~/.local/share/kali/kali-dragon.svg`; the .desktop file will pick it up.
+Built by The Priest. The dragon icon is original geometric art inspired by — but not a copy of — the official Kali Linux logo (which is a trademark of OffSec). To use a different icon, overwrite the SVG at `~/.local/share/icons/hicolor/scalable/apps/org.thepriest.kali.svg` (run `gtk-update-icon-cache` afterwards). The icon, the `.desktop` file, and the app's Wayland app-id / X11 WM_CLASS all share the name `org.thepriest.kali` on purpose — that's what lets the window, taskbar, and launcher icons resolve reliably, including on KDE Plasma, which matches a running window to its desktop entry by app-id.
 
 ---
 

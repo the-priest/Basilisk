@@ -44,7 +44,7 @@ from kali_persona import (
 
 APP_ID  = "org.thepriest.kali"
 APP_NAME = "Kali"
-VERSION = "0.4.1"
+VERSION = "0.4.2"
 
 
 # ═════════════════════════════════════════════════════════════════════
@@ -1436,7 +1436,8 @@ class MainWindow(Adw.ApplicationWindow):
     def __init__(self, app: "KaliApp"):
         super().__init__(application=app)
         self.set_title(APP_NAME)
-        self.set_default_size(440, 800)
+        w, h = _default_window_size()
+        self.set_default_size(w, h)
         self.app = app
         self.settings = load_settings()
         self.ollama = OllamaBackend()
@@ -2826,6 +2827,45 @@ class KaliApp(Adw.Application):
         if self.win:
             self.win.shutdown()
         Adw.Application.do_shutdown(self)
+
+
+def _default_window_size() -> tuple[int, int]:
+    """Pick a sensible default window size for the screen we're on.
+
+    The old code hardcoded 440x800 — a portrait phone shape.  On a
+    desktop or laptop that opens as a cramped vertical sliver with the
+    sidebar eating most of the width.  Instead: go portrait only on an
+    actually-narrow screen (phone / Phosh), and open a comfortable
+    landscape window on anything bigger, capped so we never exceed the
+    monitor's work area.
+    """
+    # Conservative fallbacks if we can't read the monitor.
+    phone = (440, 860)
+    desktop = (1100, 760)
+    try:
+        display = Gdk.Display.get_default()
+        if not display:
+            return desktop
+        monitors = display.get_monitors()
+        if monitors is None or monitors.get_n_items() == 0:
+            return desktop
+        geo = monitors.get_item(0).get_geometry()
+        sw, sh = int(geo.width), int(geo.height)
+        if sw <= 0 or sh <= 0:
+            return desktop
+
+        # Narrow screen → portrait, sized to fit (phones, split panes).
+        if sw < 720:
+            return (min(sw, phone[0]), min(sh, phone[1]))
+
+        # Desktop / laptop → landscape, but never larger than ~90% of
+        # the work area so the window isn't clipped or off-screen.
+        w = min(desktop[0], int(sw * 0.72))
+        h = min(desktop[1], int(sh * 0.85))
+        return (max(760, w), max(560, h))
+    except Exception as e:
+        log(f"default window size detection failed: {e}")
+        return desktop
 
 
 def _detect_ui_scale() -> float:

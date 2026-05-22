@@ -105,10 +105,17 @@ OLD_DATA_DIR="${HOME}/.local/share/oracle"
 OLD_CONFIG_DIR="${HOME}/.config/oracle"
 
 REQUIRED_FILES=(kali.py kali_core.py kali_persona.py)
-OPTIONAL_FILES=(kali-dragon.svg)
+OPTIONAL_FILES=(org.thepriest.kali.svg kali-dragon.svg)
 GITHUB_REPO="${KALI_REPO:-the-priest/oracle5}"
 GITHUB_BRANCH="${KALI_BRANCH:-main}"
 MODEL="${KALI_MODEL:-llama3.2:1b}"
+
+# The desktop entry, the icon theme name, and the Wayland app-id / X11
+# WM_CLASS must all share ONE name for the window/taskbar icon to resolve
+# reliably — especially on KDE Plasma, which matches a running window to
+# its .desktop file by app-id.  GTK4 has no per-window icon API; it loads
+# the window icon from the icon theme using this exact name.
+APP_ID="org.thepriest.kali"
 
 # ── uninstall path ────────────────────────────────────────────────
 
@@ -119,11 +126,14 @@ uninstall() {
   rm -f  "${SYSTEMD_DIR}/kali-ollama.service"
   systemctl --user daemon-reload 2>/dev/null || true
   rm -f  "${BIN_DIR}/kali"
-  rm -f  "${DESKTOP_DIR}/kali.desktop"
-  rm -f  "${ICON_DIR}/kali-dragon.svg"
+  rm -f  "${DESKTOP_DIR}/${APP_ID}.desktop"
+  rm -f  "${DESKTOP_DIR}/kali.desktop"          # legacy name
+  rm -f  "${ICON_DIR}/${APP_ID}.svg"
+  rm -f  "${ICON_DIR}/kali-dragon.svg"          # legacy name
   update-desktop-database "${DESKTOP_DIR}" 2>/dev/null || true
   rm -f "${INSTALL_DIR}"/kali*.py 2>/dev/null || true
   rm -f "${INSTALL_DIR}"/kali-dragon.svg 2>/dev/null || true
+  rm -f "${INSTALL_DIR}/${APP_ID}.svg" 2>/dev/null || true
   warn "chat history and settings were NOT removed."
   echo "      To wipe: rm -rf ${DATA_DIR} ${CONFIG_DIR}"
   ok "Kali uninstalled."
@@ -463,76 +473,91 @@ ok "incoming files parse cleanly"
 for f in "${REQUIRED_FILES[@]}"; do
   cp "${SRC_DIR}/${f}" "${INSTALL_DIR}/${f}"
 done
-# (kali-dragon.svg is installed below from an inline heredoc — guaranteed)
+# (the icon is installed below from an inline heredoc — guaranteed)
 ok "code installed at ${INSTALL_DIR}"
 
 # ── 7b. Install the icon (INLINE — guaranteed to exist) ───────────
 
 step "icon"
 
-# Wipe any cached/old icon files first.  Phosh/GTK aggressively cache
-# icons; if we don't remove these, the user sees the old icon forever.
+# Wipe any cached/old icon files first — under BOTH the new app-id name
+# and the legacy "kali-dragon" name.  GTK/Phosh/KDE aggressively cache
+# icons; stale files here mean the user keeps seeing the old/missing one.
 rm -f "${INSTALL_DIR}/kali-dragon.svg" 2>/dev/null || true
+rm -f "${INSTALL_DIR}/${APP_ID}.svg"   2>/dev/null || true
 for sz in scalable 16x16 22x22 24x24 32x32 48x48 64x64 96x96 128x128 256x256 512x512; do
-  rm -f "${HOME}/.local/share/icons/hicolor/${sz}/apps/kali-dragon.svg" 2>/dev/null || true
-  rm -f "${HOME}/.local/share/icons/hicolor/${sz}/apps/kali-dragon.png" 2>/dev/null || true
+  for nm in kali-dragon "${APP_ID}"; do
+    rm -f "${HOME}/.local/share/icons/hicolor/${sz}/apps/${nm}.svg" 2>/dev/null || true
+    rm -f "${HOME}/.local/share/icons/hicolor/${sz}/apps/${nm}.png" 2>/dev/null || true
+  done
 done
 
 # Write the dragon SVG from an inlined heredoc.  This means the icon
 # is ALWAYS installed — no dependency on a successful GitHub fetch.
+# It is named after the app-id so GTK4 resolves it as the WINDOW icon
+# and KDE associates it with the taskbar entry.
 write_dragon_svg() {
   local target="$1"
   mkdir -p "$(dirname "${target}")"
   cat > "${target}" <<'KALI_DRAGON_SVG_EOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
-  <rect width="256" height="256" fill="#000000"/>
-  <g fill="#ffffff" fill-rule="evenodd">
-    <polygon points="128,10 118,40 138,40"/>
-    <path d="M 118,40 L 88,32 L 78,42 L 62,34 L 54,46 L 38,38 L 30,52
-             L 18,46 L 14,64 L 26,68 L 18,78 L 32,82 L 26,92 L 42,94
-             L 38,104 L 54,102 L 52,114 L 70,108 L 80,98 L 92,84
-             L 102,70 L 114,58 Z"/>
-    <path d="M 138,40 L 168,32 L 178,42 L 194,34 L 202,46 L 218,38 L 226,52
-             L 238,46 L 242,64 L 230,68 L 238,78 L 224,82 L 230,92 L 214,94
-             L 218,104 L 202,102 L 204,114 L 186,108 L 176,98 L 164,84
-             L 154,70 L 142,58 Z"/>
-    <path d="M 84,96 L 70,112 L 78,118 L 88,108 L 92,116 L 100,104 L 96,92 Z"/>
-    <path d="M 172,96 L 186,112 L 178,118 L 168,108 L 164,116 L 156,104 L 160,92 Z"/>
-    <path d="M 58,118 L 42,138 L 50,148 L 36,154 L 50,164 L 42,176 L 58,170
-             L 56,184 L 70,170 L 66,154 L 74,140 L 70,128 Z"/>
-    <path d="M 198,118 L 214,138 L 206,148 L 220,154 L 206,164 L 214,176
-             L 198,170 L 200,184 L 186,170 L 190,154 L 182,140 L 186,128 Z"/>
-    <path d="M 100,70 L 156,70 L 168,98 L 168,114 L 158,132 L 128,148
-             L 98,132 L 88,114 L 88,98 Z"/>
-    <polygon fill="#000000" points="128,82 120,98 128,114 136,98"/>
-    <path fill="#000000" d="M 100,110 L 118,118 L 118,124 L 112,124 L 100,118 Z"/>
-    <path fill="#000000" d="M 156,110 L 138,118 L 138,124 L 144,124 L 156,118 Z"/>
-    <path d="M 80,118 L 68,134 L 76,146 L 90,140 L 96,128 L 90,120 Z"/>
-    <path d="M 176,118 L 188,134 L 180,146 L 166,140 L 160,128 L 166,120 Z"/>
-    <path d="M 96,140 L 160,140 L 156,168 L 144,180 L 128,186 L 112,180 L 100,168 Z"/>
-    <path fill="#000000" d="M 114,160 L 142,160 L 138,172 L 128,178 L 118,172 Z"/>
-    <polygon points="76,146 64,186 80,176 86,154"/>
-    <polygon points="92,166 86,196 100,184 102,168"/>
-    <polygon points="180,146 192,186 176,176 170,154"/>
-    <polygon points="164,166 170,196 156,184 154,168"/>
-    <path d="M 110,180 L 100,210 L 114,200 L 118,212 L 122,196 L 128,214
-             L 134,196 L 138,212 L 142,200 L 156,210 L 146,180 L 138,184
-             L 128,186 L 118,184 Z"/>
-    <polygon points="124,196 128,232 132,196"/>
+  <rect x="8" y="8" width="240" height="240" rx="52" ry="52" fill="#1e1e2e"/>
+  <rect x="8" y="8" width="240" height="240" rx="52" ry="52"
+        fill="none" stroke="#313244" stroke-width="2"/>
+  <g fill="#f2f2f7" fill-rule="evenodd">
+    <polygon points="128,28 119,54 137,54"/>
+    <path d="M 119,54 L 92,47 L 83,56 L 69,49 L 62,59 L 48,52 L 41,64
+             L 30,59 L 27,75 L 37,79 L 30,87 L 42,91 L 37,99 L 51,101
+             L 48,110 L 62,108 L 60,119 L 76,113 L 85,104 L 96,92
+             L 105,79 L 116,69 Z"/>
+    <path d="M 137,54 L 164,47 L 173,56 L 187,49 L 194,59 L 208,52 L 215,64
+             L 226,59 L 229,75 L 219,79 L 226,87 L 214,91 L 219,99 L 205,101
+             L 208,110 L 194,108 L 196,119 L 180,113 L 171,104 L 160,92
+             L 151,79 L 140,69 Z"/>
+    <path d="M 88,106 L 76,120 L 83,125 L 92,116 L 96,123 L 103,113 L 99,102 Z"/>
+    <path d="M 168,106 L 180,120 L 173,125 L 164,116 L 160,123 L 153,113 L 157,102 Z"/>
+    <path d="M 64,126 L 50,144 L 57,153 L 45,158 L 57,167 L 50,177 L 64,172
+             L 62,184 L 75,172 L 71,158 L 78,146 L 75,135 Z"/>
+    <path d="M 192,126 L 206,144 L 199,153 L 211,158 L 199,167 L 206,177
+             L 192,172 L 194,184 L 181,172 L 185,158 L 178,146 L 181,135 Z"/>
+    <path d="M 104,79 L 152,79 L 162,103 L 162,117 L 153,133 L 128,147
+             L 103,133 L 94,117 L 94,103 Z"/>
+  </g>
+  <g fill="#1e1e2e">
+    <polygon points="128,90 121,104 128,118 135,104"/>
+    <path d="M 104,114 L 120,121 L 120,126 L 115,126 L 104,121 Z"/>
+    <path d="M 152,114 L 136,121 L 136,126 L 141,126 L 152,121 Z"/>
+  </g>
+  <g fill="#f2f2f7" fill-rule="evenodd">
+    <path d="M 84,126 L 74,140 L 81,150 L 93,145 L 98,135 L 93,128 Z"/>
+    <path d="M 172,126 L 182,140 L 175,150 L 163,145 L 158,135 L 163,128 Z"/>
+    <path d="M 100,145 L 156,145 L 152,170 L 142,180 L 128,185 L 114,180
+             L 104,170 Z"/>
+  </g>
+  <path fill="#1e1e2e" d="M 116,162 L 140,162 L 137,173 L 128,178 L 119,173 Z"/>
+  <g fill="#f2f2f7" fill-rule="evenodd">
+    <polygon points="81,150 70,184 84,176 89,156"/>
+    <polygon points="95,168 90,194 102,184 104,170"/>
+    <polygon points="175,150 186,184 172,176 167,156"/>
+    <polygon points="161,168 166,194 154,184 152,170"/>
+    <path d="M 113,180 L 104,206 L 116,197 L 120,208 L 124,194 L 128,210
+             L 132,194 L 136,208 L 140,197 L 152,206 L 143,180 L 136,184
+             L 128,185 L 120,184 Z"/>
+    <polygon points="124,194 128,224 132,194"/>
   </g>
 </svg>
 KALI_DRAGON_SVG_EOF
 }
 
-write_dragon_svg "${INSTALL_DIR}/kali-dragon.svg"
-write_dragon_svg "${ICON_DIR}/kali-dragon.svg"
+write_dragon_svg "${INSTALL_DIR}/${APP_ID}.svg"
+write_dragon_svg "${ICON_DIR}/${APP_ID}.svg"
 
 # Sanity check: SVG file exists and isn't empty
-if [ ! -s "${ICON_DIR}/kali-dragon.svg" ]; then
-  err "icon write failed — kali-dragon.svg is missing or empty in ${ICON_DIR}"
+if [ ! -s "${ICON_DIR}/${APP_ID}.svg" ]; then
+  err "icon write failed — ${APP_ID}.svg is missing or empty in ${ICON_DIR}"
 else
-  ok "icon installed at ${ICON_DIR}/kali-dragon.svg"
+  ok "icon installed at ${ICON_DIR}/${APP_ID}.svg"
 fi
 
 # ── 8. Launcher + desktop ─────────────────────────────────────────
@@ -544,21 +569,24 @@ exec python3 kali.py "\$@"
 EOF
 chmod +x "${BIN_DIR}/kali"
 
-# Icon name reference (theme lookup), NOT absolute path.  GTK/Phosh's
-# icon cache works on theme names; using an absolute path bypasses the
-# cache and is much less reliable.
-cat > "${DESKTOP_DIR}/kali.desktop" <<EOF
+# Icon name reference (theme lookup), NOT absolute path.  GTK/Phosh/KDE
+# icon caches work on theme names; an absolute path bypasses the cache
+# and is much less reliable.  The .desktop is named after the app-id so
+# KDE Plasma's task manager matches the running window to this entry.
+rm -f "${DESKTOP_DIR}/kali.desktop"   # remove legacy entry to avoid a dupe
+cat > "${DESKTOP_DIR}/${APP_ID}.desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Name=Kali
 GenericName=AI Assistant
 Comment=Local, loyal AI assistant with full OS access
 Exec=${BIN_DIR}/kali
-Icon=kali-dragon
+Icon=${APP_ID}
 Terminal=false
 Categories=Utility;Network;Development;
 Keywords=ai;assistant;groq;ollama;chat;jarvis;
-StartupWMClass=org.thepriest.kali
+StartupWMClass=${APP_ID}
+StartupNotify=true
 EOF
 update-desktop-database "${DESKTOP_DIR}" 2>/dev/null || true
 
@@ -570,9 +598,14 @@ fi
 # Bust GTK's pixmap cache too (some Phosh builds keep a separate one)
 rm -f "${HOME}/.cache/icon-cache.kcache" 2>/dev/null || true
 rm -rf "${HOME}/.cache/thumbnails/normal" 2>/dev/null || true
+# Rebuild KDE Plasma's sycoca so the new .desktop + icon register without
+# a logout.  Harmless / no-op on non-KDE desktops.
+for kbs in kbuildsycoca6 kbuildsycoca5; do
+  command -v "$kbs" >/dev/null && "$kbs" --noincremental 2>/dev/null && break
+done
 
 # Touch the desktop entry so file-watchers / Phosh re-scan it
-touch "${DESKTOP_DIR}/kali.desktop" 2>/dev/null || true
+touch "${DESKTOP_DIR}/${APP_ID}.desktop" 2>/dev/null || true
 
 ok "launcher + desktop entry installed"
 

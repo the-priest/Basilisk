@@ -6,9 +6,6 @@
 #   1. checks Python 3.10+
 #   2. installs GTK4 + libadwaita bindings (apt / pacman / dnf)
 #   3. installs the Groq Python library (cloud backend, primary)
-#   4. installs Ollama if missing (local fallback backend)
-#   5. starts `ollama serve` if not already running (systemd --user, or detached)
-#   6. pulls a small chat model (default: llama3.2:1b, ~1.3 GB)
 #   7. installs the three .py files + dragon icon + launcher + desktop entry + systemd unit
 #   8. asks for a Groq API key (optional — skip & set it later in Settings)
 #   9. writes settings.json so the app opens straight into a working chat
@@ -17,7 +14,7 @@
 # After this: click "Kali" in your app grid.  That's it.
 #
 # Estimated time on a OnePlus 6 over WiFi:
-#   - first install:  ~3-8 min (most of it is the model download)
+#   - first install:  ~1-3 min
 #   - subsequent re-runs:  ~5 seconds (skips everything already done)
 #
 # Usage:
@@ -25,17 +22,13 @@
 #   ./install.sh --update            # explicit update (same code path)
 #   ./install.sh --uninstall         # remove Kali (chat history kept)
 #   ./install.sh --remove-oracle     # remove the old Oracle install
-#   ./install.sh --refresh-ollama    # also re-run the ollama installer
 #   ./install.sh --no-systemd        # don't install the systemd unit
-#   ./install.sh --no-ollama         # don't touch ollama
-#   ./install.sh --no-model          # don't pull a model
+#   ./install.sh --no-helpers        # skip optional desktop helpers
+#   ./install.sh --no-browser        # skip Playwright/Chromium
 #   ./install.sh --no-groq           # don't install the groq library / skip key prompt
 #   ./install.sh --no-prompt         # skip ALL interactive prompts
 #
 # Env overrides:
-#   KALI_MODEL=tinyllama:1.1b   ./install.sh    # smaller model (~640 MB)
-#   KALI_MODEL=llama3.2:1b      ./install.sh    # default — best 1B
-#   KALI_MODEL=qwen2.5:0.5b     ./install.sh    # tiny but capable (~400 MB)
 #   KALI_REPO=the-priest/oracle5  KALI_BRANCH=main  ./install.sh
 #   GROQ_API_KEY=gsk_...        ./install.sh    # preset key, no prompt
 #
@@ -49,22 +42,20 @@ set -eo pipefail   # NOTE: no -u — curl|bash leaves BASH_SOURCE empty
 
 ACTION="install"
 SKIP_SYSTEMD=0
-SKIP_OLLAMA=0
-SKIP_MODEL=0
+SKIP_HELPERS=0
+SKIP_BROWSER=0
 SKIP_GROQ=0
 NO_PROMPT=0
-REFRESH_OLLAMA=0
 for arg in "$@"; do
   case "$arg" in
     --uninstall)         ACTION="uninstall" ;;
     --update)            ACTION="install" ;;
     --remove-oracle)     ACTION="remove-oracle" ;;
     --no-systemd)        SKIP_SYSTEMD=1 ;;
-    --no-ollama)         SKIP_OLLAMA=1 ;;
-    --no-model)          SKIP_MODEL=1 ;;
+    --no-helpers)        SKIP_HELPERS=1 ;;
+    --no-browser)        SKIP_BROWSER=1 ;;
     --no-groq)           SKIP_GROQ=1 ;;
     --no-prompt)         NO_PROMPT=1 ;;
-    --refresh-ollama)    REFRESH_OLLAMA=1 ;;
     -h|--help)
       sed -n '2,/^$/p' "$0" | sed 's/^# \?//'
       exit 0 ;;
@@ -108,7 +99,6 @@ REQUIRED_FILES=(kali.py kali_core.py kali_persona.py)
 OPTIONAL_FILES=(org.thepriest.kali.svg kali-dragon.svg)
 GITHUB_REPO="${KALI_REPO:-the-priest/oracle5}"
 GITHUB_BRANCH="${KALI_BRANCH:-main}"
-MODEL="${KALI_MODEL:-llama3.2:1b}"
 
 # The desktop entry, the icon theme name, and the Wayland app-id / X11
 # WM_CLASS must all share ONE name for the window/taskbar icon to resolve
@@ -173,14 +163,11 @@ ${M}╔════════════════════════�
 ${M}║${X}  ${B}Kali${X} — local, loyal AI assistant   ${M}║${X}
 ${M}╚════════════════════════════════════╝${X}
 
-  fallback model:  ${MODEL}
   repo:            ${GITHUB_REPO}@${GITHUB_BRANCH}
   install dir:     ${INSTALL_DIR}
 
-  Cloud backend (Groq) is primary, local Ollama is fallback.
-  Ollama runs ONLY while the app is open (starts on launch, stops on quit).
-  Heads up: the local model pull is the slowest step (~3-5 min on
-  phone WiFi for the default 1.3 GB model).  Stay put.
+  Cloud-only: Groq, SiliconFlow, Novita, GitHub Models, or Google AI
+  Studio. Pick a provider and paste its API key in Settings.
 EOF
 
 # Detect a stale oracle install and warn (don't auto-remove — let the user decide)
@@ -257,159 +244,63 @@ if [ $SKIP_GROQ -eq 0 ]; then
          && python3 -m pip install --user --break-system-packages --quiet groq 2>/dev/null; then
       ok "groq installed (after pip install)"
     else
-      warn "could not auto-install groq library — Kali will work with Ollama only"
-      warn "to fix later:   python3 -m pip install --user --break-system-packages groq"
+      warn "could not auto-install groq library — add a SiliconFlow,"
+      warn "Novita, GitHub, or Google key in Settings instead, or fix with:"
+      warn "   python3 -m pip install --user --break-system-packages groq"
     fi
   fi
 else
   warn "skipping groq library (--no-groq)"
 fi
 
-# ── 4. Ollama ─────────────────────────────────────────────────────
+# ── 4. Optional desktop-control helpers ──────────────────────────
+#
+# Kali's device-control tools (launch apps, type/click, screenshots,
+# screen OCR, browser automation) lean on small system helpers.  They
+# all degrade gracefully if absent — each tool reports what's missing —
+# but installing them up front means "do anything I ask" works on day
+# one.  This step is best-effort: failures here never abort the install.
 
-if [ $SKIP_OLLAMA -eq 0 ]; then
-  step "Ollama"
-  if command -v ollama >/dev/null; then
-    OLD_VER=$(ollama --version 2>/dev/null | head -1 || echo "?")
-    ok "ollama present: ${OLD_VER}"
-    if [ $REFRESH_OLLAMA -eq 1 ]; then
-      say "refreshing ollama (--refresh-ollama)"
-      say "this downloads ~1.5 GB and takes 1-5 min — output below is from ollama's installer"
-      printf '%s\n' "${D}──────────────────────────────────────────────${X}"
-      curl -fsSL https://ollama.com/install.sh | sh || \
-        warn "refresh failed, continuing with existing"
-      printf '%s\n' "${D}──────────────────────────────────────────────${X}"
-      NEW_VER=$(ollama --version 2>/dev/null | head -1 || echo "?")
-      [ "${NEW_VER}" != "${OLD_VER}" ] && ok "updated: ${OLD_VER} → ${NEW_VER}" || \
-        ok "ollama already current"
-    else
-      say "(skipping refresh — pass --refresh-ollama to force re-install)"
-    fi
+if [ $SKIP_HELPERS -eq 0 ] && command -v apt-get >/dev/null; then
+  step "desktop-control helpers (optional)"
+  # Pick input/screenshot helpers by session type.
+  SESS="${XDG_SESSION_TYPE:-}"
+  DE="${XDG_CURRENT_DESKTOP:-}"
+  # libnotify-bin = notify-send (desktop notifications, all DEs)
+  COMMON="tesseract-ocr playerctl libnotify-bin"
+  if [ "$SESS" = "wayland" ] || [ -n "${WAYLAND_DISPLAY:-}" ]; then
+    HELPERS="$COMMON wtype wlrctl grim slurp ydotool"
+    say "Wayland session — installing: $HELPERS"
   else
-    say "installing ollama via official script"
-    say "this downloads ~1.5 GB and takes 1-5 min — output below is from ollama's installer"
-    printf '%s\n' "${D}──────────────────────────────────────────────${X}"
-    command -v curl >/dev/null || sudo apt-get install -y curl
-    curl -fsSL https://ollama.com/install.sh | sh || fatal "ollama install failed"
-    printf '%s\n' "${D}──────────────────────────────────────────────${X}"
-    ok "ollama installed: $(ollama --version 2>/dev/null | head -1)"
+    HELPERS="$COMMON xdotool wmctrl scrot"
+    say "X11 session — installing: $HELPERS"
+  fi
+  # On KDE, add Spectacle (screenshots) — it handles compositor quirks.
+  case "$DE" in
+    *KDE*|*kde*|*plasma*|*Plasma*)
+      HELPERS="$HELPERS kde-spectacle"
+      say "KDE Plasma detected — adding Spectacle" ;;
+  esac
+  # shellcheck disable=SC2086
+  if sudo apt-get install -y $HELPERS 2>/dev/null; then
+    ok "desktop helpers installed"
+  else
+    warn "some helpers unavailable on this mirror — Kali still runs;"
+    warn "missing tools just report themselves when used"
+  fi
+  # Browser automation (optional, larger): Playwright + Chromium.
+  if [ $SKIP_BROWSER -eq 0 ]; then
+    say "browser automation (Playwright + Chromium, ~150MB) — optional"
+    if python3 -m pip install --user --break-system-packages --quiet playwright 2>/dev/null \
+       && python3 -m playwright install chromium 2>/dev/null; then
+      ok "Playwright + Chromium installed"
+    else
+      warn "Playwright not installed — the browser tool will tell you how"
+      warn "to enable it later:  pip install playwright && playwright install chromium"
+    fi
   fi
 else
-  warn "skipping ollama (--no-ollama)"
-fi
-
-# ── 5. Start ollama serve ─────────────────────────────────────────
-
-ollama_healthy() {
-  curl -sf --max-time 1 http://127.0.0.1:11434/api/version >/dev/null 2>&1
-}
-
-wait_for_ollama() {
-  local tries=40   # 40 * 0.5s = 20s
-  while [ $tries -gt 0 ]; do
-    ollama_healthy && return 0
-    sleep 0.5
-    tries=$((tries - 1))
-  done
-  return 1
-}
-
-start_ollama_temp() {
-  # Start ollama just long enough to pull the model.  Tracks whether we
-  # started it so we can stop it after.
-  if ollama_healthy; then
-    OLLAMA_STARTED_TEMP=0
-    return 0
-  fi
-  say "starting ollama temporarily (for the model pull only)"
-  nohup ollama serve >/dev/null 2>&1 &
-  disown 2>/dev/null || true
-  if wait_for_ollama; then
-    OLLAMA_STARTED_TEMP=1
-    return 0
-  fi
-  return 1
-}
-
-stop_ollama_temp() {
-  # Stop only if we started it.  Leaves user-started ollamas alone.
-  if [ "${OLLAMA_STARTED_TEMP:-0}" = "1" ]; then
-    say "stopping the temporary ollama"
-    pkill -u "${USER:-$(id -un)}" -f "ollama serve" 2>/dev/null || true
-    sleep 1
-  fi
-}
-
-install_systemd_unit_file() {
-  # Install the unit file but DO NOT enable or start it.  User can
-  # manually `systemctl --user enable kali-ollama.service` if they want
-  # ollama always-on.  Default: app starts ollama on launch, stops on quit.
-  if [ $SKIP_SYSTEMD -eq 0 ] && command -v systemctl >/dev/null; then
-    mkdir -p "${SYSTEMD_DIR}"
-    OLLAMA_BIN=$(command -v ollama || echo "/usr/local/bin/ollama")
-    cat > "${SYSTEMD_DIR}/kali-ollama.service" <<EOF
-[Unit]
-Description=Ollama server (managed by Kali)
-After=default.target
-
-[Service]
-Type=simple
-ExecStart=${OLLAMA_BIN} serve
-Restart=on-failure
-RestartSec=3
-Environment=OLLAMA_HOST=127.0.0.1:11434
-Environment=OLLAMA_KEEP_ALIVE=2m
-Environment=OLLAMA_NUM_PARALLEL=1
-
-[Install]
-WantedBy=default.target
-EOF
-    systemctl --user daemon-reload
-    ok "systemd unit file installed (NOT enabled — app manages ollama)"
-  fi
-}
-
-# Make sure nothing's auto-started left over from earlier installs (oracle or kali)
-disable_old_units() {
-  for unit in oracle-ollama.service kali-ollama.service; do
-    if systemctl --user is-enabled "${unit}" >/dev/null 2>&1; then
-      systemctl --user disable "${unit}" >/dev/null 2>&1 || true
-      systemctl --user stop    "${unit}" >/dev/null 2>&1 || true
-      say "disabled previously-enabled ${unit}"
-    fi
-  done
-}
-
-if [ $SKIP_OLLAMA -eq 0 ]; then
-  step "ollama service config"
-  disable_old_units
-  install_systemd_unit_file
-fi
-
-# ── 6. Pull a model ───────────────────────────────────────────────
-
-if [ $SKIP_OLLAMA -eq 0 ] && [ $SKIP_MODEL -eq 0 ]; then
-  step "fallback model: ${MODEL}"
-  if ! start_ollama_temp; then
-    warn "couldn't start ollama for the pull — skipping model"
-  else
-    if ollama list 2>/dev/null | awk 'NR>1{print $1}' | grep -qx "${MODEL}"; then
-      ok "${MODEL} already pulled"
-    else
-      say "pulling ${MODEL} — progress below is from ollama (this is the slow step)"
-      printf '%s\n' "${D}──────────────────────────────────────────────${X}"
-      if ! ollama pull "${MODEL}"; then
-        warn "pull failed.  Retrying in 3s..."
-        sleep 3
-        ollama pull "${MODEL}" || warn "could not pull ${MODEL} — continuing without local fallback"
-      fi
-      printf '%s\n' "${D}──────────────────────────────────────────────${X}"
-      ok "${MODEL} pulled"
-    fi
-    stop_ollama_temp
-  fi
-else
-  warn "skipping model pull"
+  [ $SKIP_HELPERS -eq 1 ] && warn "skipping desktop helpers (--no-helpers)"
 fi
 
 # ── 7. Source files ───────────────────────────────────────────────
@@ -584,7 +475,7 @@ Exec=${BIN_DIR}/kali
 Icon=${APP_ID}
 Terminal=false
 Categories=Utility;Network;Development;
-Keywords=ai;assistant;groq;ollama;chat;jarvis;
+Keywords=ai;assistant;groq;chat;jarvis;
 StartupWMClass=${APP_ID}
 StartupNotify=true
 EOF
@@ -622,11 +513,13 @@ if [ $SKIP_GROQ -eq 0 ]; then
        && python3 -c "import json; d=json.load(open('${CONFIG_DIR}/settings.json')); exit(0 if d.get('groq_api_key') else 1)" 2>/dev/null; then
     ok "existing Groq key preserved in settings"
   elif [ $NO_PROMPT -eq 1 ] || [ ! -t 0 ]; then
-    warn "no key set — Kali will use Ollama until you add one in Settings"
+    warn "no key set — add one in Settings → Backends to start chatting"
   else
     echo
     echo "  Groq is FREE and FAST.  Sign up at https://console.groq.com"
     echo "  to get a key, then paste it here.  Press ENTER to skip."
+    echo "  (You can also use SiliconFlow, Novita, GitHub, or Google —"
+    echo "   add any of those keys later in Settings → Backends.)"
     echo
     printf "  Groq API key: "
     read -r USER_GROQ_KEY
@@ -634,7 +527,7 @@ if [ $SKIP_GROQ -eq 0 ]; then
       GROQ_KEY_TO_WRITE="${USER_GROQ_KEY}"
       ok "key captured"
     else
-      warn "no key — Kali will run on Ollama alone (you can add one later in Settings)"
+      warn "no key — add one later in Settings → Backends"
     fi
   fi
 fi
@@ -644,35 +537,28 @@ fi
 step "settings"
 SETTINGS_FILE="${CONFIG_DIR}/settings.json"
 
-DEFAULT_OLLAMA_MODEL="${MODEL}"
-if [ $SKIP_MODEL -eq 1 ] || [ $SKIP_OLLAMA -eq 1 ]; then
-  if command -v ollama >/dev/null; then
-    AVAILABLE=$(ollama list 2>/dev/null | awk 'NR>1{print $1}' | head -1 || echo "")
-    [ -n "${AVAILABLE}" ] && DEFAULT_OLLAMA_MODEL="${AVAILABLE}"
-  fi
-fi
-
 SETTINGS_FILE_PATH="${SETTINGS_FILE}" \
-DEFAULT_OLLAMA_MODEL="${DEFAULT_OLLAMA_MODEL}" \
 NEW_GROQ_KEY="${GROQ_KEY_TO_WRITE}" \
 python3 - <<'PYEOF'
 import json, os
-settings_file        = os.environ['SETTINGS_FILE_PATH']
-default_ollama_model = os.environ['DEFAULT_OLLAMA_MODEL']
-new_groq_key         = os.environ.get('NEW_GROQ_KEY', '')
+settings_file = os.environ['SETTINGS_FILE_PATH']
+new_groq_key  = os.environ.get('NEW_GROQ_KEY', '')
 
+# Cloud-only defaults.  Per-provider key+model slots are added below so
+# the schema matches kali_core.DEFAULT_SETTINGS.
+providers = {
+    "groq":        "llama-3.3-70b-versatile",
+    "siliconflow": "deepseek-ai/DeepSeek-V3",
+    "novita":      "qwen/qwen3-coder-480b-a35b-instruct",
+    "github":      "openai/gpt-4.1",
+    "google":      "gemini-2.5-pro",
+}
 defaults = {
-    "groq_api_key": "",
-    "groq_model": "llama-3.3-70b-versatile",
-    "prefer_groq": True,
-    "ollama_model": default_ollama_model,
+    "active_provider": "groq",
     "temperature": 0.7,
     "top_p": 0.9,
-    "num_ctx": 4096,
     "max_tokens": 2048,
     "system_prompt": "",
-    "auto_start_ollama": True,
-    "stop_ollama_on_quit": True,
     "agent_mode_default": True,
     "confirm_all_commands": True,
     "watcher_enabled": False,
@@ -681,23 +567,20 @@ defaults = {
     "watcher_check_journal": False,
     "watcher_interval_minutes": 60,
     "theme": "mocha",
-    "ui_scale": 0,  # 0 = auto-detect (must match kali_core DEFAULT_SETTINGS;
-                    # a hardcoded 1.0 here pins the scale and disables the
-                    # per-screen auto-sizing in _detect_ui_scale()).
+    "ui_scale": 0,  # 0 = auto-detect (must match kali_core DEFAULT_SETTINGS)
     "show_token_count": False,
     "show_provider_pill": True,
 }
+for key, model in providers.items():
+    defaults[f"{key}_api_key"] = ""
+    defaults[f"{key}_model"] = model
 
 if os.path.exists(settings_file):
     try:
         with open(settings_file) as f:
             existing = json.load(f)
-        # Preserve all user-set values; only fill in missing keys with defaults.
         for k, v in defaults.items():
             existing.setdefault(k, v)
-        # Migrate old 'default_model' (oracle) → 'ollama_model' if present
-        if 'default_model' in existing and not existing.get('ollama_model'):
-            existing['ollama_model'] = existing.pop('default_model')
         out = existing
     except Exception:
         out = dict(defaults)
@@ -712,9 +595,8 @@ os.makedirs(os.path.dirname(settings_file), exist_ok=True)
 with open(settings_file, "w") as f:
     json.dump(out, f, indent=2)
 
-print(f"  ollama_model = {out.get('ollama_model') or '(none — pick one in app)'}")
-print(f"  groq_model   = {out.get('groq_model')}")
-print(f"  groq_key     = {'set' if out.get('groq_api_key') else '(not set — add via Settings)'}")
+print(f"  active_provider = {out.get('active_provider')}")
+print(f"  groq_key        = {'set' if out.get('groq_api_key') else '(not set — add via Settings)'}")
 PYEOF
 ok "settings written"
 

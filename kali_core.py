@@ -2,7 +2,7 @@
 """
 kali_core — non-UI logic for Kali.
 
-  · Backend abstraction (Groq primary, Ollama fallback when offline)
+  · Backend abstraction (multiple cloud providers, OpenAI-compatible)
   · Streaming chat
   · SQLite chat history
   · Full system tools: file r, command exec, system info, package
@@ -56,7 +56,6 @@ WATCHER_STATE     = DATA_DIR / "watcher.json"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
-OLLAMA_HOST       = "http://127.0.0.1:11434"
 HTTP_TIMEOUT_S    = 600
 HEALTH_TIMEOUT_S  = 1.5
 
@@ -73,7 +72,6 @@ GROQ_FALLBACK_CHAIN = [
     "openai/gpt-oss-20b",                            # 20B, very fast
     "llama-3.1-8b-instant",                          # last resort, 560 t/s
 ]
-OLLAMA_DEFAULT_MODEL = "llama3.2:1b"
 
 # ─────────────────────────────────────────────────────────────────────
 # CLOUD PROVIDER REGISTRY
@@ -209,18 +207,12 @@ def log(msg: str) -> None:
 
 DEFAULT_SETTINGS = {
     # ── Provider routing ──
-    # Which cloud provider to use when online + configured.  Falls back
-    # to Ollama (local) when this provider has no key, is offline, or
-    # errors.  "prefer_cloud" off = always use local Ollama.
+    # Which cloud provider to use.  Cloud-only build — no local model.
     "active_provider": "groq",
-    "prefer_cloud": True,
 
     # Per-provider API key + selected model.  One pair per registered
     # provider; populated from DEFAULT_SETTINGS so a fresh install has
     # every field present.  (Built programmatically below.)
-
-    # ── Local fallback ──
-    "ollama_model": OLLAMA_DEFAULT_MODEL,
 
     # Generation
     "temperature": 0.7,
@@ -230,8 +222,6 @@ DEFAULT_SETTINGS = {
 
     # Behaviour
     "system_prompt": "",
-    "auto_start_ollama": True,
-    "stop_ollama_on_quit": True,
     "agent_mode_default": True,        # Kali defaults to agent on
     "confirm_all_commands": True,
 
@@ -274,12 +264,9 @@ def _migrate_settings(merged: Dict[str, Any], raw: Dict[str, Any]) -> None:
     """In-place upgrade of settings loaded from an older Kali/Oracle
     install so adding multi-provider support never silently drops the
     operator's existing Groq config."""
-    # Old single-provider builds used `prefer_groq`; the new schema uses
-    # `prefer_cloud` + `active_provider`.  Honour the old value if the
-    # new one wasn't explicitly written.
-    if "prefer_cloud" not in raw and "prefer_groq" in raw:
-        merged["prefer_cloud"] = bool(raw.get("prefer_groq"))
-    # If a Groq key exists but no provider was chosen, keep Groq active.
+    # Older builds may carry prefer_groq / prefer_cloud / local-model keys;
+    # they're harmless leftovers now (cloud-only) and simply ignored.
+    # If active_provider is missing, keep Groq as the default.
     if "active_provider" not in raw:
         merged["active_provider"] = "groq"
     # Guard against an active_provider that no longer exists in the
@@ -292,7 +279,7 @@ def save_settings(settings: Dict[str, Any]) -> None:
     # Atomic write: temp file in same directory, then os.replace.  Without
     # this, a crash mid-write would leave settings.json truncated or empty
     # and the next load would silently fall back to defaults — wiping the
-    # operator's Groq API key, ollama model selection, etc.
+    # operator's API keys, model selection, etc.
     try:
         tmp = SETTINGS_JSON.with_suffix(".json.tmp")
         with open(tmp, "w", encoding="utf-8") as f:
@@ -336,7 +323,7 @@ def is_online(timeout: float = 1.0, max_age: float = 8.0) -> bool:
 
 
 # ═════════════════════════════════════════════════════════════════════
-# BACKENDS — Groq and Ollama, with a router on top
+# BACKENDS — cloud providers (OpenAI-compatible) with a router
 # ═════════════════════════════════════════════════════════════════════
 
 class Backend(Protocol):
@@ -349,184 +336,6 @@ class Backend(Protocol):
                     on_error: Callable[[str], None],
                     options: Optional[Dict[str, Any]] = None,
                     cancel_event: Optional[threading.Event] = None) -> None: ...
-
-
-class OllamaBackend:
-    name = "ollama"
-
-    def __init__(self):
-        self._proc: Optional[subprocess.Popen] = None
-        self._started_by_us = False
-        # Cache the most recent health probe so the UI thread doesn't
-        # block 1.5s on every send when ollama is unreachable.
-        self._running_cache = {"value": False, "ts": 0.0}
-        self._running_cache_lock = threading.Lock()
-
-    def is_running(self, max_age: float = 4.0) -> bool:
-        """Cached health check.  Re-probes at most every max_age seconds."""
-        now = time.time()
-        with self._running_cache_lock:
-            if now - self._running_cache["ts"] < max_age:
-                return bool(self._running_cache["value"])
-        try:
-            req = urllib.request.Request(f"{OLLAMA_HOST}/api/version")
-            with urllib.request.urlopen(req, timeout=HEALTH_TIMEOUT_S) as r:
-                value = (r.status == 200)
-        except Exception:
-            value = False
-        with self._running_cache_lock:
-            self._running_cache["value"] = value
-            self._running_cache["ts"] = now
-        return value
-
-    def _invalidate_running_cache(self):
-        with self._running_cache_lock:
-            self._running_cache["ts"] = 0.0
-
-    def is_available(self) -> bool:
-        return self.is_running()
-
-    def start_serve(self) -> bool:
-        if self.is_running():
-            return True
-        if not shutil.which("ollama"):
-            return False
-        try:
-            self._proc = subprocess.Popen(
-                ["ollama", "serve"],
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True,
-            )
-            self._started_by_us = True
-            for _ in range(20):
-                time.sleep(0.25)
-                self._invalidate_running_cache()
-                if self.is_running():
-                    return True
-            return False
-        except Exception as e:
-            log(f"ollama start_serve error: {e}")
-            return False
-
-    def stop_serve(self) -> None:
-        # Best-effort: stop any kali-managed systemd unit too
-        for unit in ("kali-ollama.service", "oracle-ollama.service"):
-            try:
-                subprocess.run(
-                    ["systemctl", "--user", "stop", unit],
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    timeout=4)
-            except Exception:
-                pass
-
-        # Terminate the subprocess we spawned (if any)
-        if self._started_by_us and self._proc is not None:
-            try:
-                self._proc.terminate()
-                try:
-                    self._proc.wait(timeout=4)
-                except subprocess.TimeoutExpired:
-                    self._proc.kill()
-            except Exception:
-                pass
-            finally:
-                self._proc = None
-                self._started_by_us = False
-
-        # Also kill any orphaned `ollama serve` left over from a previous
-        # Kali run that quit uncleanly.  Scoped to OUR user so it can't
-        # hit a system-level ollama running as another user.
-        try:
-            subprocess.run(
-                ["pkill", "-u", os.environ.get("USER", ""), "-f",
-                 "ollama serve"],
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                timeout=4)
-        except Exception:
-            pass
-        self._invalidate_running_cache()
-
-    def list_models(self) -> List[Dict[str, Any]]:
-        try:
-            req = urllib.request.Request(f"{OLLAMA_HOST}/api/tags")
-            with urllib.request.urlopen(req, timeout=5) as r:
-                data = json.loads(r.read())
-            return sorted(data.get("models", []),
-                          key=lambda m: m.get("name", ""))
-        except Exception:
-            return []
-
-    def version(self) -> Optional[str]:
-        try:
-            req = urllib.request.Request(f"{OLLAMA_HOST}/api/version")
-            with urllib.request.urlopen(req, timeout=HEALTH_TIMEOUT_S) as r:
-                return json.loads(r.read()).get("version")
-        except Exception:
-            return None
-
-    def stream_chat(self, model, messages, on_token, on_done, on_error,
-                    options=None, cancel_event=None) -> None:
-        payload = {"model": model, "messages": messages, "stream": True}
-        if options:
-            # Translate our generic option names to Ollama's.  Critically,
-            # Ollama caps generation length with `num_predict`, NOT
-            # `max_tokens` — passing max_tokens did nothing, so the local
-            # model ignored the user's token limit entirely.
-            ol_opts: Dict[str, Any] = {}
-            for src, dst in (("temperature", "temperature"),
-                             ("top_p", "top_p"),
-                             ("top_k", "top_k"),
-                             ("num_ctx", "num_ctx"),
-                             ("max_tokens", "num_predict"),
-                             ("num_predict", "num_predict")):
-                if options.get(src) is not None:
-                    ol_opts[dst] = options[src]
-            if ol_opts:
-                payload["options"] = ol_opts
-        try:
-            data = json.dumps(payload).encode("utf-8")
-            req = urllib.request.Request(
-                f"{OLLAMA_HOST}/api/chat",
-                data=data,
-                headers={"Content-Type": "application/json"})
-            parts: List[str] = []
-            with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT_S) as r:
-                for line in r:
-                    if cancel_event and cancel_event.is_set():
-                        on_done({"cancelled": True, "text": "".join(parts),
-                                 "backend": "ollama"})
-                        return
-                    if not line:
-                        continue
-                    try:
-                        chunk = json.loads(line)
-                    except Exception:
-                        continue
-                    tok = chunk.get("message", {}).get("content", "")
-                    if tok:
-                        parts.append(tok)
-                        on_token(tok)
-                    if chunk.get("done"):
-                        on_done({
-                            "text": "".join(parts),
-                            "backend": "ollama",
-                            "model": model,
-                            "eval_count": chunk.get("eval_count"),
-                            "cancelled": False,
-                        })
-                        return
-            on_done({"text": "".join(parts), "backend": "ollama",
-                     "cancelled": False})
-        except urllib.error.URLError as e:
-            on_error(f"ollama connection: {e.reason}")
-        except Exception as e:
-            on_error(f"ollama {type(e).__name__}: {e}")
 
 
 class GroqBackend:
@@ -648,7 +457,7 @@ class OpenAICompatBackend:
 
     Drives SiliconFlow, Novita, GitHub Models, and Google AI Studio with
     no extra dependencies — just urllib + Server-Sent-Events parsing,
-    the same toolkit the Ollama backend already uses.  Mirrors
+    just urllib + SSE, no extra dependencies.  Mirrors
     GroqBackend's behaviour: biggest-model-first fallback chain, and a
     hard stop on mid-stream fallback so two models' output never gets
     spliced together on screen.
@@ -822,22 +631,19 @@ class OpenAICompatBackend:
 
 
 class BackendRouter:
-    """Routes to the active cloud provider when online & configured,
-    otherwise to local Ollama.  Holds one backend per registered cloud
-    provider plus the local Ollama backend."""
+    """Routes to the active cloud provider.  Cloud-only — there is no
+    local backend.  Holds one backend per registered cloud provider and
+    picks the one named by settings['active_provider']."""
 
-    def __init__(self, cloud: Dict[str, Backend], ollama: OllamaBackend,
-                 settings: Dict[str, Any]):
+    def __init__(self, cloud: Dict[str, Backend], settings: Dict[str, Any]):
         self.cloud = cloud            # {provider_key: backend}
-        self.ollama = ollama
         self.settings = settings
-        # Back-compat: callers/tests that referenced router.groq directly
-        # still work.
+        # Back-compat alias.
         self.groq = cloud.get("groq")
 
     def active_cloud(self) -> Tuple[Optional[Backend], str]:
         """Return (backend, provider_key) for the configured active
-        provider, or (None, key) if it isn't usable right now."""
+        provider, falling back to groq if the configured one is missing."""
         key = self.settings.get("active_provider", "groq")
         backend = self.cloud.get(key)
         if backend is None:
@@ -845,18 +651,20 @@ class BackendRouter:
             key = "groq"
         return backend, key
 
-    def pick(self) -> Tuple[Backend, str]:
-        """Returns (backend, model_name)."""
-        if self.settings.get("prefer_cloud", True):
-            backend, key = self.active_cloud()
-            if backend is not None and backend.is_available():
-                model = self.settings.get(
-                    f"{key}_model",
-                    PROVIDERS_BY_KEY[key].default_model
-                    if key in PROVIDERS_BY_KEY else "")
-                return backend, model
-        return self.ollama, self.settings.get("ollama_model",
-                                               OLLAMA_DEFAULT_MODEL)
+    def pick(self) -> Tuple[Optional[Backend], str]:
+        """Returns (backend, model_name).  backend may be None if the
+        active provider has no key configured."""
+        backend, key = self.active_cloud()
+        model = self.settings.get(
+            f"{key}_model",
+            PROVIDERS_BY_KEY[key].default_model
+            if key in PROVIDERS_BY_KEY else "")
+        return backend, model
+
+    def any_available(self) -> bool:
+        """True if at least the active provider is usable right now."""
+        backend, _ = self.active_cloud()
+        return backend is not None and backend.is_available()
 
     def stream_chat(self, messages, on_token, on_done, on_error,
                     cancel_event=None) -> Tuple[str, str]:
@@ -865,34 +673,13 @@ class BackendRouter:
             "temperature": self.settings.get("temperature", 0.7),
             "top_p": self.settings.get("top_p", 0.9),
             "max_tokens": self.settings.get("max_tokens", 2048),
-            "num_ctx": self.settings.get("num_ctx", 4096),
         }
-
-        # Track whether we emitted any tokens through the wrapper.
-        emitted = {"any": False}
-
-        def _on_tok(t: str):
-            emitted["any"] = True
-            on_token(t)
-
-        # Wrap on_error so we can attempt Ollama fallback if a cloud
-        # provider fails — but only when no tokens have made it to the UI
-        # yet.  Otherwise we'd splice two model outputs together.
-        is_cloud = backend is not self.ollama
-
-        def _on_err(err: str):
-            if (is_cloud
-                    and not emitted["any"]
-                    and self.ollama.is_running()):
-                log(f"{backend.name} failed ({err}) — falling back to ollama")
-                self.ollama.stream_chat(
-                    self.settings.get("ollama_model", OLLAMA_DEFAULT_MODEL),
-                    messages, _on_tok, on_done, on_error, opts, cancel_event)
-            else:
-                on_error(err)
-
-        backend.stream_chat(model, messages, _on_tok, on_done, _on_err,
+        if backend is None:
+            on_error("No provider configured. Add an API key in Settings.")
+            return "none", ""
+        backend.stream_chat(model, messages, on_token, on_done, on_error,
                             opts, cancel_event)
+        return backend.name, model
         return backend.name, model
 
 
@@ -1833,8 +1620,700 @@ def tool_find_file(pattern: str,
 
 
 # ═════════════════════════════════════════════════════════════════════
-# SECURITY AUDIT (from ares.py, abbreviated)
+# DESKTOP CONTROL — launch apps, list/focus/close windows, type & click
+#
+# These give Kali hands on the running desktop.  They degrade based on
+# what's installed: app launching works anywhere with gtk-launch / the
+# binary on PATH; window + input control needs a helper for the active
+# session type.  We detect Wayland vs X11 and pick the right backend:
+#   • Wayland + Phosh/wlroots → wtype, wlrctl (and ydotool if present)
+#   • X11                     → xdotool, wmctrl
+# Each tool reports clearly when the needed helper is missing rather
+# than silently doing nothing.
 # ═════════════════════════════════════════════════════════════════════
+
+def _session_type() -> str:
+    """Return 'wayland', 'x11', or 'unknown' for the current session."""
+    st = os.environ.get("XDG_SESSION_TYPE", "").lower()
+    if st in ("wayland", "x11"):
+        return st
+    if os.environ.get("WAYLAND_DISPLAY"):
+        return "wayland"
+    if os.environ.get("DISPLAY"):
+        return "x11"
+    return "unknown"
+
+
+def _desktop_env() -> str:
+    """Return a lowercase desktop-environment hint: 'kde', 'gnome',
+    'phosh', 'xfce', etc., or '' if unknown.  Used to pick the most
+    native helper (e.g. Spectacle/kdialog on KDE)."""
+    for var in ("XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP",
+                "DESKTOP_SESSION"):
+        v = os.environ.get(var, "").lower()
+        if not v:
+            continue
+        if "kde" in v or "plasma" in v:
+            return "kde"
+        if "gnome" in v:
+            return "gnome"
+        if "phosh" in v:
+            return "phosh"
+        if "xfce" in v:
+            return "xfce"
+        if v:
+            return v.split(":")[0]
+    return ""
+
+
+def tool_desktop_info() -> Dict[str, Any]:
+    """Report what desktop-control capabilities are available so the
+    model can choose tools that will actually work on this box."""
+    sess = _session_type()
+    de = _desktop_env()
+    helpers = {
+        "gtk-launch": _have("gtk-launch"),
+        "xdg-open": _have("xdg-open"),
+        "xdotool": _have("xdotool"),
+        "wmctrl": _have("wmctrl"),
+        "wtype": _have("wtype"),
+        "wlrctl": _have("wlrctl"),
+        "ydotool": _have("ydotool"),
+        "grim": _have("grim"),
+        "slurp": _have("slurp"),
+        "scrot": _have("scrot"),
+        "import": _have("import"),       # ImageMagick screenshot
+        "spectacle": _have("spectacle"),  # KDE screenshot
+        "tesseract": _have("tesseract"),  # OCR for screen reading
+        "playerctl": _have("playerctl"),
+        "kdialog": _have("kdialog"),      # KDE native dialogs
+        "qdbus": _have("qdbus") or _have("qdbus6") or _have("qdbus-qt6"),
+        "kreadconfig5": _have("kreadconfig5") or _have("kreadconfig6"),
+    }
+    can_type = (sess == "wayland" and (helpers["wtype"] or helpers["ydotool"])) \
+        or (sess == "x11" and helpers["xdotool"])
+    can_window = (sess == "wayland" and helpers["wlrctl"]) \
+        or (sess == "x11" and (helpers["wmctrl"] or helpers["xdotool"]))
+    can_shot = (helpers["grim"] or helpers["scrot"] or helpers["import"]
+                or helpers["spectacle"])
+    return {
+        "ok": True,
+        "session": sess,
+        "desktop": de or "unknown",
+        "helpers": helpers,
+        "can_launch_apps": helpers["gtk-launch"] or helpers["xdg-open"],
+        "can_type_and_click": can_type,
+        "can_control_windows": can_window,
+        "can_screenshot": can_shot,
+        "can_read_screen": can_shot and helpers["tesseract"],
+        "notes": ("KDE Plasma on X11 detected — full desktop control "
+                  "available via xdotool/wmctrl; Spectacle/kdialog used "
+                  "where they're better." if de == "kde" and sess == "x11"
+                  else ""),
+    }
+
+
+def tool_list_apps(filter_text: str = "") -> Dict[str, Any]:
+    """List installed GUI applications (from .desktop files).  Optional
+    case-insensitive substring filter on name or desktop-id."""
+    seen: Dict[str, Dict[str, str]] = {}
+    search_dirs = [
+        os.path.expanduser("~/.local/share/applications"),
+        "/usr/share/applications",
+        "/usr/local/share/applications",
+        "/var/lib/flatpak/exports/share/applications",
+        os.path.expanduser(
+            "~/.local/share/flatpak/exports/share/applications"),
+    ]
+    ft = filter_text.lower().strip()
+    for d in search_dirs:
+        if not os.path.isdir(d):
+            continue
+        try:
+            for fn in os.listdir(d):
+                if not fn.endswith(".desktop"):
+                    continue
+                desktop_id = fn[:-len(".desktop")]
+                if desktop_id in seen:
+                    continue
+                name, no_display = desktop_id, False
+                try:
+                    with open(os.path.join(d, fn), "r",
+                              encoding="utf-8", errors="replace") as f:
+                        for line in f:
+                            if line.startswith("Name=") and name == desktop_id:
+                                name = line[5:].strip()
+                            elif line.strip() == "NoDisplay=true":
+                                no_display = True
+                except Exception:
+                    pass
+                if no_display:
+                    continue
+                if ft and ft not in name.lower() and ft not in desktop_id.lower():
+                    continue
+                seen[desktop_id] = {"id": desktop_id, "name": name}
+        except Exception:
+            continue
+    apps = sorted(seen.values(), key=lambda a: a["name"].lower())
+    return {"ok": True, "count": len(apps), "apps": apps[:200],
+            "truncated": len(apps) > 200}
+
+
+def tool_launch_app(app: str, args: str = "") -> Dict[str, Any]:
+    """Launch a desktop application by .desktop id, binary name, or URI.
+
+    Detached from Kali (start_new_session) so closing Kali doesn't kill
+    it.  Tries, in order: gtk-launch with a desktop id, the binary on
+    PATH, then xdg-open (handles URLs, files, and mime-typed targets).
+    """
+    app = (app or "").strip()
+    if not app:
+        return {"ok": False, "error": "no app specified"}
+    extra = args.split() if args else []
+
+    def _spawn(argv):
+        env = dict(os.environ)
+        subprocess.Popen(argv, stdin=subprocess.DEVNULL,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True, env=env)
+
+    # URL or existing path → xdg-open is the most reliable route
+    is_uri = "://" in app or app.startswith(("mailto:", "tel:"))
+    is_path = os.path.exists(os.path.expanduser(app))
+    try:
+        if is_uri or is_path:
+            target = os.path.expanduser(app) if is_path else app
+            if _have("xdg-open"):
+                _spawn(["xdg-open", target])
+                return {"ok": True, "launched": target, "via": "xdg-open"}
+            return {"ok": False, "error": "xdg-open not available"}
+
+        # desktop id (strip a trailing .desktop if the model included it)
+        desktop_id = app[:-8] if app.endswith(".desktop") else app
+        if _have("gtk-launch"):
+            # gtk-launch only works for known desktop ids; verify-ish by
+            # trying and catching the immediate failure.
+            rc, _o, err = _ro(["gtk-launch", desktop_id], timeout=4)
+            # gtk-launch returns 0 even when it forks the app; a clearly
+            # unknown id prints an error and returns non-zero quickly.
+            if rc == 0:
+                return {"ok": True, "launched": desktop_id, "via": "gtk-launch"}
+
+        # fall back to treating it as a binary on PATH
+        binary = app.split()[0]
+        if _have(binary):
+            _spawn([binary] + extra)
+            return {"ok": True, "launched": binary, "via": "exec"}
+
+        # last resort: xdg-open the bare string (may resolve a protocol)
+        if _have("xdg-open"):
+            _spawn(["xdg-open", app])
+            return {"ok": True, "launched": app, "via": "xdg-open"}
+
+        return {"ok": False,
+                "error": f"could not launch '{app}': no matching desktop "
+                         f"entry, binary on PATH, or opener"}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
+def tool_list_windows() -> Dict[str, Any]:
+    """List open windows (title + app id) for focusing/closing.
+
+    X11 uses wmctrl; Wayland uses wlrctl (wlroots/Phosh).  Returns a
+    clear error if neither helper is present."""
+    sess = _session_type()
+    if sess == "x11" and _have("wmctrl"):
+        rc, out, _ = _ro(["wmctrl", "-l"], timeout=5)
+        wins = []
+        for line in out.splitlines():
+            parts = line.split(None, 3)
+            if len(parts) >= 4:
+                wins.append({"id": parts[0], "title": parts[3]})
+        return {"ok": True, "session": sess, "windows": wins}
+    if sess == "wayland" and _have("wlrctl"):
+        rc, out, _ = _ro(["wlrctl", "window", "list"], timeout=5)
+        wins = [{"title": ln.strip()} for ln in out.splitlines() if ln.strip()]
+        return {"ok": True, "session": sess, "windows": wins}
+    return {"ok": False,
+            "error": f"no window-list helper for {sess} session "
+                     f"(install wmctrl on X11, or wlrctl on Wayland)"}
+
+
+def tool_focus_window(title: str) -> Dict[str, Any]:
+    """Bring a window matching `title` (substring) to the front."""
+    sess = _session_type()
+    if sess == "x11" and _have("wmctrl"):
+        rc, _o, err = _ro(["wmctrl", "-a", title], timeout=5)
+        if rc == 0:
+            return {"ok": True, "focused": title}
+        return {"ok": False, "error": err or f"no window matching '{title}'"}
+    if sess == "wayland" and _have("wlrctl"):
+        rc, _o, err = _ro(["wlrctl", "window", "focus", title], timeout=5)
+        if rc == 0:
+            return {"ok": True, "focused": title}
+        return {"ok": False, "error": err or f"no window matching '{title}'"}
+    return {"ok": False,
+            "error": f"no window-control helper for {sess} session"}
+
+
+def tool_close_window(title: str) -> Dict[str, Any]:
+    """Gracefully close a window matching `title` (substring)."""
+    sess = _session_type()
+    if sess == "x11" and _have("wmctrl"):
+        rc, _o, err = _ro(["wmctrl", "-c", title], timeout=5)
+        if rc == 0:
+            return {"ok": True, "closed": title}
+        return {"ok": False, "error": err or f"no window matching '{title}'"}
+    if sess == "wayland" and _have("wlrctl"):
+        rc, _o, err = _ro(["wlrctl", "window", "close", title], timeout=5)
+        return {"ok": rc == 0, "closed": title if rc == 0 else None,
+                "error": err if rc else None}
+    return {"ok": False,
+            "error": f"no window-control helper for {sess} session"}
+
+
+def tool_notify(message: str, title: str = "Kali") -> Dict[str, Any]:
+    """Pop a desktop notification — useful to ping the operator when a
+    long task finishes.  Prefers notify-send (works on KDE/GNOME/etc.),
+    falls back to kdialog --passivepopup on KDE."""
+    if not message:
+        return {"ok": False, "error": "no message"}
+    if _have("notify-send"):
+        rc, _o, err = _ro(["notify-send", title, message], timeout=5)
+        if rc == 0:
+            return {"ok": True, "notified": message, "via": "notify-send"}
+    if _have("kdialog"):
+        rc, _o, err = _ro(
+            ["kdialog", "--title", title, "--passivepopup", message, "6"],
+            timeout=5)
+        if rc == 0:
+            return {"ok": True, "notified": message, "via": "kdialog"}
+    return {"ok": False,
+            "error": "no notifier (install libnotify-bin for notify-send)"}
+
+
+def tool_type_text(text: str) -> Dict[str, Any]:
+    """Type a string into the focused window as synthetic keystrokes.
+
+    Wayland: wtype (or ydotool).  X11: xdotool.  This is how Kali fills
+    fields in apps that aren't a browser (the browser has its own tool).
+    """
+    if not text:
+        return {"ok": False, "error": "no text"}
+    sess = _session_type()
+    if sess == "wayland":
+        if _have("wtype"):
+            rc, _o, err = _ro(["wtype", text], timeout=15)
+            return {"ok": rc == 0, "typed": len(text),
+                    "error": err if rc else None}
+        if _have("ydotool"):
+            rc, _o, err = _ro(["ydotool", "type", text], timeout=15)
+            return {"ok": rc == 0, "typed": len(text),
+                    "error": err if rc else None}
+        return {"ok": False, "error": "install wtype or ydotool to type "
+                                       "on Wayland"}
+    if sess == "x11" and _have("xdotool"):
+        rc, _o, err = _ro(["xdotool", "type", "--clearmodifiers", text],
+                          timeout=15)
+        return {"ok": rc == 0, "typed": len(text), "error": err if rc else None}
+    return {"ok": False, "error": f"no input helper for {sess} session"}
+
+
+def tool_press_key(keys: str) -> Dict[str, Any]:
+    """Send a key or chord, e.g. 'Return', 'ctrl+s', 'alt+Tab', 'Escape'.
+    Accepts xdotool-style names; translated for wtype on Wayland."""
+    if not keys:
+        return {"ok": False, "error": "no key"}
+    sess = _session_type()
+    if sess == "x11" and _have("xdotool"):
+        rc, _o, err = _ro(["xdotool", "key", "--clearmodifiers", keys],
+                          timeout=8)
+        return {"ok": rc == 0, "pressed": keys, "error": err if rc else None}
+    if sess == "wayland":
+        if _have("wtype"):
+            # wtype uses -M/-m for modifiers and -k for keysyms
+            parts = keys.split("+")
+            mods, key = parts[:-1], parts[-1]
+            argv = ["wtype"]
+            for m in mods:
+                argv += ["-M", m]
+            argv += ["-k", key]
+            for m in reversed(mods):
+                argv += ["-m", m]
+            rc, _o, err = _ro(argv, timeout=8)
+            return {"ok": rc == 0, "pressed": keys, "error": err if rc else None}
+        if _have("ydotool"):
+            rc, _o, err = _ro(["ydotool", "key", keys], timeout=8)
+            return {"ok": rc == 0, "pressed": keys, "error": err if rc else None}
+        return {"ok": False, "error": "install wtype or ydotool"}
+    return {"ok": False, "error": f"no input helper for {sess} session"}
+
+
+def tool_media_control(action: str) -> Dict[str, Any]:
+    """Control media playback via playerctl: play, pause, play-pause,
+    next, previous, stop, or status."""
+    if not _have("playerctl"):
+        return {"ok": False, "error": "playerctl not installed"}
+    action = (action or "status").strip()
+    allowed = {"play", "pause", "play-pause", "next", "previous", "stop",
+               "status"}
+    if action not in allowed:
+        return {"ok": False, "error": f"action must be one of {sorted(allowed)}"}
+    rc, out, err = _ro(["playerctl", action], timeout=5)
+    return {"ok": rc == 0, "action": action,
+            "output": out.strip(), "error": err if rc else None}
+
+
+# ═════════════════════════════════════════════════════════════════════
+# SCREENSHOTS & SCREEN READING (OCR)
+# ═════════════════════════════════════════════════════════════════════
+
+def _screenshot_to(path: str, region: Optional[str] = None) -> Dict[str, Any]:
+    """Capture the screen to `path` (PNG).  region = 'x,y,w,h' for a
+    sub-rectangle (X11 via scrot/import).  Order of preference:
+      • Wayland  → grim
+      • X11      → scrot, then ImageMagick import
+      • KDE any  → Spectacle as a fallback (handles compositor quirks)
+    """
+    sess = _session_type()
+    try:
+        # Wayland: grim (full screen; region needs interactive slurp)
+        if sess == "wayland" and _have("grim"):
+            rc, _o, err = _ro(["grim", path], timeout=15)
+            if rc == 0:
+                return {"ok": True, "path": path, "tool": "grim"}
+
+        # X11: scrot is fastest and supports an exact region rectangle
+        if sess != "wayland" and _have("scrot"):
+            if region:
+                # scrot autoselect rectangle: x,y,w,h
+                argv = ["scrot", "-o", "-a", region, path]
+            else:
+                argv = ["scrot", "-o", path]
+            rc, _o, err = _ro(argv, timeout=15)
+            if rc == 0:
+                return {"ok": True, "path": path, "tool": "scrot"}
+
+        # X11: ImageMagick import on the root window, optional crop
+        if sess != "wayland" and _have("import"):
+            argv = ["import", "-window", "root"]
+            if region:
+                # region x,y,w,h → ImageMagick geometry WxH+X+Y
+                try:
+                    x, y, w, h = region.split(",")
+                    argv += ["-crop", f"{w}x{h}+{x}+{y}"]
+                except ValueError:
+                    pass
+            argv.append(path)
+            rc, _o, err = _ro(argv, timeout=15)
+            if rc == 0:
+                return {"ok": True, "path": path, "tool": "import"}
+
+        # KDE: Spectacle in background full-screen mode (-b -f -n -o)
+        if _have("spectacle"):
+            rc, _o, err = _ro(
+                ["spectacle", "-b", "-n", "-f", "-o", path], timeout=20)
+            if rc == 0 and os.path.exists(path):
+                return {"ok": True, "path": path, "tool": "spectacle"}
+
+        return {"ok": False,
+                "error": f"no working screenshot tool for {sess} session "
+                         f"(tried grim/scrot/import/spectacle)"}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
+def tool_screenshot(save_path: str = "") -> Dict[str, Any]:
+    """Take a screenshot and save it as a PNG.  Defaults to a timestamped
+    file in ~/Pictures (or DATA_DIR if that's missing)."""
+    if save_path:
+        path = os.path.expanduser(save_path)
+    else:
+        pics = os.path.expanduser("~/Pictures")
+        base = pics if os.path.isdir(pics) else str(DATA_DIR)
+        ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        path = os.path.join(base, f"kali-shot-{ts}.png")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    res = _screenshot_to(path)
+    if res.get("ok"):
+        try:
+            res["size_bytes"] = os.path.getsize(path)
+        except Exception:
+            pass
+    return res
+
+
+def tool_read_screen(region: str = "") -> Dict[str, Any]:
+    """Screenshot the screen and OCR it to text — lets Kali 'read' what's
+    on screen.  Needs a screenshot tool + tesseract.  Returns extracted
+    text."""
+    if not _have("tesseract"):
+        return {"ok": False, "error": "tesseract not installed (needed for "
+                                       "screen OCR: apt install tesseract-ocr)"}
+    ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    shot = os.path.join(str(DATA_DIR), f"ocr-{ts}.png")
+    cap = _screenshot_to(shot, region or None)
+    if not cap.get("ok"):
+        return cap
+    try:
+        rc, out, err = _ro(["tesseract", shot, "stdout"], timeout=30)
+        text = out.strip()
+        # clean up the temp capture
+        try:
+            os.remove(shot)
+        except Exception:
+            pass
+        if rc != 0:
+            return {"ok": False, "error": err or "tesseract failed"}
+        return {"ok": True, "text": text, "chars": len(text)}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
+# ═════════════════════════════════════════════════════════════════════
+# FILESYSTEM OPERATIONS — copy, move, delete, mkdir, rename
+#
+# Real filesystem manipulation beyond read/write.  Every destructive op
+# (delete, overwrite-on-move) is guarded: refuses sensitive paths
+# (is_sensitive_path) and refuses obviously catastrophic targets ($HOME
+# itself, /, and the like).  Moves/copies into existing files are
+# reported so the model/operator can decide.
+# ═════════════════════════════════════════════════════════════════════
+
+def _fs_guard(path: str) -> Optional[str]:
+    """Return an error string if `path` is too dangerous to modify, else
+    None."""
+    rp = os.path.realpath(os.path.expanduser(path))
+    if is_sensitive_path(rp):
+        return f"refused: '{path}' is a protected/sensitive path"
+    catastrophic = {"/", os.path.realpath(os.path.expanduser("~")),
+                    "/etc", "/usr", "/bin", "/boot", "/lib", "/sys",
+                    "/proc", "/dev", "/var"}
+    if rp in catastrophic:
+        return f"refused: '{path}' is a critical system path"
+    return None
+
+
+def tool_make_dir(path: str) -> Dict[str, Any]:
+    """Create a directory (and parents)."""
+    try:
+        rp = os.path.expanduser(path)
+        os.makedirs(rp, exist_ok=True)
+        return {"ok": True, "created": rp}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
+def tool_copy_path(src: str, dst: str) -> Dict[str, Any]:
+    """Copy a file or directory tree from src to dst."""
+    try:
+        rsrc = os.path.expanduser(src)
+        rdst = os.path.expanduser(dst)
+        if not os.path.exists(rsrc):
+            return {"ok": False, "error": f"source not found: {src}"}
+        if os.path.isdir(rsrc):
+            shutil.copytree(rsrc, rdst, dirs_exist_ok=True)
+        else:
+            os.makedirs(os.path.dirname(rdst) or ".", exist_ok=True)
+            shutil.copy2(rsrc, rdst)
+        return {"ok": True, "copied": rsrc, "to": rdst}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
+def tool_move_path(src: str, dst: str) -> Dict[str, Any]:
+    """Move or rename a file or directory."""
+    guard = _fs_guard(src)
+    if guard:
+        return {"ok": False, "error": guard}
+    try:
+        rsrc = os.path.expanduser(src)
+        rdst = os.path.expanduser(dst)
+        if not os.path.exists(rsrc):
+            return {"ok": False, "error": f"source not found: {src}"}
+        os.makedirs(os.path.dirname(rdst) or ".", exist_ok=True)
+        overwrote = os.path.exists(rdst)
+        shutil.move(rsrc, rdst)
+        return {"ok": True, "moved": rsrc, "to": rdst, "overwrote": overwrote}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
+def tool_delete_path(path: str, recursive: bool = False) -> Dict[str, Any]:
+    """Delete a file, or a directory (recursive=True for non-empty dirs).
+
+    Guarded against sensitive/critical paths.  This is destructive — the
+    UI confirmation flow still applies before it runs in confirm mode."""
+    guard = _fs_guard(path)
+    if guard:
+        return {"ok": False, "error": guard}
+    try:
+        rp = os.path.expanduser(path)
+        if not os.path.exists(rp):
+            return {"ok": False, "error": f"not found: {path}"}
+        if os.path.isdir(rp):
+            if recursive:
+                shutil.rmtree(rp)
+            else:
+                os.rmdir(rp)   # fails if non-empty — intentional safety
+        else:
+            os.remove(rp)
+        return {"ok": True, "deleted": rp}
+    except OSError as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e} "
+                                       f"(use recursive=true for non-empty "
+                                       f"directories)"}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
+def tool_path_info(path: str) -> Dict[str, Any]:
+    """Stat a path: type, size, permissions, mtime — without reading it."""
+    try:
+        rp = os.path.expanduser(path)
+        if not os.path.exists(rp):
+            return {"ok": False, "error": f"not found: {path}"}
+        st = os.stat(rp)
+        return {
+            "ok": True, "path": rp,
+            "type": "dir" if os.path.isdir(rp) else "file",
+            "size": st.st_size, "size_human": _human_bytes(st.st_size),
+            "mode": oct(st.st_mode & 0o777),
+            "mtime": datetime.datetime.fromtimestamp(
+                st.st_mtime).isoformat(timespec="seconds"),
+        }
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
+# ═════════════════════════════════════════════════════════════════════
+# BROWSER AUTOMATION — open URLs, and (when Playwright is present) drive
+# a real browser: navigate, read text, click, fill, screenshot.
+#
+# Two tiers:
+#   • tool_open_url — always works (xdg-open), opens in the user's
+#     default browser.  No automation, just "open this".
+#   • tool_browser  — full automation via Playwright if installed.  One
+#     persistent headed Chromium context is reused across calls so a
+#     login/session carries between steps.  If Playwright isn't
+#     installed, returns a clear, actionable error telling the operator
+#     exactly how to enable it.
+# ═════════════════════════════════════════════════════════════════════
+
+def tool_open_url(url: str) -> Dict[str, Any]:
+    """Open a URL in the default browser (no automation)."""
+    url = (url or "").strip()
+    if not url:
+        return {"ok": False, "error": "no url"}
+    if "://" not in url:
+        url = "https://" + url
+    if not _have("xdg-open"):
+        return {"ok": False, "error": "xdg-open not available"}
+    try:
+        subprocess.Popen(["xdg-open", url], stdin=subprocess.DEVNULL,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True)
+        return {"ok": True, "opened": url}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
+# Persistent Playwright browser state, lazily created and reused.
+_browser_state: Dict[str, Any] = {"pw": None, "browser": None, "page": None}
+_browser_lock = threading.Lock()
+
+
+def _browser_available() -> bool:
+    import importlib.util
+    return importlib.util.find_spec("playwright") is not None
+
+
+def _ensure_browser() -> Tuple[Optional[Any], Optional[str]]:
+    """Return (page, None) on success or (None, error) if Playwright is
+    missing or the browser couldn't launch."""
+    if not _browser_available():
+        return None, ("Playwright not installed. Enable browser automation "
+                      "with:  pip install playwright  &&  playwright install "
+                      "chromium")
+    with _browser_lock:
+        if _browser_state["page"] is not None:
+            return _browser_state["page"], None
+        try:
+            from playwright.sync_api import sync_playwright
+            pw = sync_playwright().start()
+            browser = pw.chromium.launch(headless=False)
+            page = browser.new_page()
+            _browser_state.update({"pw": pw, "browser": browser, "page": page})
+            return page, None
+        except Exception as e:
+            return None, f"browser launch failed: {type(e).__name__}: {e}"
+
+
+def tool_browser(action: str, target: str = "",
+                 value: str = "") -> Dict[str, Any]:
+    """Drive a real browser for automation.  Actions:
+      • goto      target=URL                  — navigate
+      • read      (no target)                 — return visible page text
+      • click     target=CSS-or-text          — click an element
+      • fill      target=CSS  value=TEXT       — type into a field
+      • screenshot target=optional save path   — capture the page
+      • title / url                            — page metadata
+      • close                                  — shut the browser down
+    A single browser session persists across calls so logins stick.
+    Requires Playwright (clear error returned if absent)."""
+    action = (action or "").strip().lower()
+    if action == "close":
+        with _browser_lock:
+            try:
+                if _browser_state["browser"]:
+                    _browser_state["browser"].close()
+                if _browser_state["pw"]:
+                    _browser_state["pw"].stop()
+            except Exception:
+                pass
+            _browser_state.update({"pw": None, "browser": None, "page": None})
+        return {"ok": True, "closed": True}
+
+    page, err = _ensure_browser()
+    if err:
+        return {"ok": False, "error": err}
+    try:
+        if action == "goto":
+            url = target.strip()
+            if "://" not in url:
+                url = "https://" + url
+            page.goto(url, timeout=30000, wait_until="domcontentloaded")
+            return {"ok": True, "url": page.url, "title": page.title()}
+        if action == "read":
+            text = page.inner_text("body")[:8000]
+            return {"ok": True, "text": text, "url": page.url}
+        if action == "click":
+            # try CSS first, then visible text
+            try:
+                page.click(target, timeout=8000)
+            except Exception:
+                page.get_by_text(target, exact=False).first.click(timeout=8000)
+            return {"ok": True, "clicked": target, "url": page.url}
+        if action == "fill":
+            page.fill(target, value, timeout=8000)
+            return {"ok": True, "filled": target, "chars": len(value)}
+        if action == "screenshot":
+            ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+            path = (os.path.expanduser(target) if target
+                    else os.path.join(str(DATA_DIR), f"page-{ts}.png"))
+            page.screenshot(path=path, full_page=True)
+            return {"ok": True, "path": path}
+        if action == "title":
+            return {"ok": True, "title": page.title()}
+        if action == "url":
+            return {"ok": True, "url": page.url}
+        return {"ok": False, "error": f"unknown browser action '{action}'"}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {str(e)[:200]}"}
+
+
+
 
 SEVERITY_WEIGHTS = {"info": 0, "low": 1, "medium": 3, "high": 8, "critical": 20}
 

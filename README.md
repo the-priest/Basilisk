@@ -4,7 +4,7 @@
 
 **A local, loyal AI assistant that lives on your machine.**
 
-Groq / SiliconFlow / Novita / GitHub Models / Google AI Studio cloud, or Ollama local. Full OS access.
+Groq / SiliconFlow / Novita / GitHub Models / Google AI Studio — cloud-only, multi-provider. Full OS + desktop control.
 Reads files. Watches services. Audits security. Runs commands with your permission.
 
 </div>
@@ -40,15 +40,15 @@ She's built for one operator — you — and she behaves like it. No corporate g
    │ watcher  │
    └────┬─────┘
         │
-  ┌─────┴──────┐
-  │            │
-┌─▼──┐    ┌────▼────┐
-│Groq│    │  Ollama │
-│API │    │ (local) │
-└────┘    └─────────┘
+  ┌─────┴───────────────────────────┐
+  │  active provider (pick one)      │
+┌─▼────┬───────────┬────────┬────────┬──────────┐
+│ Groq │SiliconFlow│ Novita │ GitHub │  Google  │
+└──────┴───────────┴────────┴────────┴──────────┘
+   all OpenAI-compatible · cloud-only
 ```
 
-**Provider routing.** Kali can use any of several cloud providers — Groq, SiliconFlow, Novita AI, GitHub Models, and Google AI Studio — and falls back to local Ollama when the chosen provider is offline, unconfigured, or erroring. Pick the active provider in Settings → Backends → Provider routing, and set a per-provider API key and model in that provider's group. Toggle "Prefer cloud over local" off to always use Ollama. The active provider is shown as a pill in the header.
+**Provider routing.** Kali is cloud-only and supports five providers: Groq, SiliconFlow, Novita AI, GitHub Models, and Google AI Studio. Pick the active one in Settings → Backends → Provider routing, and set its API key and model in that provider's group. The active provider is shown as a pill in the header. There is no local model — if the active provider has no key or you're offline, Kali tells you instead of falling back.
 
 Every cloud provider speaks the OpenAI-compatible chat-completions API, so each one has the same controls: an API key field, a model picker (biggest/best models listed first), and a refresh button (⟳) that pulls the provider's live model catalogue from its API. If a configured model ID has gone stale, Kali transparently re-fetches the live list and retries with a real model rather than erroring out.
 
@@ -65,14 +65,14 @@ What it installs:
 - Python 3.10+ check (fails fast if not present)
 - GTK4 + libadwaita bindings (apt / pacman / dnf, auto-detected)
 - `groq` Python library (cloud backend)
-- Ollama + a small fallback model (`llama3.2:1b` by default, ~1.3 GB)
+- Optional desktop-control helpers (xdotool/wmctrl on X11, or wtype/wlrctl/grim on Wayland; plus tesseract-ocr and playerctl) — for app launching, typing/clicking, screenshots and screen reading. Best-effort; skipped with `--no-helpers`.
+- Optional Playwright + Chromium for browser automation (skipped with `--no-browser`)
 - The three Python files + dragon SVG icon
 - A `kali` launcher in `~/.local/bin/`
 - A `.desktop` entry so Kali shows up in your app grid
-- A systemd `--user` unit so Ollama starts at login
 - An optional prompt for your Groq API key (you can skip and add it later in Settings)
 
-**Time:** ~3-8 min on first install (model download is the bottleneck). Re-runs are ~5 seconds.
+**Time:** ~1-3 min on first install. Re-runs are ~5 seconds.
 
 **Update later:** re-run the same one-liner. It detects what's done and only does what's missing.
 
@@ -103,10 +103,9 @@ cd kali
 | `--update`           | explicit update (same as default install)               |
 | `--uninstall`        | remove Kali (chat history kept)                         |
 | `--remove-oracle`    | remove the old Oracle install (Kali untouched)          |
-| `--refresh-ollama`   | re-run Ollama's installer to update it                  |
 | `--no-systemd`       | don't install the systemd unit file                     |
-| `--no-ollama`        | skip Ollama entirely (Groq-only setup)                  |
-| `--no-model`         | don't pull a local model                                |
+| `--no-helpers`       | skip optional desktop-control helpers                   |
+| `--no-browser`       | skip Playwright + Chromium (browser automation)         |
 | `--no-groq`          | don't install the groq library or prompt for a key      |
 | `--no-prompt`        | non-interactive (skips Groq key prompt)                 |
 
@@ -156,8 +155,22 @@ Everything below runs as your user (no sudo). Read-only tools fire without confi
 | `run`                | Execute an **approved** command. Sudo commands show a password field. |
 | `audit`              | 10-check parallel security audit. Grade A+ → F.                 |
 | `scan_net`           | `nmap -sn` on your local subnet (ARP fallback if no nmap).      |
+| `desktop_info`       | Reports what desktop control is available (Wayland/X11, helpers).|
+| `list_apps`          | List installed GUI apps (`.desktop` entries).                   |
+| `launch_app`         | Launch an app by name, desktop id, file, or URL.                |
+| `open_url`           | Open a URL in your default browser.                             |
+| `list_windows` / `focus_window` / `close_window` | List open windows; focus or close one. |
+| `type_text` / `press_key` | Type text / send keys to the focused window.               |
+| `notify`             | Pop a desktop notification (ping you when a long task ends).     |
+| `media_control`      | Play/pause/next/previous via playerctl.                         |
+| `screenshot`         | Capture the screen to a PNG (grim/scrot/import).                |
+| `read_screen`        | Screenshot **+ OCR** — Kali reads what's on screen (tesseract). |
+| `path_info` / `make_dir` / `copy_path` / `move_path` / `delete_path` | Full filesystem ops. Destructive ones are path-guarded and confirm-gated. |
+| `browser`            | Drive a real browser (Playwright): goto, read, click, fill, screenshot. Session persists across calls. |
 
-Read-only tools fire on their own so Kali can see the system and reason. Anything that changes state goes through `propose` → your approval → `run`. Clicking **Run** is your approval; you only get a second prompt when a command needs your sudo password. You can stop Kali mid-reply any time with the stop button (the send button turns into it) or the **Esc** key.
+Read-only tools fire on their own so Kali can see the system and reason. Anything that changes state — running a shell command, launching an app, typing, moving or deleting files — goes through your approval first while **Confirm every command** is on (Settings → Behaviour). Turn that toggle off and those actions run immediately ("auto" mode). Shell commands still use the `propose` → **Run** card flow; the new device-control actions use a quick confirm dialog. You can stop Kali mid-reply any time with the stop button or the **Esc** key.
+
+**Desktop control needs small helpers**, installed for you by `install.sh` (or `apt install` them later): on X11 `xdotool` + `wmctrl` + `scrot`; on Wayland `wtype` + `wlrctl` + `grim`; plus `tesseract-ocr` for screen reading, `libnotify-bin` for notifications, and `playerctl` for media. On **KDE Plasma** it also picks up Spectacle for screenshots and uses kdialog/notify-send where they're better. Browser automation needs Playwright (`pip install playwright && playwright install chromium`). Every tool detects what's missing and tells you the package to install rather than failing silently — ask Kali to run `desktop_info` to see what's available on your box.
 
 ### Security audit checks
 
@@ -199,7 +212,7 @@ Off by default. Enable in Settings → Behaviour → Watcher. Surfaces events as
 ~/.local/bin/kali              # launcher
 ~/.local/share/applications/org.thepriest.kali.desktop
 ~/.local/share/icons/hicolor/scalable/apps/org.thepriest.kali.svg
-~/.config/systemd/user/kali-ollama.service
+(systemd unit no longer used — cloud-only)
 ```
 
 ## Tweaking the persona

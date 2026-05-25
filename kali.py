@@ -23,7 +23,7 @@ import datetime
 from typing import List, Dict, Any, Optional, Callable
 
 from kali_core import (
-    OllamaBackend, GroqBackend, OpenAICompatBackend, BackendRouter,
+    GroqBackend, OpenAICompatBackend, BackendRouter,
     ChatStore, Chat,
     load_settings, save_settings, log,
     tool_read_file, tool_list_dir, tool_run_command, tool_system_info,
@@ -33,6 +33,12 @@ from kali_core import (
     tool_network_status, tool_find_file,
     run_security_audit, format_audit_for_chat,
     run_network_scan, format_scan_for_chat,
+    tool_desktop_info, tool_list_apps, tool_launch_app,
+    tool_list_windows, tool_focus_window, tool_close_window,
+    tool_notify, tool_type_text, tool_press_key,
+    tool_media_control, tool_screenshot, tool_read_screen,
+    tool_make_dir, tool_copy_path, tool_move_path, tool_delete_path,
+    tool_path_info, tool_open_url, tool_browser,
     parse_tool_calls, strip_tool_calls,
     is_online, is_sensitive_path, command_needs_sudo, Watcher,
     PROVIDERS, PROVIDERS_BY_KEY,
@@ -342,7 +348,6 @@ headerbar {
 .status-pill.error    { background-color: #f38ba8; color: #1e1e2e; }
 .status-pill.groq     { background: linear-gradient(135deg, #cba6f7, #f5c2e7);
                         color: #1e1e2e; }
-.status-pill.ollama   { background-color: #fab387; color: #1e1e2e; }
 
 /* ===== Settings ===== */
 
@@ -1295,8 +1300,8 @@ class SettingsDialog(Adw.PreferencesDialog):
         rg = Adw.PreferencesGroup()
         rg.set_title("Provider routing")
         rg.set_description(
-            "Pick the cloud provider to use when online.  Falls back to "
-            "local Ollama when it's unavailable.")
+            "Pick which cloud provider Kali uses.  Set that provider's "
+            "API key and model in its section below.")
 
         self.active_provider_row = Adw.ComboRow()
         self.active_provider_row.set_title("Active provider")
@@ -1309,41 +1314,11 @@ class SettingsDialog(Adw.PreferencesDialog):
         self.active_provider_row.connect("notify::selected",
                                          self._on_active_provider)
         rg.add(self.active_provider_row)
-
-        self.prefer_cloud_row = Adw.SwitchRow()
-        self.prefer_cloud_row.set_title("Prefer cloud over local")
-        self.prefer_cloud_row.set_subtitle(
-            "When online with a key.  Off = always use local Ollama.")
-        self.prefer_cloud_row.set_active(
-            parent.settings.get("prefer_cloud", True))
-        self.prefer_cloud_row.connect("notify::active", self._on_prefer_cloud)
-        rg.add(self.prefer_cloud_row)
         page.add(rg)
 
         # ── One group per cloud provider: key + model picker ──
         for spec in PROVIDERS:
             self._build_provider_group(page, spec, parent)
-
-        og = Adw.PreferencesGroup()
-        og.set_title("Ollama (local, fallback)")
-
-        self.ollama_model_row = Adw.ComboRow()
-        self.ollama_model_row.set_title("Fallback model")
-        self._populate_ollama_models()
-        og.add(self.ollama_model_row)
-
-        self.autostart_row = Adw.SwitchRow()
-        self.autostart_row.set_title("Auto-start ollama serve")
-        self.autostart_row.set_active(parent.settings["auto_start_ollama"])
-        self.autostart_row.connect("notify::active", self._on_autostart)
-        og.add(self.autostart_row)
-
-        self.stop_on_quit_row = Adw.SwitchRow()
-        self.stop_on_quit_row.set_title("Stop ollama on app quit")
-        self.stop_on_quit_row.set_active(parent.settings["stop_ollama_on_quit"])
-        self.stop_on_quit_row.connect("notify::active", self._on_stop_quit)
-        og.add(self.stop_on_quit_row)
-        page.add(og)
 
         self.add(page)
 
@@ -1361,13 +1336,6 @@ class SettingsDialog(Adw.PreferencesDialog):
         temp_row.set_value(parent.settings["temperature"])
         temp_row.connect("notify::value", self._on_temp)
         gen_g.add(temp_row)
-
-        ctx_row = Adw.SpinRow.new_with_range(512, 32768, 512)
-        ctx_row.set_title("Local context window")
-        ctx_row.set_subtitle("For the Ollama backend only.")
-        ctx_row.set_value(parent.settings["num_ctx"])
-        ctx_row.connect("notify::value", self._on_ctx)
-        gen_g.add(ctx_row)
 
         max_row = Adw.SpinRow.new_with_range(256, 8192, 128)
         max_row.set_title("Max response tokens")
@@ -1578,18 +1546,6 @@ class SettingsDialog(Adw.PreferencesDialog):
         self.win.settings[key] = value
         save_settings(self.win.settings)
 
-    def _populate_ollama_models(self):
-        models = self.win.ollama.list_models()
-        names = [m["name"] for m in models] if models else []
-        if not names:
-            names = ["(no models — pull one with: ollama pull llama3.2:1b)"]
-        sl = Gtk.StringList.new(names)
-        self.ollama_model_row.set_model(sl)
-        current = self.win.settings.get("ollama_model", "")
-        if current in names:
-            self.ollama_model_row.set_selected(names.index(current))
-        self.ollama_model_row.connect("notify::selected", self._on_ollama_model)
-
     def _on_provider_key(self, key, text):
         self.win.settings[f"{key}_api_key"] = text
         save_settings(self.win.settings)
@@ -1614,11 +1570,6 @@ class SettingsDialog(Adw.PreferencesDialog):
             self.win.settings["active_provider"] = keys[idx]
             save_settings(self.win.settings)
             self.win.update_status_pills()
-
-    def _on_prefer_cloud(self, row, _ps):
-        self.win.settings["prefer_cloud"] = row.get_active()
-        save_settings(self.win.settings)
-        self.win.update_status_pills()
 
     def _fetch_live_models(self, key):
         """Query the provider's live /models catalogue on a background
@@ -1659,20 +1610,8 @@ class SettingsDialog(Adw.PreferencesDialog):
         self.win._show_toast(
             f"{spec.label if spec else key}: {len(ids)} models loaded.")
 
-    def _on_ollama_model(self, row, _ps):
-        m = row.get_model()
-        idx = row.get_selected()
-        if m and idx < m.get_n_items():
-            name = m.get_string(idx)
-            if not name.startswith("("):
-                self.win.settings["ollama_model"] = name
-                save_settings(self.win.settings)
-
     def _on_temp(self, row, *args):
         self._set("temperature", float(row.get_value()))
-
-    def _on_ctx(self, row, *args):
-        self._set("num_ctx", int(row.get_value()))
 
     def _on_max(self, row, *args):
         self._set("max_tokens", int(row.get_value()))
@@ -1708,12 +1647,6 @@ class SettingsDialog(Adw.PreferencesDialog):
     def _on_confirm_all(self, row, _ps):
         self._set("confirm_all_commands", row.get_active())
 
-    def _on_autostart(self, row, _ps):
-        self._set("auto_start_ollama", row.get_active())
-
-    def _on_stop_quit(self, row, _ps):
-        self._set("stop_ollama_on_quit", row.get_active())
-
     def _on_watcher_enable(self, row, _ps):
         self._set("watcher_enabled", row.get_active())
         if row.get_active():
@@ -1739,7 +1672,6 @@ class MainWindow(Adw.ApplicationWindow):
         self.set_default_size(w, h)
         self.app = app
         self.settings = load_settings()
-        self.ollama = OllamaBackend()
         # Build one backend per registered cloud provider.  Groq keeps its
         # library-backed backend; everything else rides the generic
         # OpenAI-compatible backend.  Keyed by provider id for the router.
@@ -1752,7 +1684,7 @@ class MainWindow(Adw.ApplicationWindow):
                 self.cloud[spec.key] = OpenAICompatBackend(spec, key)
         # Back-compat alias used in a few spots.
         self.groq = self.cloud.get("groq")
-        self.router = BackendRouter(self.cloud, self.ollama, self.settings)
+        self.router = BackendRouter(self.cloud, self.settings)
         self.store = ChatStore()
         self.watcher = Watcher(self.settings, self._on_watcher_event)
 
@@ -1796,10 +1728,6 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _boot(self):
         def _bg():
-            if self.settings.get("auto_start_ollama", True):
-                if not self.ollama.is_running():
-                    log("Starting ollama serve...")
-                    self.ollama.start_serve()
             GLib.idle_add(self.update_status_pills)
             if self.settings.get("watcher_enabled"):
                 self.watcher.start()
@@ -2166,25 +2094,22 @@ class MainWindow(Adw.ApplicationWindow):
         return True
 
     def update_status_pills(self, online: Optional[bool] = None):
-        # Provider pill — reflects the active cloud provider when usable,
-        # otherwise local Ollama, otherwise nothing.
+        # Provider pill — shows the active cloud provider when it has a
+        # key configured, otherwise "NO KEY".
         backend, key = self.router.active_cloud()
-        prefer_cloud = self.settings.get("prefer_cloud", True)
-        if prefer_cloud and backend is not None and backend.is_available():
+        if backend is not None and backend.is_available():
             label = PROVIDERS_BY_KEY[key].label.upper() \
                 if key in PROVIDERS_BY_KEY else key.upper()
             self.provider_pill.set_text(label)
-            for c in ("ollama", "offline", "error"):
+            for c in ("offline", "error"):
                 self.provider_pill.remove_css_class(c)
             self.provider_pill.add_css_class("groq")
-        elif self.ollama.is_running():
-            self.provider_pill.set_text("LOCAL")
-            for c in ("groq", "offline", "error"):
-                self.provider_pill.remove_css_class(c)
-            self.provider_pill.add_css_class("ollama")
         else:
-            self.provider_pill.set_text("NO BACKEND")
-            for c in ("groq", "ollama", "offline"):
+            # Distinguish "no key" from "key set but offline"
+            has_key = backend is not None and bool(
+                self.settings.get(f"{key}_api_key", ""))
+            self.provider_pill.set_text("NO KEY" if not has_key else "OFFLINE")
+            for c in ("groq", "offline"):
                 self.provider_pill.remove_css_class(c)
             self.provider_pill.add_css_class("error")
 
@@ -2507,13 +2432,9 @@ class MainWindow(Adw.ApplicationWindow):
             self._finish_turn_cleanup()
             return
 
-        active_backend, _key = self.router.active_cloud()
-        cloud_ok = (self.settings.get("prefer_cloud", True)
-                    and active_backend is not None
-                    and active_backend.is_available())
-        if not self.ollama.is_running() and not cloud_ok:
+        if not self.router.any_available():
             self._show_toast(
-                "No backend.  Add an API key in Settings, or start Ollama.")
+                "No provider ready.  Add an API key in Settings → Backends.")
             self.streaming_chat_id = None
             self._tool_chain_depth = 0
             self._set_working(False)
@@ -2693,6 +2614,74 @@ class MainWindow(Adw.ApplicationWindow):
                 a.get("command", ""), a.get("reason", "")),
             "audit":             lambda a: self._tool_audit(),
             "scan_net":          lambda a: self._tool_scan_net(a.get("cidr")),
+
+            # ── Desktop control (read-only: simple) ──
+            "desktop_info":      lambda a: self._tool_simple(tool_desktop_info),
+            "list_apps":         lambda a: self._tool_simple(
+                lambda: tool_list_apps(a.get("filter", a.get("filter_text", "")))),
+            "list_windows":      lambda a: self._tool_simple(tool_list_windows),
+            "media_control":     lambda a: self._tool_simple(
+                lambda: tool_media_control(a.get("action", "status"))),
+            "notify":            lambda a: self._tool_simple(
+                lambda: tool_notify(a.get("message", ""),
+                                    a.get("title", "Kali"))),
+
+            # ── Desktop control (actions: confirm-gated) ──
+            "launch_app":        lambda a: self._action_tool(
+                "launch_app", lambda: tool_launch_app(
+                    a.get("app", ""), a.get("args", "")),
+                f"launch app: {a.get('app','')}"),
+            "open_url":          lambda a: self._action_tool(
+                "open_url", lambda: tool_open_url(a.get("url", "")),
+                f"open URL: {a.get('url','')}"),
+            "focus_window":      lambda a: self._action_tool(
+                "focus_window", lambda: tool_focus_window(a.get("title", "")),
+                f"focus window: {a.get('title','')}"),
+            "close_window":      lambda a: self._action_tool(
+                "close_window", lambda: tool_close_window(a.get("title", "")),
+                f"close window: {a.get('title','')}"),
+            "type_text":         lambda a: self._action_tool(
+                "type_text", lambda: tool_type_text(a.get("text", "")),
+                f"type {len(a.get('text',''))} chars into focused window"),
+            "press_key":         lambda a: self._action_tool(
+                "press_key", lambda: tool_press_key(a.get("keys", "")),
+                f"press key: {a.get('keys','')}"),
+
+            # ── Screenshots & screen reading (read-only: simple) ──
+            "screenshot":        lambda a: self._tool_simple(
+                lambda: tool_screenshot(a.get("save_path", a.get("path", "")))),
+            "read_screen":       lambda a: self._tool_simple(
+                lambda: tool_read_screen(a.get("region", ""))),
+
+            # ── Filesystem (read-only: simple) ──
+            "path_info":         lambda a: self._tool_simple(
+                lambda: tool_path_info(a.get("path", ""))),
+            "make_dir":          lambda a: self._tool_simple(
+                lambda: tool_make_dir(a.get("path", ""))),
+            "copy_path":         lambda a: self._tool_simple(
+                lambda: tool_copy_path(a.get("src", ""), a.get("dst", ""))),
+
+            # ── Filesystem (destructive: confirm-gated) ──
+            "move_path":         lambda a: self._action_tool(
+                "move_path", lambda: tool_move_path(
+                    a.get("src", ""), a.get("dst", "")),
+                f"move {a.get('src','')} → {a.get('dst','')}"),
+            "delete_path":       lambda a: self._action_tool(
+                "delete_path", lambda: tool_delete_path(
+                    a.get("path", ""),
+                    bool(a.get("recursive", False))),
+                f"DELETE {a.get('path','')}"
+                f"{' (recursive)' if a.get('recursive') else ''}"),
+
+            # ── Browser automation ──
+            # read/title/url are read-only; goto/click/fill/screenshot/close
+            # are actions but low-risk, so they run without a blocking
+            # confirm (the operator can still stop the turn).  Destructive
+            # browser side-effects come from the page, not the tool.
+            "browser":           lambda a: self._tool_simple(
+                lambda: tool_browser(
+                    a.get("action", ""), a.get("target", ""),
+                    a.get("value", ""))),
         }
         fn = dispatch.get(call.name)
         if fn:
@@ -2736,6 +2725,26 @@ class MainWindow(Adw.ApplicationWindow):
                 GLib.idle_add(lambda m=msg: self.terminal_log(f"✗ {m}", "error") or False)
             GLib.idle_add(self._feed_tool_result, text)
         threading.Thread(target=_bg, daemon=True).start()
+
+    def _action_tool(self, name, fn, description):
+        """Run an action tool (one with side effects: launching apps,
+        typing, moving/deleting files).  Honours the SAME 'Confirm every
+        command' toggle the shell `run` tool uses — when it's on, the
+        operator approves via a dialog first; when off (auto mode), the
+        action runs immediately.  Either way the result is fed back to
+        the model."""
+        def _go(allow=True):
+            if not allow:
+                self._feed_tool_result(f"operator declined: {description}")
+                return
+            self._tool_simple(fn)
+
+        if self.settings.get("confirm_all_commands", True):
+            confirm_command_dialog(self, description,
+                                   f"Kali wants to: {description}", _go)
+        else:
+            _go(True)
+
 
     def _tool_read_file(self, path):
         if not path:
@@ -3143,7 +3152,7 @@ class MainWindow(Adw.ApplicationWindow):
         about.set_developer_name("The Priest")
         about.set_comments(
             "Local, loyal AI assistant.\n"
-            "Groq primary · Ollama fallback · lives on your hardware.")
+            "Multi-provider cloud AI · lives on your hardware.")
         about.set_license_type(Gtk.License.MIT_X11)
         about.present(self)
 
@@ -3327,8 +3336,6 @@ class MainWindow(Adw.ApplicationWindow):
         if self.streaming_cancel:
             self.streaming_cancel.set()
         self.watcher.stop()
-        if self.settings.get("stop_ollama_on_quit", True):
-            self.ollama.stop_serve()
         try:
             self.store.close()
         except Exception:

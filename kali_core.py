@@ -343,7 +343,7 @@ class GroqBackend:
 
     def __init__(self, api_key: str = "",
                  fallback_chain: List[str] = None):
-        self.api_key = api_key
+        self.api_key = (api_key or "").strip()
         self._client = None
         self.fallback_chain = fallback_chain or list(GROQ_FALLBACK_CHAIN)
         self._build_client()
@@ -359,7 +359,7 @@ class GroqBackend:
             self._client = None
 
     def set_api_key(self, key: str) -> None:
-        self.api_key = key
+        self.api_key = (key or "").strip()
         self._build_client()
 
     def is_available(self) -> bool:
@@ -456,23 +456,26 @@ class OpenAICompatBackend:
     """Generic backend for any OpenAI-compatible /chat/completions API.
 
     Drives SiliconFlow, Novita, GitHub Models, and Google AI Studio with
-    no extra dependencies — just urllib + Server-Sent-Events parsing,
-    just urllib + SSE, no extra dependencies.  Mirrors
-    GroqBackend's behaviour: biggest-model-first fallback chain, and a
-    hard stop on mid-stream fallback so two models' output never gets
-    spliced together on screen.
+    just urllib + Server-Sent-Events parsing, no extra dependencies.
+    Mirrors GroqBackend's behaviour: biggest-model-first fallback chain,
+    and a hard stop on mid-stream fallback so two models' output never
+    gets spliced together on screen.
     """
 
     def __init__(self, spec: "ProviderSpec", api_key: str = ""):
         self.spec = spec
         self.name = spec.key
-        self.api_key = api_key or ""
+        self.api_key = (api_key or "").strip()
         self.base_url = spec.base_url
         self.fallback_chain = list(spec.chain)
         self.extra_headers = dict(spec.extra_headers or {})
 
     def set_api_key(self, key: str) -> None:
-        self.api_key = key or ""
+        # Strip whitespace/newlines — pasting a key on mobile often appends
+        # a trailing space or newline, which then rides along in the
+        # Authorization header and makes the provider reject a key that
+        # looks correct in the Settings field.
+        self.api_key = (key or "").strip()
 
     def is_available(self) -> bool:
         return bool(self.api_key) and is_online()
@@ -590,12 +593,27 @@ class OpenAICompatBackend:
                 if any_tokens_emitted:
                     on_error(f"{self.name} {last_err} mid-stream")
                     return
-                # 429 = rate limit; 404/400 = bad/unavailable model.
+
+                # AUTH FIRST.  A missing/invalid key must stop immediately —
+                # never walk the model chain (that produced the bogus
+                # "exhausted all models" message).  Some providers signal a
+                # bad key with 401/403; others (GitHub, Google) use 400/404
+                # with an auth message in the body — catch those too.
+                low = (detail or "").lower()
+                auth_words = ("api key", "api_key", "apikey", "unauthorized",
+                              "permission", "invalid authentication",
+                              "invalid key", "forbidden", "credential",
+                              "token", "must provide")
+                if e.code in (401, 403) or (
+                        e.code in (400, 404) and any(w in low for w in auth_words)):
+                    on_error(f"{self.name}: authentication failed "
+                             f"(HTTP {e.code}). Check the API key for this "
+                             f"provider in Settings → Backends.")
+                    return
+
+                # 400/404 with no auth hint → maybe a stale model id.  Pull
+                # the live catalogue ONCE and retry with real models.
                 if e.code in (404, 400) and not recovered_live:
-                    # The hardcoded model ID may be stale.  Pull the live
-                    # catalogue ONCE and append any unseen models so the
-                    # next attempt uses a real, currently-served model
-                    # instead of another guess.
                     recovered_live = True
                     live = self.list_models_live()
                     new = [m for m in live if m not in order]
@@ -604,30 +622,43 @@ class OpenAICompatBackend:
                             f"recovered {len(new)} live models")
                         order.extend(new)
                         continue
-                if e.code in (429, 404, 400, 502, 503):
+                    # No live models came back either — almost always the
+                    # key is bad/empty.  Stop, don't churn the chain.
+                    on_error(f"{self.name}: request rejected (HTTP {e.code}) "
+                             f"and no models could be listed — the API key is "
+                             f"probably missing or invalid. Check Settings → "
+                             f"Backends.")
+                    return
+
+                # 429 = rate limit on THIS model → genuinely worth the next.
+                if e.code == 429:
+                    log(f"{self.name} {attempt_model} -> 429 rate-limit, next")
+                    continue
+                if e.code in (502, 503):
                     log(f"{self.name} {attempt_model} -> {e.code}, next")
                     continue
-                if e.code in (401, 403):
-                    on_error(f"{self.name} auth failed (HTTP {e.code}) — "
-                             f"check the API key")
-                    return
-                on_error(f"{self.name} {last_err}")
+
+                # Anything else: report and stop.
+                on_error(f"{self.name}: {last_err}")
                 return
             except urllib.error.URLError as e:
-                last_err = f"connection: {getattr(e, 'reason', e)}"
-                if any_tokens_emitted:
-                    on_error(f"{self.name} {last_err} mid-stream")
-                    return
-                on_error(f"{self.name} {last_err}")
+                # Network/DNS/SSL failure — applies to every model equally,
+                # so retrying the chain is pointless.  Stop and report.
+                reason = getattr(e, "reason", e)
+                on_error(f"{self.name}: connection failed ({reason}). "
+                         f"Check your internet connection.")
                 return
             except Exception as e:
-                last_err = f"{type(e).__name__}: {e}"
-                if any_tokens_emitted:
-                    on_error(f"{self.name} {last_err} mid-stream")
-                    return
-                continue
+                # Unexpected error (parse, SSL, library bug).  Do NOT silently
+                # walk the rest of the chain — that hid the real cause and
+                # produced the false 'exhausted all models'.  Report and stop.
+                on_error(f"{self.name}: {type(e).__name__}: {str(e)[:200]}")
+                return
 
-        on_error(f"{self.name} exhausted all models: {last_err}")
+        # We only reach here if every model in the chain returned 429/5xx.
+        on_error(f"{self.name}: all models are rate-limited or unavailable "
+                 f"right now ({last_err}). Try again shortly or switch "
+                 f"provider in Settings.")
 
 
 class BackendRouter:

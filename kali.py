@@ -50,7 +50,7 @@ from kali_core import (
     parse_tool_calls, strip_tool_calls,
     extract_think_blocks, strip_think_blocks,
     is_online, is_sensitive_path, command_needs_sudo, is_catastrophic_command,
-    Watcher,
+    command_tampers_self, Watcher,
     PROVIDERS, PROVIDERS_BY_KEY,
 )
 from kali_persona import (
@@ -70,7 +70,7 @@ except Exception as _ve:  # noqa
 
 APP_ID  = "org.thepriest.kali"
 APP_NAME = "Kali"
-VERSION = "2.2.0"
+VERSION = "2.2.1"
 
 # ── Tool-chain efficiency knobs ──
 # How many model round-trips a single user turn may chain through.  With
@@ -4982,13 +4982,25 @@ class MainWindow(Adw.ApplicationWindow):
         # in auto-run mode, even from a card.  This is the one gate a setting
         # can't switch off, because it's the one mistake that can't be undone.
         catastrophic = is_catastrophic_command(command)
+        # Same treatment for a raw shell write to Kali's own source files: it
+        # would bypass the guarded edit path (parse-check + immutable
+        # guardrail), so it never auto-runs silently.
+        tampers = command_tampers_self(command)
+        reason_txt = reason or "no reason"
         if catastrophic:
             self.terminal_log("⚠ destructive command — forcing confirm", "error")
-        need_approval = (catastrophic
+        elif tampers:
+            self.terminal_log("• command writes to Kali's own source — "
+                              "forcing confirm", "dim")
+            reason_txt = ("This command writes to one of Kali's own source "
+                          "files, which sidesteps the guarded edit path "
+                          "(parse-check + immutable guardrail). Confirm to "
+                          "allow.\n\n" + reason_txt)
+        need_approval = (catastrophic or tampers
                          or (self.settings.get("confirm_all_commands", True)
                              and not from_card))
         if need_approval or (sudo_needed and not have_cached_sudo):
-            confirm_command_dialog(self, command, reason or "no reason", decide,
+            confirm_command_dialog(self, command, reason_txt, decide,
                                    catastrophic=catastrophic)
         else:
             if have_cached_sudo:

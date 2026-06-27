@@ -2,6 +2,23 @@
 
 ## v3.1.0 — Structural safety floor + honest docs
 
+### Tool correctness (runtime bugs found by executing the logic)
+- **`parse_output` now strips ANSI colour codes first.** Many recon tools
+  (httpx, nuclei, ffuf, feroxbuster, naabu, gobuster…) colourise by default, so
+  a paste straight from the terminal arrived full of `\x1b[…m` codes. The
+  line-based parsers match on line structure, and an escape code glued to a
+  line start silently broke the match — **dropping ports and findings with no
+  error**. Now stripped once at the entry point so every parser is robust.
+  Pinned by a new regression test (`test_ansi_colorized_paste_still_parses`).
+- **`tool_read_file` no longer mislabels text as binary.** Reading a capped
+  prefix could slice a multi-byte UTF-8 character at the boundary, making an
+  ordinary text file raise `UnicodeDecodeError` and come back as
+  "binary (hex preview)". Binary is now detected by NUL byte; text is decoded
+  leniently so a clipped trailing char becomes one replacement character.
+- **`skill_write` validation tightened.** The "must define `run(args)`" check
+  used `ast.walk`, so a *nested* or method `run` passed validation even though
+  the sandbox runner calls a top-level `run`. Now requires a top-level def.
+
 ### Security (the headline)
 - **New `kali_safety.py` module** — the hard, setting-independent auto-run floor
   (`is_catastrophic_command`, `command_tampers_self`) now lives here and is

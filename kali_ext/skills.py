@@ -152,9 +152,9 @@ class SkillStore:
             problems.append(f"syntax error line {e.lineno}: {e.msg}")
             return problems
         has_run = any(isinstance(n, ast.FunctionDef) and n.name == "run"
-                      for n in ast.walk(tree))
+                      for n in tree.body)
         if not has_run:
-            problems.append("code must define `def run(args): ...`")
+            problems.append("code must define a top-level `def run(args): ...`")
         return problems
 
     # ── commit (after operator Apply) ──────────────────────────────────

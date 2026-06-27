@@ -1113,12 +1113,19 @@ def tool_read_file(path: str, max_bytes: int = 80_000) -> Dict[str, Any]:
         size = os.path.getsize(rp)
         with open(rp, "rb") as f:
             raw = f.read(max_bytes)
-        try:
-            text = raw.decode("utf-8")
-            kind = "text"
-        except UnicodeDecodeError:
+        # Decide text-vs-binary by content, not by whether a strict UTF-8
+        # decode happens to succeed.  Reading a capped prefix can slice a
+        # multi-byte character at the boundary, which would make a perfectly
+        # ordinary text file raise UnicodeDecodeError and get mislabelled as
+        # binary.  A NUL byte is the reliable binary signal; for text we decode
+        # leniently so a clipped trailing character becomes one replacement
+        # char instead of losing the whole file.
+        if b"\x00" in raw:
             text = raw[:1024].hex()
             kind = "binary (hex preview)"
+        else:
+            text = raw.decode("utf-8", errors="replace")
+            kind = "text"
         return {"ok": True, "path": rp, "size": size, "kind": kind,
                 "truncated": size > max_bytes, "content": text}
     except PermissionError:

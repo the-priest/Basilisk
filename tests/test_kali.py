@@ -310,6 +310,22 @@ class TestParseOutput(unittest.TestCase):
         self.assertTrue(r["ok"])
         self.assertEqual(r["host_count"], 0)
 
+    def test_ansi_colorized_paste_still_parses(self):
+        # Many recon tools colourise by default; a paste from the terminal
+        # arrives full of \x1b[...m codes glued to line starts.  The parser
+        # must strip them, or ports/findings silently vanish.
+        colored = (
+            "Nmap scan report for host.local (10.0.0.9)\n"
+            "\x1b[0;32m22/tcp\x1b[0m  open  ssh   OpenSSH 9.0\n"
+            "\x1b[1m80/tcp\x1b[0m  open  http  nginx 1.18.0\n"
+        )
+        r = pentest.parse_output("nmap", colored)
+        self.assertTrue(r["ok"])
+        self.assertEqual(r["host_count"], 1)
+        self.assertEqual(r["open_ports"], 2, "ANSI codes dropped open ports")
+        ports = {p["port"] for p in r["hosts"]["10.0.0.9"]}
+        self.assertEqual(ports, {"22", "80"})
+
     def test_split_product_version(self):
         pv = pentest._split_product_version("OpenSSH 9.6p1 Ubuntu")
         self.assertIsNotNone(pv)

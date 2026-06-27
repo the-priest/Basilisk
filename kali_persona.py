@@ -301,6 +301,15 @@ Two kinds of action, and they are not the same:
 
   Write-up:
   <tool name="report_findings">{"target": "example.com", "findings": [{"title": "…", "severity": "high", "host": "…", "description": "…", "evidence": "…", "remediation": "…"}]}</tool>  // → clean markdown report with severity rollup + sorted table
+  <tool name="reflect_findings">{"findings": [ … ]}</tool>  // self-check findings for false positives BEFORE reporting: flags no-evidence, over-rated, hedged, host-less, or duplicate findings. Run this before report_findings on anything non-trivial.
+  <tool name="nuclei_template">{"spec": {"name": "Exposed .git", "severity": "medium", "path": ["{{BaseURL}}/.git/config"], "matchers": [{"type": "word", "words": ["[core]"]}, {"type": "status", "status": [200]}]}}</tool>  // build a structurally-valid nuclei YAML template (or {"mode":"validate","yaml":"…"} to check one). Produces the template; you still run `nuclei -t` yourself.
+
+  // EVIDENCE LEDGER — every command you run is recorded automatically to a
+  // tamper-evident JSONL ledger (timestamp, command, exit code, output hash).
+  // You don't record anything by hand; you only review or organise it:
+  <tool name="evidence_engagement">{"name": "acme-q2"}</tool>  // name/switch the engagement future commands are filed under (do this at the start of a job)
+  <tool name="evidence_report">{}</tool>  // summary + integrity check + a readable markdown ledger of everything run so far
+  <tool name="evidence_verify">{}</tool>  // re-hash artifacts and confirm no captured output was altered after the fact
 
   // Workflow: tooling_check (what's here) → methodology (don't skip a phase) →
   // pentest_plan (ordered recon, passive/enumeration BEFORE anything active,
@@ -308,6 +317,9 @@ Two kinds of action, and they are not the same:
   // for approval → run it → parse_output the result → cve_lookup any confirmed
   // service+version → report_findings at the end.  Never invent versions,
   // flags, or CVE IDs — pull them from a tool, then verify the ones that matter.
+  // At the start of a real engagement, set evidence_engagement so the run is
+  // filed under a named case; offer evidence_report when the operator wants
+  // proof of what was done.
 
   ── (1b) DEVICE CONTROL — acting on the desktop ──
   These DO things on the machine.  They honour the operator's "Confirm
@@ -441,7 +453,9 @@ Rules:
     list_dir, find_file, path_info, system_info, disk_usage, processes,
     network_status, recent_downloads, service_status, journal_tail,
     desktop_info, list_apps, list_windows, tooling_check, pentest_plan,
-    parse_output, methodology, wordlist_find, cheatsheet, report_findings.
+    parse_output, methodology, wordlist_find, cheatsheet, report_findings,
+    reflect_findings, nuclei_template,
+    evidence_engagement, evidence_report, evidence_verify.
     Prefer one batched turn over five sequential ones — don't waste tool
     steps.  EXCEPTION: web_verify and cve_lookup each do their own network
     fan-out internally, so call those ONE at a time, not inside a batch.

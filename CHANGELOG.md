@@ -1,5 +1,57 @@
 # Changelog
 
+## v3.2.0 — Evidence ledger, MCP client, smarter recall, Nuclei + self-reflection
+
+Four capability additions (no local-model support, by request).
+
+### Evidence ledger (new `kali_ledger.py`)
+Every command Kali runs is now recorded to an append-only, tamper-evident JSONL
+ledger: timestamp, engagement, step number, command, reason, exit code,
+duration, and the SHA-256 of stdout/stderr. Full output is saved to a side
+artifact whose hash is recorded, so `evidence_verify` can re-hash and prove
+nothing was altered after the fact. New tools: `evidence_engagement` (name/switch
+the case), `evidence_report` (summary + integrity + a readable markdown ledger),
+`evidence_verify` (tamper check). Fail-safe: a ledger error can never break a
+command. This is what turns a chat transcript into a defensible deliverable.
+
+### MCP client (new `kali_ext/mcp.py`)
+Kali can now connect to external **Model Context Protocol** servers (the
+ecosystem of security MCP servers — nmap/sqlmap/ffuf/nuclei/ZAP wrappers, etc.)
+over stdio JSON-RPC. Discovered tools are exposed to the model namespaced
+`mcp__<server>__<tool>` and listed via `mcp_tools`. **Security:** OFF by default
+(`mcp_enabled`) and inert until servers are configured; every tool call's
+arguments are screened by `kali_safety` (a catastrophic command in an argument
+is refused before it leaves the process), and every call is logged to the
+evidence ledger. Configure with `mcp_servers` = list of
+`{name, command, args, env, cwd}`. *(Protocol verified against a mock server;
+test real servers like pentestMCP / cyproxio on your box.)*
+
+### Smarter memory recall (`kali_ext/memory.py`)
+Keyword recall now connects security-domain paraphrases without embeddings:
+"SQL injection" finds a memory stored as "SQLi", and the reverse — plus XSS,
+RCE, LFI, SSRF, privesc, recon, and ~20 more synonym groups, in both directions.
+Unrelated queries still miss, and a query with no synonym trigger gains no extra
+tokens (no added noise). Fixes the one functional gap in recall.
+
+### Nuclei templates + self-reflection (`kali_ext/pentest.py`)
+- `nuclei_template` — generate a structurally-correct Nuclei YAML template from
+  a simple spec (the model supplies specifics, the scaffold guarantees the
+  shape), or validate an existing template and get the exact list of problems.
+  Removes the "malformed template fails cryptically at `nuclei -t` time" trap.
+- `reflect_findings` — a self-reflection pass that critiques findings before
+  they're reported: flags no-evidence, over-rated, hedged, host-less, or
+  duplicate findings so weak ones get fixed or dropped. Pure heuristics, cuts
+  false positives.
+
+### Tests
+Suite now **55** (was 46): evidence ledger incl. tamper detection, Nuclei
+build/validate, findings reflection, and the MCP argument safety screen.
+
+### Plumbing
+`install.sh` fetches `kali_ledger.py` and `kali_ext/mcp.py`. Version 3.1.0 → 3.2.0.
+
+---
+
 ## v3.1.0 — Structural safety floor + honest docs
 
 ### Tool correctness (runtime bugs found by executing the logic)

@@ -50,6 +50,14 @@ try:
 except Exception:  # pragma: no cover - fallback for bare-module layout
     import pentest  # type: ignore  # noqa: E402
 
+try:
+    from kali_ext import memory as _memory  # noqa: E402
+except Exception:  # pragma: no cover
+    try:
+        import memory as _memory  # type: ignore  # noqa: E402
+    except Exception:
+        _memory = None  # type: ignore
+
 
 # ─────────────────────────────────────────────────────────────────────────
 # Settings: defaults, round-trip, and the deliberate migration behaviour
@@ -671,6 +679,142 @@ class TestToolTagParsing(unittest.TestCase):
             self.assertNotRegex(
                 stripped, r'(?i)<\s*\\?\s*/?\s*tool\b',
                 f"tool-shaped text leaked to chat from: {s!r}")
+
+
+@unittest.skipIf(_memory is None, "memory module unavailable")
+class TestMemoryRecall(unittest.TestCase):
+    """Keyword recall must connect security-domain paraphrases without
+    embeddings: 'SQL injection' has to find a memory stored as 'SQLi', and the
+    reverse — while unrelated queries still miss."""
+
+    def _store(self):
+        d = tempfile.mkdtemp()
+        store = _memory.MemoryStore(Path(d) / "mem.db")
+        store.tool_remember("Found SQLi on login.php id param", "finding", 0.9)
+        store.tool_remember("Stored XSS in the comment field", "finding", 0.8)
+        store.tool_remember("Got RCE via the file upload endpoint", "finding", 0.9)
+        store.tool_remember("Privilege escalation via sudo misconfig", "finding", 0.85)
+        return store
+
+    def test_paraphrase_finds_abbreviation(self):
+        store = self._store()
+        self.assertIn("login.php", store.tool_recall("SQL injection vulnerability"))
+        self.assertIn("comment field", store.tool_recall("cross site scripting"))
+        self.assertIn("file upload", store.tool_recall("remote code execution"))
+        self.assertIn("sudo", store.tool_recall("privesc"))
+
+    def test_abbreviation_finds_paraphrase(self):
+        store = self._store()
+        self.assertIn("login.php", store.tool_recall("sqli"))
+
+    def test_unrelated_query_still_misses(self):
+        store = self._store()
+        self.assertIn("no relevant", store.tool_recall("wireless deauthentication"))
+
+    def test_expand_is_noise_free_without_a_trigger(self):
+        # A query with no synonym trigger must not gain extra tokens.
+        toks = _memory._tokens("nmap scan results")
+        self.assertEqual(_memory._expand_query_tokens("nmap scan results", toks), toks)
+
+
+class TestEvidenceLedger(unittest.TestCase):
+    """The ledger must record commands with hashes and DETECT tampering."""
+
+    def setUp(self):
+        import kali_ledger
+        self.L = kali_ledger
+        self.d = Path(tempfile.mkdtemp())
+        self.led = kali_ledger.EvidenceLedger(base_dir=self.d, engagement="t")
+
+    def test_records_and_summarises(self):
+        self.led.record("nmap -sV x", "scan",
+                        {"ok": True, "rc": 0, "stdout": "80/tcp open", "stderr": ""})
+        self.led.record("whoami", "who",
+                        {"ok": True, "rc": 0, "stdout": "kali", "stderr": ""})
+        s = self.led.summary()
+        self.assertEqual(s["steps"], 2)
+        self.assertEqual(s["ok"], 2)
+
+    def test_tamper_is_detected(self):
+        ev = self.led.record("id", "x",
+                             {"ok": True, "rc": 0, "stdout": "uid=0", "stderr": ""})
+        self.assertTrue(self.led.verify()["intact"])
+        art = self.d / ev["artifact"]
+        art.write_bytes(art.read_bytes().replace(b"uid=0", b"uid=1337"))
+        v = self.led.verify()
+        self.assertFalse(v["intact"], "tampered artifact not detected")
+
+    def test_bad_input_fails_safe(self):
+        # A broken result dict must not raise into the run loop.
+        self.assertIsNone(self.led.record("x", "y", {"stdout": object()}))
+
+
+class TestNucleiTemplate(unittest.TestCase):
+    def test_build_is_valid_yaml(self):
+        r = pentest.nuclei_template({
+            "name": "Exposed config", "severity": "medium",
+            "path": ["{{BaseURL}}/.git/config"],
+            "matchers": [{"type": "word", "words": ["[core]"]},
+                         {"type": "status", "status": [200]}]})
+        self.assertTrue(r["ok"])
+        self.assertTrue(r["valid"], r.get("validation"))
+
+    def test_validate_catches_broken_template(self):
+        bad = ('id: bad name!\ninfo:\n  name: ""\n  severity: ultra\n'
+               'http:\n  - method: GET\n    path: ["{{BaseURL}}"]\n')
+        v = pentest.nuclei_template(bad, mode="validate")
+        self.assertFalse(v["valid"])
+        joined = " ".join(v["problems"]).lower()
+        self.assertIn("severity", joined)
+        self.assertIn("matchers", joined)
+
+
+class TestReflectFindings(unittest.TestCase):
+    def test_flags_weak_passes_solid(self):
+        r = pentest.reflect_findings([
+            {"title": "SQLi", "severity": "critical", "host": "10.0.0.5",
+             "evidence": "sqlmap confirmed boolean blind, dumped users"},
+            {"title": "Maybe XSS", "severity": "high"},  # weak
+        ])
+        self.assertEqual(r["total"], 2)
+        self.assertEqual(r["grounded"], 1)
+        self.assertEqual(r["flagged"], 1)
+        weak = [f for f in r["findings"] if f["verdict"] != "ok"][0]
+        self.assertTrue(weak["flags"])
+
+    def test_detects_duplicates(self):
+        r = pentest.reflect_findings([
+            {"title": "Open redirect", "severity": "low", "host": "x.com",
+             "evidence": "302 to evil.com"},
+            {"title": "Open redirect", "severity": "low", "host": "x.com",
+             "evidence": "dup"},
+        ])
+        flags = " ".join(f for fi in r["findings"] for f in fi["flags"]).lower()
+        self.assertIn("duplicate", flags)
+
+
+class TestMcpSafetyScreen(unittest.TestCase):
+    """MCP tool arguments are untrusted: a catastrophic command in an argument
+    must be refused before it reaches the server."""
+
+    def setUp(self):
+        try:
+            from kali_ext import mcp as _mcp
+        except Exception:
+            import mcp as _mcp  # type: ignore
+        self.mcp = _mcp
+
+    def test_catastrophic_argument_is_caught(self):
+        self.assertIsNotNone(
+            self.mcp._arguments_are_catastrophic({"command": "rm -rf /"}))
+        self.assertIsNotNone(
+            self.mcp._arguments_are_catastrophic({"x": {"y": "rm '-rf' /"}}))
+
+    def test_safe_arguments_pass(self):
+        self.assertIsNone(
+            self.mcp._arguments_are_catastrophic({"command": "nmap -sV t"}))
+        self.assertIsNone(
+            self.mcp._arguments_are_catastrophic({"url": "https://x", "n": 5}))
 
 
 if __name__ == "__main__":

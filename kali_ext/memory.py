@@ -86,6 +86,70 @@ def _tokens(s: str) -> List[str]:
             if t not in _STOPWORDS]
 
 
+# Security-domain synonym groups.  Keyword recall (no embeddings) otherwise
+# misses obvious paraphrases — "SQL injection" wouldn't find a memory stored as
+# "SQLi", because they share no token.  Each group below is treated as
+# interchangeable: if a query (or a stored memory) contains any member, the
+# search is expanded to include the others.  This is the cheap, offline,
+# deterministic stand-in for semantic search.  Bidirectional and multi-word
+# aware.  Keep entries to genuine equivalences so recall doesn't get noisy.
+_SYNONYM_GROUPS = [
+    {"sqli", "sql injection"},
+    {"xss", "cross site scripting", "cross-site scripting"},
+    {"rce", "remote code execution"},
+    {"lfi", "local file inclusion"},
+    {"rfi", "remote file inclusion"},
+    {"ssrf", "server side request forgery", "server-side request forgery"},
+    {"csrf", "cross site request forgery", "cross-site request forgery"},
+    {"idor", "insecure direct object reference"},
+    {"xxe", "xml external entity"},
+    {"ssti", "server side template injection", "server-side template injection"},
+    {"privesc", "priv esc", "privilege escalation"},
+    {"recon", "reconnaissance"},
+    {"creds", "credentials", "credential"},
+    {"enum", "enumeration"},
+    {"vuln", "vulnerability", "vulnerabilities", "vulns"},
+    {"auth", "authentication"},
+    {"authz", "authorization"},
+    {"mitm", "man in the middle", "man-in-the-middle"},
+    {"c2", "command and control"},
+    {"waf", "web application firewall"},
+    {"dos", "denial of service"},
+    {"ad", "active directory"},
+    {"2fa", "mfa", "two factor", "two-factor", "multi factor", "multi-factor"},
+    {"info", "information"},
+    {"subdomain", "subdomains", "sub-domain"},
+    {"directory", "directories", "dir"},
+]
+
+# Precompute: lowercased query substrings to look for, each mapped to the extra
+# tokens it should inject.
+_SYNONYM_TRIGGERS = []  # list of (trigger_str, is_phrase, extra_tokens_frozenset)
+for _grp in _SYNONYM_GROUPS:
+    _extra = set()
+    for _m in _grp:
+        _extra.update(_tokens(_m))
+    for _m in _grp:
+        _SYNONYM_TRIGGERS.append((_m, " " in _m, frozenset(_extra)))
+
+
+def _expand_query_tokens(query: str, qtoks: List[str]) -> List[str]:
+    """qtoks plus any synonym-group tokens triggered by the query.  Phrase
+    members ('sql injection') are matched against the raw query string; single
+    words are matched against the token list."""
+    low = (query or "").lower()
+    qset = set(qtoks)
+    extra: set = set()
+    for trigger, is_phrase, extra_tokens in _SYNONYM_TRIGGERS:
+        hit = (trigger in low) if is_phrase else (trigger in qset)
+        if hit:
+            extra.update(extra_tokens)
+    if not extra:
+        return list(qtoks)
+    # preserve order: originals first, then new tokens
+    return list(dict.fromkeys(list(qtoks) + sorted(extra)))
+
+
 def _prefix_match(q: str, h: str) -> bool:
     """Two tokens count as the same word if they share a >=4-char prefix.
     Cheap stemming so 'command'/'commands', 'scan'/'scanning', 'fix'/'fixed'
@@ -286,11 +350,11 @@ class MemoryStore:
     def _recall_keyword(self, query: str, k: int) -> List[sqlite3.Row]:
       with self._lock:
         now = time.time()
-        qtoks = _tokens(query)
+        qtoks = _expand_query_tokens(query, _tokens(query))
         rows: List[sqlite3.Row] = []
         if self._fts and qtoks:
             # Prefix-wildcard each token so 'commands' finds 'command' etc.
-            terms = " OR ".join((t[:6] + "*") for t in qtoks[:12])
+            terms = " OR ".join((t[:6] + "*") for t in qtoks[:16])
             try:
                 rows = list(self._db.execute(
                     "SELECT m.* FROM mem_fts f JOIN memories m ON m.id=f.rowid "

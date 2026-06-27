@@ -45,6 +45,7 @@ from kali_core import (
     tool_web_verify, tool_tooling_check, tool_pentest_plan, tool_cve_lookup,
     tool_parse_output, tool_methodology, tool_wordlist_find,
     tool_cheatsheet, tool_report_findings,
+    tool_nuclei_template, tool_reflect_findings,
     tool_osint_username, tool_osint_lookup, tool_social_read,
     quick_facts as tool_quick_facts,
     sudo_cached, detect_urgency, looks_degraded,
@@ -54,6 +55,7 @@ from kali_core import (
     is_online, is_sensitive_path, command_needs_sudo, is_catastrophic_command,
     command_tampers_self, Watcher,
     PROVIDERS, PROVIDERS_BY_KEY,
+    get_ledger,
 )
 from kali_persona import (
     build_system_prompt, assemble_messages, title_from_first_message,
@@ -72,7 +74,7 @@ except Exception as _ve:  # noqa
 
 APP_ID  = "org.thepriest.kali"
 APP_NAME = "Kali"
-VERSION = "3.1.0"
+VERSION = "3.2.0"
 
 # ── Tool-chain efficiency knobs ──
 # How many model round-trips a single user turn may chain through.  With
@@ -963,6 +965,30 @@ CODE_FENCE_RE  = re.compile(r"```([a-zA-Z0-9_+-]*)\n?(.*?)```", re.DOTALL)
 INLINE_CODE_RE = re.compile(r"`([^`\n]+)`")
 BOLD_RE        = re.compile(r"\*\*([^*\n]+)\*\*")
 ITALIC_RE      = re.compile(r"(?<!\*)\*([^*\n]+)\*(?!\*)")
+
+
+def _evidence_report(engagement=None):
+    """Evidence summary + integrity + a readable markdown ledger for review."""
+    led = get_ledger()
+    if led is None:
+        return {"error": "evidence ledger unavailable"}
+    return {
+        "engagement": engagement or led.engagement,
+        "summary": led.summary(engagement),
+        "integrity": led.verify(engagement),
+        "report_markdown": led.export_markdown(engagement),
+    }
+
+
+def _evidence_set_engagement(name):
+    """Switch the active engagement that future commands are recorded under."""
+    led = get_ledger()
+    if led is None:
+        return {"error": "evidence ledger unavailable"}
+    if not (name or "").strip():
+        return {"engagement": led.engagement, "note": "no name given; unchanged"}
+    new = led.set_engagement(name)
+    return {"engagement": new, "steps": led.summary()["steps"]}
 
 
 def text_to_pango(text: str) -> str:
@@ -2652,7 +2678,8 @@ class MainWindow(Adw.ApplicationWindow):
             _extman.init(settings=self.settings,
                          data_dir="~/.local/share/kali",
                          complete_fn=self._ext_complete,
-                         embed_fn=None)
+                         embed_fn=None,
+                         ledger=get_ledger())
             self._ext = _extman
         except Exception as _e:
             log(f"kali_ext not loaded: {_e}")
@@ -3702,6 +3729,8 @@ class MainWindow(Adw.ApplicationWindow):
         "wordlist_find":    "finding wordlists",
         "cheatsheet":       "pulling up syntax",
         "report_findings":  "building the report",
+        "nuclei_template":  "writing a nuclei template",
+        "reflect_findings": "double-checking the findings",
         "read_file":        "reading a file",
         "write_file":       "writing a file",
         "list_dir":         "listing files",
@@ -4534,6 +4563,23 @@ class MainWindow(Adw.ApplicationWindow):
                     a.get("target", a.get("host", a.get("url", ""))),
                     a.get("scope_note", a.get("scope", "")),
                     a.get("title", ""))),
+            "evidence_report":   lambda a: self._tool_simple(
+                lambda: _evidence_report(
+                    a.get("engagement", a.get("name", None)))),
+            "evidence_verify":   lambda a: self._tool_simple(
+                lambda: (get_ledger().verify(a.get("engagement", None))
+                         if get_ledger() else {"error": "ledger unavailable"})),
+            "evidence_engagement": lambda a: self._tool_simple(
+                lambda: _evidence_set_engagement(
+                    a.get("engagement", a.get("name", a.get("value", ""))))),
+            "nuclei_template":   lambda a: self._tool_simple(
+                lambda: tool_nuclei_template(
+                    a.get("spec", a.get("template", a)),
+                    a.get("mode", "build"),
+                    a.get("yaml", a.get("yaml_text", "")))),
+            "reflect_findings":  lambda a: self._tool_simple(
+                lambda: tool_reflect_findings(
+                    a.get("findings", a.get("items", a)))),
         }
         # Merge sidecar tools (memory_*, skill_list, skill_run).  Returns an
         # empty dict unless the matching feature is enabled, so stock Kali is
@@ -4973,6 +5019,14 @@ class MainWindow(Adw.ApplicationWindow):
                 self.terminal_log(f"$ {command}", "cmd")
                 r = tool_run_command(command, timeout=timeout,
                                      sudo_password=password)
+                # Record to the evidence ledger (fail-safe: a ledger error must
+                # never affect the command result the operator sees).
+                try:
+                    _led = get_ledger()
+                    if _led is not None:
+                        _led.record(command, reason, r)
+                except Exception:
+                    pass
                 if r.get("ok"):
                     parts = [f"$ {command}", f"(rc={r['rc']})"]
                     if r["stdout"]:

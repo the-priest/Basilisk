@@ -19,6 +19,7 @@ from typing import Any, Callable, Dict, List, Optional
 from . import memory as _memory
 from . import skills as _skills
 from . import foresight as _foresight
+from . import mcp as _mcp
 
 
 class _State:
@@ -32,6 +33,8 @@ class _State:
         self.embed_fn: Optional[Callable[[List[str]], List[List[float]]]] = None
         self.mem: Optional[_memory.MemoryStore] = None
         self.skl: Optional[_skills.SkillStore] = None
+        self.mcp: Optional[_mcp.MCPManager] = None
+        self.ledger: Any = None
 
     def on(self, key: str, default: bool = False) -> bool:
         return bool(self.settings.get(key, default))
@@ -68,7 +71,8 @@ def _log(msg: str) -> None:
 def init(settings: Dict[str, Any],
          data_dir: str = "~/.local/share/kali",
          complete_fn: Optional[Callable[[str, str], str]] = None,
-         embed_fn: Optional[Callable[[List[str]], List[List[float]]]] = None
+         embed_fn: Optional[Callable[[List[str]], List[List[float]]]] = None,
+         ledger: Any = None
          ) -> None:
     """Call once at host startup, after settings load and the router exists.
 
@@ -89,6 +93,22 @@ def init(settings: Dict[str, Any],
         S.embed_fn = embed_fn
         S.mem = _memory.MemoryStore(S.ext_dir / "memory.db", embed_fn=embed_fn)
         S.skl = _skills.SkillStore(S.ext_dir / "skills")
+        S.ledger = ledger
+        # MCP: only spin up if explicitly enabled AND servers are configured.
+        # Discovery launches subprocesses, so it's wrapped — a broken server
+        # config can never block sidecar init.
+        S.mcp = None
+        if S.on("mcp_enabled"):
+            servers = S.settings.get("mcp_servers") or []
+            if servers:
+                try:
+                    S.mcp = _mcp.MCPManager(servers, ledger=ledger)
+                    disc = S.mcp.discover()
+                    _log(f"[mcp] discovered: " +
+                         ", ".join(f"{k}={len(v)}" for k, v in disc.items()))
+                except Exception:
+                    _log("[mcp] discovery FAILED\n" + traceback.format_exc())
+                    S.mcp = None
         S.ready = True
         _log(f"[init] ready dir={S.ext_dir} model={'yes' if complete_fn else 'no'} "
              f"embed={'yes' if embed_fn else 'no'}")
@@ -113,6 +133,19 @@ def system_prompt_block() -> str:
         parts.append(S.skl.prompt_block())
     if S.on("foresight_enabled"):
         parts.append(_foresight.PROMPT_BLOCK)
+    if S.on("mcp_enabled") and S.mcp:
+        specs = S.mcp.tool_specs()
+        if specs:
+            lines = ["── EXTERNAL TOOLS (MCP) ──",
+                     "Extra tools from connected MCP servers are available, "
+                     "namespaced mcp__<server>__<tool>. Call them like any "
+                     "tool. Their arguments are safety-screened and every call "
+                     "is logged. Use `mcp_tools` to list them. Available now:"]
+            for s in specs[:40]:
+                d = (s.get("description") or "").strip().splitlines()
+                lines.append(f"  <tool name=\"{s['name']}\">{{...}}</tool>  // "
+                             f"{d[0] if d else ''}")
+            parts.append("\n".join(lines))
     return ("\n\n".join(p for p in parts if p)).strip()
 
 
@@ -195,7 +228,32 @@ def extra_tools(host: Any) -> Dict[str, Callable[[Dict[str, Any]], str]]:
             a.get("name", ""), a.get("args", {}),
             timeout=_as_int(a.get("timeout", 20), 20))
 
+    if S.on("mcp_enabled") and S.mcp:
+        # Each discovered MCP tool becomes a namespaced dispatch entry
+        # (mcp__<server>__<tool>).  The manager safety-screens arguments and
+        # logs to the evidence ledger before the call leaves the process.
+        def _mk(tool_name):
+            return lambda a: S.mcp.call(tool_name, a if isinstance(a, dict) else {})
+        for spec in S.mcp.tool_specs():
+            out[spec["name"]] = _mk(spec["name"])
+        # A lister so the operator/model can see what's wired up.
+        out["mcp_tools"] = lambda a: _mcp_tools_listing()
+
     return out
+
+
+def _mcp_tools_listing() -> str:
+    """Human/model-readable summary of the wired MCP servers and their tools."""
+    if not (S.ready and S.mcp):
+        return "MCP is not enabled or no servers are configured."
+    specs = S.mcp.tool_specs()
+    if not specs:
+        return "MCP is enabled but no tools were discovered from the servers."
+    lines = [f"{len(specs)} MCP tool(s) available:"]
+    for s in specs:
+        desc = (s.get("description") or "").strip().splitlines()
+        lines.append(f"  {s['name']} — {desc[0] if desc else ''}")
+    return "\n".join(lines)
 
 
 def commit_skill(name: str, code: str, test: str, description: str,

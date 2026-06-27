@@ -52,9 +52,29 @@ CHATS_DB          = DATA_DIR / "chats.db"
 SETTINGS_JSON     = CONFIG_DIR / "settings.json"
 LOG_FILE          = DATA_DIR / "kali.log"
 WATCHER_STATE     = DATA_DIR / "watcher.json"
+EVIDENCE_DIR      = CONFIG_DIR / "evidence"
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+
+# ── Evidence ledger ──
+# Every command Kali runs is recorded to a tamper-evident JSONL ledger so an
+# engagement produces real evidence, not just a chat transcript.  Lazily
+# created so importing kali_core stays cheap and a ledger failure can never
+# block startup (kali_ledger itself is fail-safe on every call).
+_LEDGER = None  # type: ignore
+
+
+def get_ledger():
+    """The process-wide EvidenceLedger singleton (created on first use)."""
+    global _LEDGER
+    if _LEDGER is None:
+        try:
+            from kali_ledger import EvidenceLedger
+            _LEDGER = EvidenceLedger(base_dir=EVIDENCE_DIR)
+        except Exception:
+            _LEDGER = None
+    return _LEDGER
 
 HTTP_TIMEOUT_S    = 600
 HEALTH_TIMEOUT_S  = 1.5
@@ -261,6 +281,10 @@ DEFAULT_SETTINGS = {
     "skills_enabled":          False,   # self-written, sandbox-tested skills
     "foresight_enabled":       False,   # predict consequences before acting
     "foresight_model":         False,   # add a model pass on top of the rules
+    "mcp_enabled":             False,   # connect external MCP tool servers (OFF
+                                        # by default — MCP is an RCE surface;
+                                        # tool args are safety-screened + logged)
+    "mcp_servers":             [],      # list of {name, command, args, env, cwd}
     "worker_enabled":          False,   # the headless systemd --user companion
     "worker_interval_seconds": 300,     # worker poll cadence (when enabled)
     "one_command_at_a_time":   True,    # never propose/run >1 command per message
@@ -3394,6 +3418,42 @@ def tool_report_findings(findings: Any, target: str = "",
                                         (title or "").strip())
     except Exception as e:
         return {"ok": False, "error": f"report_findings failed: {e}"}
+
+
+def tool_nuclei_template(spec: Any = None, mode: str = "build",
+                         yaml_text: str = "") -> Dict[str, Any]:
+    """Generate a structurally-correct Nuclei template from a simple spec, or
+    validate an existing one.  build: pass a spec dict (id/name/severity/
+    protocol/path/matchers…) → returns runnable YAML.  validate: pass the YAML
+    as `yaml_text` (or `mode="validate"`) → returns the list of structural
+    problems.  Produces/checks templates; runs nothing (the operator runs
+    `nuclei -t` themselves).  This exists because Nuclei's YAML is easy to get
+    subtly wrong, which only surfaces as a cryptic error at scan time."""
+    try:
+        from kali_ext import pentest as _pentest
+    except Exception as e:
+        return {"ok": False, "error": f"pentest module unavailable: {e}"}
+    try:
+        return _pentest.nuclei_template(spec, (mode or "build").strip().lower(),
+                                        yaml_text or "")
+    except Exception as e:
+        return {"ok": False, "error": f"nuclei_template failed: {e}"}
+
+
+def tool_reflect_findings(findings: Any) -> Dict[str, Any]:
+    """Self-reflection / false-positive check: critique a set of findings before
+    they go in a report.  Flags findings with no evidence, a high/critical
+    rating that isn't backed up, hedging language ('maybe', 'possibly'), no
+    affected host, or duplicates — so weak findings get fixed or dropped instead
+    of shipped.  Pure heuristics, no model call, runs nothing."""
+    try:
+        from kali_ext import pentest as _pentest
+    except Exception as e:
+        return {"ok": False, "error": f"pentest module unavailable: {e}"}
+    try:
+        return _pentest.reflect_findings(findings)
+    except Exception as e:
+        return {"ok": False, "error": f"reflect_findings failed: {e}"}
 
 
 # ═════════════════════════════════════════════════════════════════════

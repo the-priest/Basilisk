@@ -102,12 +102,12 @@ BACKUP_DIR="${INSTALL_DIR}/backups"
 OLD_DATA_DIR="${HOME}/.local/share/oracle"
 OLD_CONFIG_DIR="${HOME}/.config/oracle"
 
-REQUIRED_FILES=(kali.py kali_core.py kali_safety.py kali_persona.py kali_voice.py)
+REQUIRED_FILES=(kali.py kali_core.py kali_safety.py kali_ledger.py kali_persona.py kali_voice.py)
 OPTIONAL_FILES=(org.thepriest.kali.svg kali-dragon.svg)
 # kali_ext sidecar modules — fetched in remote (curl|bash) mode so phones
 # and fresh boxes get the full toolset (headroom / verify / pentest plus the
 # memory/skills/foresight extensions), not just the core four files.
-EXT_FILES=(__init__.py extman.py foresight.py headroom.py memory.py \
+EXT_FILES=(__init__.py extman.py foresight.py headroom.py memory.py mcp.py \
            pentest.py sandbox.py skills.py verify.py worker.py)
 GITHUB_REPO="${KALI_REPO:-the-priest/oracle5}"
 GITHUB_BRANCH="${KALI_BRANCH:-main}"

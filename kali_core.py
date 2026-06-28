@@ -288,6 +288,13 @@ DEFAULT_SETTINGS = {
     "chat_render_images":      True,    # fetch & show images inline in chat
                                         # (off → image links shown as text;
                                         # turn off for OPSEC / no host contact)
+    "vision_model":            "Qwen/Qwen2.5-VL-7B-Instruct",  # vision-capable
+                                        # model on the active OpenAI-compatible
+                                        # provider (SiliconFlow); lets Kali SEE
+                                        # images.  Change to any VL model the
+                                        # provider offers.
+    "vision_provider":         "siliconflow",  # which provider hosts the VL
+                                        # model (must have a key set)
     "worker_enabled":          False,   # the headless systemd --user companion
     "worker_interval_seconds": 300,     # worker poll cadence (when enabled)
     "one_command_at_a_time":   True,    # never propose/run >1 command per message
@@ -305,7 +312,7 @@ DEFAULT_SETTINGS = {
     "tts_engine":       "auto",         # auto | piper | espeak
     "tts_voice":        "",             # path to a Piper .onnx (blank = auto-find)
     "tts_voice_espeak": "",             # espeak voice id, e.g. "en-gb" (blank = default)
-    "tts_rate":         1.0,            # 0.5 (slow) .. 2.0 (fast); 1.0 = normal
+    "tts_rate":         1.15,           # 0.5 (slow) .. 2.0 (fast); 1.0 = normal
     "voice_autosend":   True,           # auto-send after a voice message transcribes
     "stt_model":        "whisper-large-v3-turbo",
     "stt_language":     "",             # ISO-639-1 hint (blank = auto-detect)
@@ -3178,6 +3185,150 @@ def tool_web_search(query: str, max_results: int = 6,
         "results": results,
         "text": "\n".join(lines),
     }
+
+
+def tool_analyze_image(image_path: str, question: str = "",
+                       api_key: str = "", base_url: str = "",
+                       model: str = "") -> Dict[str, Any]:
+    """Let Kali actually SEE an image: send it to a vision-capable model and
+    return what's in it.  Works on a local file (a screenshot, a captured
+    photo, an attachment) or a downloaded image.  This is real visual
+    understanding — describing scenes, reading text in the image, identifying
+    objects/people/landmarks — not guessing from a filename.
+
+    Needs a vision model on an OpenAI-compatible provider (set `vision_model`
+    and that provider's API key).  Returns the model's description."""
+    import base64
+    import json as _json
+    question = (question or
+                "Describe this image in detail. Include any visible text, "
+                "people, objects, and the overall scene.").strip()
+    if not image_path:
+        return {"ok": False, "error": "no image path"}
+    # allow a file:// URL or a bare path
+    p = image_path[7:] if image_path.startswith("file://") else image_path
+    if not os.path.isfile(p):
+        return {"ok": False, "error": f"no such image: {p}"}
+    if not (api_key and base_url and model):
+        return {"ok": False,
+                "error": "vision not configured — set a vision_model and the "
+                         "API key for its provider (e.g. SiliconFlow) in "
+                         "Settings, then try again."}
+    try:
+        with open(p, "rb") as f:
+            raw = f.read(13_000_000)
+    except Exception as e:
+        return {"ok": False, "error": f"could not read image: {e}"}
+    if len(raw) >= 13_000_000:
+        return {"ok": False, "error": "image too large (>12MB)"}
+    ext = os.path.splitext(p)[1].lower().lstrip(".")
+    mime = {"jpg": "jpeg", "jpeg": "jpeg", "png": "png", "webp": "webp",
+            "gif": "gif", "bmp": "bmp"}.get(ext, "jpeg")
+    data_url = f"data:image/{mime};base64,{base64.b64encode(raw).decode()}"
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": [
+            {"type": "text", "text": question},
+            {"type": "image_url", "image_url": {"url": data_url}},
+        ]}],
+        "max_tokens": 1024,
+        "stream": False,
+    }
+    try:
+        req = urllib.request.Request(
+            _join_url(base_url, "chat/completions"),
+            data=_json.dumps(payload).encode("utf-8"),
+            headers={"Authorization": f"Bearer {api_key}",
+                     "Content-Type": "application/json"},
+            method="POST")
+        with urllib.request.urlopen(req, timeout=90) as r:
+            data = _json.loads(r.read())
+        desc = (data.get("choices") or [{}])[0].get("message", {}).get(
+            "content", "")
+        if not desc:
+            return {"ok": False, "error": "vision model returned no description "
+                    "(the model may not support images)"}
+        return {"ok": True, "image": p, "description": desc, "text": desc}
+    except Exception as e:
+        return {"ok": False, "error": f"vision request failed: {e} (check the "
+                f"vision_model name and that the provider key is set)"}
+
+
+def tool_capture_photo(out_path: str = "") -> Dict[str, Any]:
+    """Capture a single photo from the device camera and save it to a file, so
+    Kali can then SEE it with analyze_image.  Tries the common Linux/mobile
+    capture tools in turn (libcamera, fswebcam, gstreamer, ffmpeg)."""
+    import shutil
+    import subprocess
+    import tempfile
+    import time
+    if not out_path:
+        out_path = os.path.join(tempfile.gettempdir(),
+                                f"kali_photo_{int(time.time())}.jpg")
+    attempts: List[List[str]] = []
+    if shutil.which("libcamera-still"):
+        attempts.append(["libcamera-still", "-n", "-t", "900",
+                         "-o", out_path])
+    if shutil.which("rpicam-still"):
+        attempts.append(["rpicam-still", "-n", "-t", "900", "-o", out_path])
+    if shutil.which("fswebcam"):
+        attempts.append(["fswebcam", "-r", "1280x720", "--no-banner",
+                         "-q", out_path])
+    if shutil.which("gst-launch-1.0"):
+        attempts.append(["gst-launch-1.0", "-q", "wrappercamerabinsrc",
+                         "num-buffers=1", "!", "jpegenc", "!",
+                         "filesink", f"location={out_path}"])
+    if shutil.which("ffmpeg"):
+        attempts.append(["ffmpeg", "-y", "-f", "v4l2", "-i", "/dev/video0",
+                         "-frames:v", "1", out_path])
+    if not attempts:
+        return {"ok": False, "error": "no camera tool found — install one of "
+                "libcamera-apps, fswebcam, or ffmpeg"}
+    last = ""
+    for cmd in attempts:
+        try:
+            subprocess.run(cmd, timeout=25, stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL)
+            if os.path.isfile(out_path) and os.path.getsize(out_path) > 1000:
+                return {"ok": True, "path": out_path,
+                        "text": f"Photo captured: {out_path}"}
+        except Exception as e:
+            last = str(e)
+            continue
+    suffix = ("; " + last) if last else ""
+    return {"ok": False,
+            "error": "camera capture failed (no frame produced)" + suffix +
+                     ". Camera access on Phosh/NetHunter can need extra setup."}
+
+
+def tool_detect_faces(image_path: str) -> Dict[str, Any]:
+    """Locate faces in an image (count + bounding boxes) using a local OpenCV
+    Haar cascade.  This is face DETECTION only — finding where faces are — not
+    identification.  Useful for 'how many people are in this photo' or to crop
+    a face before describing it with analyze_image."""
+    p = image_path[7:] if image_path.startswith("file://") else image_path
+    if not os.path.isfile(p):
+        return {"ok": False, "error": f"no such image: {p}"}
+    try:
+        import cv2  # type: ignore
+    except Exception:
+        return {"ok": False, "error": "OpenCV (cv2) not installed — "
+                "pip install opencv-python-headless"}
+    try:
+        img = cv2.imread(p)
+        if img is None:
+            return {"ok": False, "error": "could not read image"}
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        cascade_path = (cv2.data.haarcascades +
+                        "haarcascade_frontalface_default.xml")
+        cascade = cv2.CascadeClassifier(cascade_path)
+        faces = cascade.detectMultiScale(gray, 1.1, 5, minSize=(40, 40))
+        boxes = [{"x": int(x), "y": int(y), "w": int(w), "h": int(h)}
+                 for (x, y, w, h) in faces]
+        return {"ok": True, "count": len(boxes), "faces": boxes,
+                "text": f"Detected {len(boxes)} face(s) in the image."}
+    except Exception as e:
+        return {"ok": False, "error": f"face detection failed: {e}"}
 
 
 def _img_openverse(q: str, n: int) -> List[Dict[str, Any]]:

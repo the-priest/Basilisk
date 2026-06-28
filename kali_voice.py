@@ -261,6 +261,39 @@ def split_sentences(text: str) -> List[str]:
     return [w for w in wrapped if w]
 
 
+def merge_for_speech(chunks: List[str], first_max: int = 90,
+                     target: int = 320) -> List[str]:
+    """Merge sentence-chunks into fewer, larger utterances.
+
+    Speaking each sentence as its own subprocess puts a spawn-latency GAP at
+    every period — that's the long stop between sentences.  Merging adjacent
+    sentences into one utterance lets the engine handle the (short, natural)
+    sentence pauses internally, with no gap.  The FIRST utterance is kept short
+    so audio starts talking quickly instead of waiting on a big synth."""
+    if not chunks:
+        return []
+    out: List[str] = []
+    buf = ""
+    first = True
+    for c in chunks:
+        cap = first_max if first else target
+        if not buf:
+            buf = c
+        elif len(buf) + 1 + len(c) <= cap:
+            buf = buf + " " + c
+        else:
+            out.append(buf)
+            buf = c
+            first = False
+        if first and len(buf) >= first_max:
+            out.append(buf)
+            buf = ""
+            first = False
+    if buf:
+        out.append(buf)
+    return out
+
+
 # ═════════════════════════════════════════════════════════════════════
 # SPEECH STREAMER — feed growing assistant text, get back complete
 # sentences ready to speak, code blocks skipped.
@@ -981,8 +1014,10 @@ class TextToSpeech:
         self._q.put((self._gen, text))
 
     def speak_all(self, text: str) -> None:
-        """Clean a whole message, split it, and queue every sentence."""
-        for s in split_sentences(clean_for_speech(text)):
+        """Clean a whole message, split it, merge into a few larger utterances
+        (so there's no gap at every period), and queue them."""
+        sentences = split_sentences(clean_for_speech(text))
+        for s in merge_for_speech(sentences):
             self.speak(s)
 
     def is_speaking(self) -> bool:

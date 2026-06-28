@@ -1,5 +1,28 @@
 # Changelog
 
+## v3.5.0 — Kali can see, faster speech
+
+- **Kali can SEE images now.** New `analyze_image` sends a photo or screenshot
+  to a vision model and returns what's actually in it — the scene, objects,
+  people, and any text in the image. She's no longer limited to text. Needs a
+  vision model configured (`vision_model` + that provider's key; defaults to a
+  SiliconFlow VL model).
+- **Camera + face detection.** A new camera button in the composer captures a
+  photo (`capture_photo`, with libcamera/fswebcam/ffmpeg fallbacks) and drops it
+  in ready for Kali to look at. `detect_faces` finds/counts faces locally
+  (detection only).
+- **Speech is much faster and smoother.** The reader used to spawn a new process
+  at every period, so it stopped between every sentence and was slow to start.
+  It now merges sentences into a few larger utterances (no gap at each period),
+  keeps the first chunk short so audio starts quickly, and the default rate is a
+  bit snappier (1.15x).
+- **A deliberate boundary:** Kali will not identify a person or find their
+  social-media accounts from their face. Face *detection* (where faces are) is
+  fine; biometric *identification* of strangers is not — it's surveillance, and
+  it's out.
+
+---
+
 ## v3.4.1 — UI fixes & accessibility
 
 A round of interface fixes and theming polish.

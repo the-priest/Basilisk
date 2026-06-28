@@ -44,6 +44,7 @@ from kali_core import (
     tool_path_info, tool_open_url, tool_browser,
     tool_web_search, tool_web_read, tool_github,
     tool_image_search,
+    tool_analyze_image, tool_capture_photo, tool_detect_faces,
     tool_web_verify, tool_tooling_check, tool_pentest_plan, tool_cve_lookup,
     tool_parse_output, tool_methodology, tool_wordlist_find,
     tool_cheatsheet, tool_report_findings,
@@ -76,7 +77,7 @@ except Exception as _ve:  # noqa
 
 APP_ID  = "org.thepriest.kali"
 APP_NAME = "Kali"
-VERSION = "3.4.1"
+VERSION = "3.5.0"
 
 # ── Tool-chain efficiency knobs ──
 # How many model round-trips a single user turn may chain through.  With
@@ -3458,6 +3459,8 @@ class MainWindow(Adw.ApplicationWindow):
              self._user_action_sysinfo),
             ("mail-attachment-symbolic", "Attach file",
              self._pick_attachment),
+            ("camera-photo-symbolic", "Take a photo (Kali can see it)",
+             self._user_action_camera),
         ]:
             btn = Gtk.Button.new_from_icon_name(icon)
             btn.add_css_class("icon-button")
@@ -4120,6 +4123,9 @@ class MainWindow(Adw.ApplicationWindow):
     _TOOL_STATUS = {
         "web_search":       "searching the web",
         "image_search":     "finding images",
+        "analyze_image":    "looking at the image",
+        "capture_photo":    "taking a photo",
+        "detect_faces":     "finding faces",
         "web_read":         "reading a page",
         "web_verify":       "cross-checking sources",
         "github":           "browsing GitHub",
@@ -4892,6 +4898,17 @@ class MainWindow(Adw.ApplicationWindow):
                 lambda: tool_image_search(
                     a.get("query", a.get("q", "")),
                     _safe_int(a.get("max_results", 4), 4))),
+            "analyze_image":     lambda a: self._tool_simple(
+                lambda: tool_analyze_image(
+                    a.get("image_path", a.get("path", a.get("url", ""))),
+                    a.get("question", a.get("prompt", "")),
+                    self._vision_key(), self._vision_base_url(),
+                    self.settings.get("vision_model", ""))),
+            "capture_photo":     lambda a: self._tool_simple(
+                lambda: tool_capture_photo(a.get("out_path", ""))),
+            "detect_faces":      lambda a: self._tool_simple(
+                lambda: tool_detect_faces(
+                    a.get("image_path", a.get("path", "")))),
 
             # ── OSINT (read-only: simple, public sources only) ──
             # Footprint / username discovery across public profile sites and
@@ -5049,6 +5066,15 @@ class MainWindow(Adw.ApplicationWindow):
                 text = json.dumps(text, default=str)
             GLib.idle_add(self._feed_tool_result, text)
         threading.Thread(target=_bg, daemon=True).start()
+
+    def _vision_key(self) -> str:
+        prov = self.settings.get("vision_provider", "siliconflow")
+        return (self.settings.get(f"{prov}_api_key", "") or "").strip()
+
+    def _vision_base_url(self) -> str:
+        prov = self.settings.get("vision_provider", "siliconflow")
+        spec = PROVIDERS_BY_KEY.get(prov)
+        return spec.base_url if spec else ""
 
     def _tool_simple(self, fn):
         def _bg():
@@ -5617,6 +5643,31 @@ class MainWindow(Adw.ApplicationWindow):
         if not self._begin_chip_action(): return
         self._inject_user_request("What's in my Downloads recently?")
         self._tool_simple(lambda: tool_recent_downloads(20))
+
+    def _user_action_camera(self):
+        """Capture a photo off-thread, then drop it into the composer as an
+        image so it renders and Kali can see it with analyze_image."""
+        self._show_toast("Taking a photo…")
+
+        def _bg():
+            r = tool_capture_photo()
+            GLib.idle_add(lambda: self._finish_camera(r) or False)
+        threading.Thread(target=_bg, daemon=True).start()
+
+    def _finish_camera(self, r):
+        if not r.get("ok"):
+            self._show_toast(r.get("error", "Camera failed"))
+            return False
+        path = r.get("path", "")
+        buf = self.input_view.get_buffer()
+        cur = buf.get_text(buf.get_start_iter(), buf.get_end_iter(), False)
+        ref = f"![photo](file://{path})"
+        prompt = "What do you see in this photo?"
+        new = (f"{cur}\n{ref}\n{prompt}" if cur.strip()
+               else f"{ref}\n{prompt}")
+        buf.set_text(new)
+        self._show_toast("Photo captured")
+        return False
 
     def _pick_attachment(self):
         # Gtk.FileDialog is GTK 4.10+.  On older Phosh/NetHunter GTK it doesn't

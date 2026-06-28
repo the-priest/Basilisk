@@ -846,6 +846,37 @@ class TestImages(unittest.TestCase):
         r = kali_core.tool_image_search("")
         self.assertFalse(r["ok"])
 
+    def test_image_search_source_fallback(self):
+        import json as _json
+        orig = kali_core._web_get
+        try:
+            # Openverse empty → must fall through to Wikimedia and use its URL.
+            wiki = _json.dumps({"query": {"pages": {"1": {
+                "title": "File:Chair.jpg", "imageinfo": [{
+                    "url": "https://upload.wikimedia.org/c/chair.jpg",
+                    "mime": "image/jpeg", "width": 800, "height": 600}]}}}})
+
+            def fake(u, **k):
+                if "openverse" in u:
+                    return (200, _json.dumps({"results": []}), u)
+                if "commons.wikimedia" in u:
+                    return (200, wiki, u)
+                return (200, "<html>not json</html>", u)
+            kali_core._web_get = fake
+            r = kali_core.tool_image_search("chair", 3)
+            self.assertTrue(r["ok"])
+            self.assertEqual(r["source"], "wikimedia")
+            self.assertEqual(r["results"][0]["image"],
+                             "https://upload.wikimedia.org/c/chair.jpg")
+
+            # All sources fail → graceful empty, no exception.
+            kali_core._web_get = lambda u, **k: (200, "<html>blocked</html>", u)
+            r2 = kali_core.tool_image_search("chair", 3)
+            self.assertTrue(r2["ok"])
+            self.assertEqual(r2["results"], [])
+        finally:
+            kali_core._web_get = orig
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

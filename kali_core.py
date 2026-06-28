@@ -3180,77 +3180,138 @@ def tool_web_search(query: str, max_results: int = 6,
     }
 
 
-def tool_image_search(query: str, max_results: int = 4) -> Dict[str, Any]:
-    """Search the web for IMAGES and return direct image URLs, so Kali can show
-    pictures inline in chat.  No API key — uses DuckDuckGo's image endpoint
-    (fetch a one-time vqd token from the search page, then the image JSON).
-    Returns each result's image URL, thumbnail, title, source and dimensions.
+def _img_openverse(q: str, n: int) -> List[Dict[str, Any]]:
+    """Openverse (openverse.org) — a real Creative-Commons image API returning
+    direct image URLs as JSON.  No key needed for modest use.  Best for generic
+    real-world subjects (a chair, a Raspberry Pi, a dog)."""
+    import urllib.parse, json as _json
+    url = (f"https://api.openverse.org/v1/images/"
+           f"?q={urllib.parse.quote(q)}&page_size={n}&mature=false")
+    _, body, _ = _web_get(url, timeout=_WEB_TIMEOUT,
+                          extra_headers={"Accept": "application/json"})
+    data = _json.loads(body)
+    out: List[Dict[str, Any]] = []
+    for it in (data.get("results") or [])[:n]:
+        img = it.get("url") or ""
+        if img.startswith("http"):
+            out.append({"title": (it.get("title") or "").strip(),
+                        "image": img,
+                        "thumbnail": it.get("thumbnail") or img,
+                        "source": it.get("foreign_landing_url") or "",
+                        "width": it.get("width"), "height": it.get("height")})
+    return out
 
-    To actually display them, embed the image URLs in your reply as markdown —
-    ![short description](image_url) — and the chat renders them as pictures."""
-    import urllib.parse
-    import json as _json
+
+def _img_wikimedia(q: str, n: int) -> List[Dict[str, Any]]:
+    """Wikimedia Commons via the MediaWiki API — rock-solid, keyless JSON,
+    returns the direct upload.wikimedia.org URL.  Excellent encyclopedic
+    coverage and never blocks a polite request."""
+    import urllib.parse, json as _json
+    url = ("https://commons.wikimedia.org/w/api.php?action=query"
+           "&generator=search&gsrsearch=" + urllib.parse.quote(q) +
+           "&gsrnamespace=6&gsrlimit=" + str(n) +
+           "&prop=imageinfo&iiprop=url%7Csize%7Cmime&format=json")
+    _, body, _ = _web_get(url, timeout=_WEB_TIMEOUT,
+                          extra_headers={"Accept": "application/json"})
+    data = _json.loads(body)
+    pages = ((data.get("query") or {}).get("pages") or {})
+    out: List[Dict[str, Any]] = []
+    for _pid, page in pages.items():
+        ii = page.get("imageinfo") or []
+        if not ii:
+            continue
+        info = ii[0]
+        img = info.get("url") or ""
+        mime = info.get("mime") or ""
+        if img.startswith("http") and mime.startswith("image/"):
+            out.append({"title": (page.get("title") or "").replace("File:", ""),
+                        "image": img,
+                        "thumbnail": info.get("thumburl") or img,
+                        "source": info.get("descriptionurl") or "",
+                        "width": info.get("width"), "height": info.get("height")})
+    return out[:n]
+
+
+def _img_duckduckgo(q: str, n: int) -> List[Dict[str, Any]]:
+    """DuckDuckGo image scrape (vqd token → i.js).  Broadest coverage but the
+    least reliable — DDG actively fights scrapers — so it's the last resort."""
+    import urllib.parse, json as _json
+    qe = urllib.parse.quote(q)
+    _, html, _ = _web_get(f"https://duckduckgo.com/?q={qe}&iax=images&ia=images",
+                          timeout=_WEB_TIMEOUT)
+    m = (re.search(r'vqd=["\']([\w-]+)["\']', html)
+         or re.search(r'vqd=([\w-]+)&', html)
+         or re.search(r'"vqd":"([\w-]+)"', html))
+    if not m:
+        return []
+    iu = (f"https://duckduckgo.com/i.js?l=us-en&o=json&q={qe}"
+          f"&vqd={m.group(1)}&f=,,,,,&p=1")
+    _, body, _ = _web_get(iu, timeout=_WEB_TIMEOUT, extra_headers={
+        "Accept": "application/json, text/javascript, */*; q=0.01",
+        "Referer": "https://duckduckgo.com/",
+        "X-Requested-With": "XMLHttpRequest"})
+    data = _json.loads(body)
+    out: List[Dict[str, Any]] = []
+    for it in (data.get("results") or [])[:n]:
+        img = it.get("image") or ""
+        if img.startswith("http"):
+            out.append({"title": (it.get("title") or "").strip(),
+                        "image": img, "thumbnail": it.get("thumbnail") or "",
+                        "source": it.get("url") or "",
+                        "width": it.get("width"), "height": it.get("height")})
+    return out
+
+
+def tool_image_search(query: str, max_results: int = 4) -> Dict[str, Any]:
+    """Find images on the web and return DIRECT image URLs so Kali can show
+    pictures inline in chat.  No API key.
+
+    It tries three keyless sources in order of reliability and STOPS at the
+    first that returns results: Openverse (a real CC image API), then Wikimedia
+    Commons (the MediaWiki API), then DuckDuckGo images (a scrape, least
+    reliable).  Because the first two are real JSON APIs, this is robust — it
+    does not depend on scraping a single anti-bot endpoint.
+
+    To DISPLAY a result, embed its image URL in your reply as markdown —
+    ![short description](image_url) — and the chat renders it as a picture.
+    Just call this once; do not hand-scrape stock-photo sites or guess file
+    names if it comes back empty — say you couldn't find one instead."""
     query = (query or "").strip()
     if not query:
         return {"ok": False, "error": "no query"}
     max_results = max(1, min(int(max_results or 4), 10))
-    q = urllib.parse.quote(query)
 
-    # Step 1: get the vqd token DDG requires for the image endpoint.
-    vqd = ""
-    try:
-        _, html, _ = _web_get(f"https://duckduckgo.com/?q={q}&iax=images&ia=images",
-                              timeout=_WEB_TIMEOUT)
-        m = (re.search(r'vqd=["\']([\w-]+)["\']', html)
-             or re.search(r'vqd=([\w-]+)&', html)
-             or re.search(r'"vqd":"([\w-]+)"', html))
-        if m:
-            vqd = m.group(1)
-    except Exception as e:
-        return {"ok": False, "error": f"image search token fetch failed: {e}"}
-    if not vqd:
-        return {"ok": False,
-                "error": "could not obtain image-search token (DuckDuckGo "
-                         "may have changed; try again or use web_search)"}
-
-    # Step 2: hit the image JSON endpoint with the token.
     results: List[Dict[str, Any]] = []
-    try:
-        iu = (f"https://duckduckgo.com/i.js?l=us-en&o=json&q={q}"
-              f"&vqd={vqd}&f=,,,,,&p=1")
-        _, body, _ = _web_get(iu, timeout=_WEB_TIMEOUT, extra_headers={
-            "Accept": "application/json, text/javascript, */*; q=0.01",
-            "Referer": "https://duckduckgo.com/",
-            "X-Requested-With": "XMLHttpRequest",
-        })
-        data = _json.loads(body)
-        for it in (data.get("results") or [])[:max_results]:
-            img = it.get("image") or ""
-            if not img.startswith("http"):
-                continue
-            results.append({
-                "title": (it.get("title") or "").strip(),
-                "image": img,
-                "thumbnail": it.get("thumbnail") or "",
-                "source": it.get("url") or it.get("source") or "",
-                "width": it.get("width"),
-                "height": it.get("height"),
-            })
-    except Exception as e:
-        return {"ok": False, "error": f"image search failed: {e}"}
+    used = ""
+    errors: List[str] = []
+    for name, fn in (("openverse", _img_openverse),
+                     ("wikimedia", _img_wikimedia),
+                     ("duckduckgo", _img_duckduckgo)):
+        try:
+            got = fn(query, max_results)
+            if got:
+                results = got
+                used = name
+                break
+        except Exception as e:
+            errors.append(f"{name}: {type(e).__name__}")
+            continue
 
     if not results:
-        return {"ok": True, "query": query, "results": [],
-                "text": f"No images found for '{query}'."}
+        detail = (" (" + "; ".join(errors) + ")") if errors else ""
+        return {"ok": True, "query": query, "results": [], "source": "",
+                "text": f"No images found for '{query}'{detail}. Tell the "
+                        f"operator you couldn't find a picture rather than "
+                        f"guessing a URL."}
 
-    lines = [f"{len(results)} image(s) for '{query}' — embed any as "
-             f"![desc](url) to show it:"]
+    lines = [f"{len(results)} image(s) for '{query}' (via {used}) — embed any "
+             f"as ![desc](url) to show it:"]
     for r in results:
         dim = (f" ({r['width']}x{r['height']})"
                if r.get("width") and r.get("height") else "")
         lines.append(f"  • {r['title'] or 'image'}{dim}: {r['image']}")
-    return {"ok": True, "query": query, "results": results,
-            "text": "\n".join(lines)}
+    return {"ok": True, "query": query, "source": used,
+            "results": results, "text": "\n".join(lines)}
 
 
 def tool_web_read(url: str, max_chars: int = 6000) -> Dict[str, Any]:

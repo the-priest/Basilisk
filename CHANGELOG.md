@@ -1,5 +1,37 @@
 # Changelog
 
+## v3.3.1 — Reliable image search + sharper self-awareness
+
+Fixes a real-world failure where showing a picture fell apart, and tightens how
+well Kali knows its own abilities.
+
+- **`image_search` rebuilt on reliable APIs.** The old version scraped
+  DuckDuckGo's anti-bot image endpoint, which returned invalid JSON in practice
+  ("Expecting value: line 1 column 1"). It now tries three keyless sources in
+  order and stops at the first that works: **Openverse** (a real CC image API),
+  then **Wikimedia Commons** (the MediaWiki API), then DuckDuckGo as a
+  last-resort scrape. The first two are real JSON APIs returning direct image
+  URLs, so it no longer depends on one fragile endpoint. All-sources-fail
+  degrades gracefully instead of erroring.
+- **No more flailing to show a picture.** The persona now spells out the
+  one-step path (call `image_search` once with a plain subject → embed a
+  returned URL as `![desc](url)`) and explicitly tells Kali *not* to hand-scrape
+  stock-photo sites or guess Wikimedia file names — the behaviour that burned
+  the tool-step budget before.
+- **Self-awareness fix.** The capability summary was stale and even claimed Kali
+  "cannot reach the internet" — contradicting its own web tools. Rewrote it into
+  a complete, accurate map (web, images, OSINT, GitHub, evidence ledger, MCP,
+  pentest tools, memory, skills, voice) so Kali stops having to test itself to
+  discover what it can do.
+- **Tool-step budget 12 → 20.** A legitimate multi-stage task (a full self-test
+  sweep, a long pentest plan) was hitting the 12-round cap. Raised to 20; the
+  graceful "lock tools and answer" behaviour at the limit is unchanged.
+- **Tests:** 60 (was 59) — adds image-source fallback (Openverse-empty →
+  Wikimedia → graceful-empty). *(The live API fetches are verified on a real
+  machine, not in the offline suite.)*
+
+---
+
 ## v3.3.0 — Kali can show pictures in chat
 
 Kali can now **display images inline** in the conversation, not just link them.

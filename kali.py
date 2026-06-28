@@ -76,14 +76,14 @@ except Exception as _ve:  # noqa
 
 APP_ID  = "org.thepriest.kali"
 APP_NAME = "Kali"
-VERSION = "3.3.0"
+VERSION = "3.3.1"
 
 # ── Tool-chain efficiency knobs ──
 # How many model round-trips a single user turn may chain through.  With
 # read-only tools now batched (many lookups per round-trip), this budget
 # stretches much further than it looks.  On hitting it Kali doesn't dead-
 # end — it takes one final, tool-free turn to answer with what it gathered.
-MAX_TOOL_CHAIN = 12
+MAX_TOOL_CHAIN = 20
 # Parallel workers when several read-only tools fire in one turn.
 TOOL_BATCH_MAX_WORKERS = 6
 # Keep this many most-recent tool_result blocks at full length in the

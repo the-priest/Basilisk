@@ -125,21 +125,19 @@ SILICONFLOW_CHAIN = [
     "Qwen/Qwen2.5-72B-Instruct",
 ]
 
-NOVITA_CHAIN = [
-    "qwen/qwen3-coder-480b-a35b-instruct",
-    "deepseek/deepseek-v3",
-    "openai/gpt-oss-120b",
-    "moonshotai/kimi-k2.5",
-    "meta-llama/llama-3.3-70b-instruct",
+OPENAI_CHAIN = [
+    "gpt-4.1",
+    "gpt-4o",
+    "o4-mini",
+    "gpt-4.1-mini",
+    "gpt-4o-mini",
 ]
 
-GITHUB_CHAIN = [
-    "openai/gpt-4.1",
-    "openai/gpt-4o",
-    "deepseek/DeepSeek-R1",
-    "meta/Llama-3.3-70B-Instruct",
-    "openai/gpt-4.1-mini",
-    "openai/gpt-4o-mini",
+ANTHROPIC_CHAIN = [
+    "claude-sonnet-4-20250514",
+    "claude-opus-4-20250514",
+    "claude-3-5-sonnet-latest",
+    "claude-3-5-haiku-latest",
 ]
 
 GOOGLE_CHAIN = [
@@ -187,17 +185,18 @@ PROVIDERS: List[ProviderSpec] = [
         chain=SILICONFLOW_CHAIN,
         key_url="https://cloud.siliconflow.com/account/ak"),
     ProviderSpec(
-        key="novita", label="Novita AI",
-        blurb="OpenAI-compatible. Cheap GPU inference, many open models.",
-        base_url="https://api.novita.ai/v3/openai",
-        chain=NOVITA_CHAIN,
-        key_url="https://novita.ai/settings/key-management"),
+        key="openai", label="OpenAI",
+        blurb="GPT-4o / GPT-4.1 / o-series. Key at platform.openai.com.",
+        base_url="https://api.openai.com/v1",
+        chain=OPENAI_CHAIN,
+        key_url="https://platform.openai.com/api-keys"),
     ProviderSpec(
-        key="github", label="GitHub Models",
-        blurb="Free tier. Use a GitHub PAT with the models:read scope.",
-        base_url="https://models.github.ai/inference",
-        chain=GITHUB_CHAIN,
-        key_url="https://github.com/settings/personal-access-tokens"),
+        key="anthropic", label="Anthropic (Claude)",
+        blurb="Claude models via the OpenAI-compatible endpoint. "
+              "Key at console.anthropic.com.",
+        base_url="https://api.anthropic.com/v1",
+        chain=ANTHROPIC_CHAIN,
+        key_url="https://console.anthropic.com/settings/keys"),
     ProviderSpec(
         key="google", label="Google AI Studio",
         blurb="Gemini models. Free key at aistudio.google.com.",
@@ -279,7 +278,7 @@ DEFAULT_SETTINGS = {
     "memory_recall_k":         6,       # how many memories to inject per turn
     "memory_consolidate":      False,   # model-based fact extraction (costs a call)
     "skills_enabled":          False,   # self-written, sandbox-tested skills
-    "foresight_enabled":       False,   # predict consequences before acting
+    "foresight_enabled":       True,    # predict consequences before acting
     "foresight_model":         False,   # add a model pass on top of the rules
     "mcp_enabled":             False,   # connect external MCP tool servers (OFF
                                         # by default — MCP is an RCE surface;

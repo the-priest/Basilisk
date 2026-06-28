@@ -770,7 +770,24 @@ def assemble_messages(system_prompt: str,
 
 
 def title_from_first_message(text: str, max_len: int = 48) -> str:
-    t = " ".join(text.split())
+    import re as _re
+    t = " ".join((text or "").split())
+    # drop a leading image/file markdown so a photo-only message still names well
+    t = _re.sub(r"^!\[[^\]]*\]\([^)]*\)\s*", "", t).strip()
+    # peel common filler openings so the title is the actual topic
+    low = t.lower()
+    for opener in ("can you ", "could you ", "can u ", "please ", "pls ",
+                   "i want to ", "i need to ", "i'd like to ", "i would like to ",
+                   "help me ", "how do i ", "how to ", "how can i ", "let's ",
+                   "lets ", "would you ", "hey kali ", "hey ", "kali ", "so "):
+        if low.startswith(opener):
+            t = t[len(opener):]
+            low = t.lower()
+            break
+    t = t.strip(" ,.-:;")
+    if t:
+        t = t[0].upper() + t[1:]
     if len(t) > max_len:
-        t = t[: max_len - 1].rstrip() + "…"
+        cut = t.rfind(" ", 0, max_len - 1)
+        t = (t[:cut] if cut > 20 else t[: max_len - 1]).rstrip() + "…"
     return t or "New chat"

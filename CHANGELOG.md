@@ -1,5 +1,59 @@
 # Changelog
 
+## v3.6.0 — Providers, on-the-fly model switching, UI overhaul
+
+- **Switch model/provider from the composer.** A new button above the text box
+  shows the active provider and model (e.g. "siliconflow · DeepSeek-V4-Flash");
+  tap it to pick any model from any provider you hold a key for, grouped by
+  provider, applied instantly — no trip to Settings.
+- **Providers updated.** Removed GitHub Models and Novita; added **OpenAI**
+  (GPT-4o / GPT-4.1 / o-series) and **Anthropic / Claude** (via its
+  OpenAI-compatible endpoint). An old config pointing at a removed provider
+  falls back to SiliconFlow automatically.
+- **Bigger text input** — the compose box is now much taller by default.
+- **Header redesign.** Dropped the "personal · loyal · yours" tagline; KALI is
+  now a menacing red, letter-spaced title sitting next to the new-chat button.
+  The SiliconFlow / Online pills in the top-right are gone — connectivity is now
+  a single green (online) / red (offline) dot next to KALI.
+- **The saved-chats list looks the part now** — a fire-coloured accent stripe,
+  cleaner typography, and a subtle ember-glow animation on the selected chat
+  instead of plain text on black.
+- **Pick the vision model in Settings.** Display → Images & vision lets you set
+  the vision provider + model Kali uses to see images, and toggle inline image
+  rendering.
+- **Smarter auto-naming.** New chats are titled from the first message with the
+  filler stripped ("can you scan my network…" → "Scan my network").
+- **Fixed the phone UI occasionally growing past the screen.** An inline image
+  was setting its width as a hard minimum at up to 480px; it's now capped to the
+  viewport (minus the avatar column) and allowed to shrink, and long code lines
+  can no longer force the window wider either.
+
+---
+
+## v3.5.1 — Catastrophic commands are now actually BLOCKED
+
+Critical safety fix. Previously a system-destroying command only triggered a
+"Run anyway" confirmation, and the consequence predictor (foresight) was off by
+default — so nothing actually stopped `rm -rf /`. That's fixed.
+
+- **Hard block, no override.** A command in the catastrophic class (`rm -rf /`,
+  `mkfs`, `dd` onto a disk, fork bomb, recursive delete of root / system /
+  data dirs) is now REFUSED outright at the top of the execution path — before
+  any dialog, before foresight, before the shell. There is no "Run anyway"
+  button and no setting that disables it. Kali, as an AI, will never run a
+  system-destroying command.
+- **Foresight on by default.** `foresight_enabled` now defaults to **on**, so
+  the consequence predictor actually runs and gates risky commands instead of
+  sitting inert.
+- **Closed detection gaps:** a path glued to the flag cluster (`rm -rf/`,
+  `rm -rf/home`) is now caught, and deleting a bare critical data/mount dir
+  (`/home`, `/mnt`, `/media`, `/opt` — the directory itself) is now
+  catastrophic, while subdirectories under them (`/home/me/loot`) stay allowed.
+- **Tests:** the catastrophic-command suite now covers the glued-slash forms and
+  the data-dir cases, with matching allow-cases so real work isn't over-blocked.
+
+---
+
 ## v3.5.0 — Kali can see, faster speech
 
 - **Kali can SEE images now.** New `analyze_image` sends a photo or screenshot

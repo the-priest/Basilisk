@@ -77,7 +77,7 @@ except Exception as _ve:  # noqa
 
 APP_ID  = "org.thepriest.kali"
 APP_NAME = "Kali"
-VERSION = "3.5.0"
+VERSION = "3.6.0"
 
 # ── Tool-chain efficiency knobs ──
 # How many model round-trips a single user turn may chain through.  With
@@ -185,11 +185,25 @@ headerbar {
 /* ===== App branding ===== */
 
 .app-title {
-    font-size: 28px;
+    font-size: 26px;
     font-weight: 900;
     font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    color: #ff3a47;
+    letter-spacing: 4px;
+    text-shadow: 0 0 12px rgba(255, 58, 71, 0.45);
+}
+/* Connectivity dot beside KALI: green online, red offline */
+.online-dot {
+    font-size: 13px;
+    margin-top: 2px;
+}
+.online-dot.online {
     color: #2ee65f;
-    letter-spacing: 1px;
+    text-shadow: 0 0 7px rgba(46, 230, 95, 0.7);
+}
+.online-dot.offline {
+    color: #ff3a47;
+    text-shadow: 0 0 7px rgba(255, 58, 71, 0.7);
 }
 .app-subtitle {
     font-size: 16px;
@@ -212,31 +226,42 @@ headerbar {
 
 .chat-row {
     background-color: transparent;
-    border-radius: 8px;
-    padding: 20px 22px;
-    margin: 6px 8px;
-    min-height: 76px;
+    border-radius: 11px;
+    padding: 15px 16px 15px 18px;
+    margin: 5px 8px;
+    min-height: 64px;
+    border-left: 3px solid transparent;
+    transition: background-color 160ms ease, border-color 160ms ease;
 }
 .chat-row:hover {
     background-color: #14171c;
+    border-left-color: rgba(46, 230, 95, 0.55);
 }
 .chat-row.selected, .chat-row:selected {
-    background-color: #1b1f26;
-    border-left: 3px solid #15a838;
+    background: linear-gradient(90deg, rgba(255, 58, 71, 0.16),
+                rgba(46, 230, 95, 0.05) 55%, rgba(13, 15, 18, 0) 90%);
+    border-left: 3px solid #ff3a47;
+    box-shadow: inset 0 0 0 1px rgba(255, 58, 71, 0.10);
+    animation: emberglow 2.6s ease-in-out infinite;
+}
+@keyframes emberglow {
+    0%   { border-left-color: #ff3a47; box-shadow: inset 0 0 0 1px rgba(255,58,71,0.10), -2px 0 10px rgba(255,58,71,0.20); }
+    50%  { border-left-color: #ff8a2f; box-shadow: inset 0 0 0 1px rgba(255,138,47,0.14), -2px 0 14px rgba(255,138,47,0.30); }
+    100% { border-left-color: #ff3a47; box-shadow: inset 0 0 0 1px rgba(255,58,71,0.10), -2px 0 10px rgba(255,58,71,0.20); }
 }
 .chat-row .title-line {
-    color: #d6dbe2;
+    color: #e8ebef;
     font-weight: 600;
-    font-size: 22px;
+    font-size: 15px;
 }
 .chat-row .meta-line {
-    color: #7d8794;
-    font-size: 17px;
-    margin-top: 4px;
+    color: #6d7680;
+    font-size: 11.5px;
+    letter-spacing: 0.3px;
+    margin-top: 3px;
 }
 .chat-row .pin-icon {
-    color: #2ee65f;
-    font-size: 17px;
+    font-size: 12px;
 }
 
 /* ===== Empty states ===== */
@@ -880,6 +905,47 @@ link, button.link, *:link { color: #2ee65f; }
 .header-icon-button:active {
     background-color: rgba(46, 230, 95, 0.16);
 }
+/* Model / provider switcher in the composer */
+.model-switch-btn {
+    background-color: #14181d;
+    border: 1px solid #20262d;
+    border-radius: 10px;
+    color: #9aa3ad;
+    padding: 5px 12px;
+    font-size: 12px;
+    font-weight: 600;
+}
+.model-switch-btn:hover {
+    background-color: #1b2128;
+    color: #2ee65f;
+    border-color: #15a838;
+}
+.model-group-header {
+    color: #ff3a47;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    margin-top: 8px;
+    margin-bottom: 2px;
+    padding-left: 4px;
+}
+.model-pick-row {
+    background-color: transparent;
+    border: none;
+    border-radius: 8px;
+    color: #d6dbe2;
+    padding: 7px 12px;
+    font-size: 13px;
+}
+.model-pick-row:hover {
+    background-color: rgba(46, 230, 95, 0.10);
+    color: #2ee65f;
+}
+.model-pick-active {
+    background-color: rgba(46, 230, 95, 0.16);
+    color: #2ee65f;
+    font-weight: 700;
+}
 
 /* =====================================================================
    POLISH LAYER  --  product-grade finish.  Appended last so it refines
@@ -988,14 +1054,9 @@ entry:focus-within {
     box-shadow: 0 2px 10px rgba(0,0,0,0.28);
 }
 
-/* ---- Sidebar chat rows: accent bar on the active one ---- */
+/* ---- Sidebar chat rows: fire accent handled in the base block above ---- */
 .chat-row {
     border-left: 3px solid transparent;
-}
-.chat-row.selected, .chat-row:selected {
-    border-left: 3px solid #2ee65f;
-    background-image: linear-gradient(90deg,
-                      rgba(46, 230, 95,0.16), rgba(46, 230, 95,0.0));
 }
 
 /* ---- Quick chips: pill polish ---- */
@@ -1171,6 +1232,10 @@ class CodeBlockWidget(Gtk.Box):
         sw = Gtk.ScrolledWindow()
         sw.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.NEVER)
         sw.set_hexpand(True)
+        # Don't let a long code line force the whole window wider than the
+        # screen — the scroller absorbs the overflow instead.
+        sw.set_propagate_natural_width(False)
+        sw.set_min_content_width(0)
         tv = Gtk.TextView()
         tv.set_editable(False)
         tv.set_cursor_visible(False)
@@ -1304,9 +1369,21 @@ class ImageWidget(Gtk.Box):
         try:
             pic = Gtk.Picture.new_for_paintable(tex)
             pic.set_can_shrink(True)
+            try:
+                pic.set_content_fit(Gtk.ContentFit.SCALE_DOWN)
+            except Exception:
+                pass
             pic.add_css_class("chat-image")
             pic.set_halign(Gtk.Align.START)
-            pic.set_size_request(tex.get_width(), tex.get_height())
+            tw, th = tex.get_width(), tex.get_height()
+            # Never let an image be wider than the viewport minus the avatar
+            # column + margins — otherwise set_size_request makes that width a
+            # hard MINIMUM and forces the whole window past the phone screen.
+            cap_w = max(160, _VIEWPORT_WIDTH - 120)
+            if tw > cap_w and tw > 0:
+                th = max(1, int(th * cap_w / tw))
+                tw = cap_w
+            pic.set_size_request(tw, th)
             if self.alt:
                 pic.set_tooltip_text(self.alt)
             try:
@@ -2418,6 +2495,53 @@ class SettingsDialog(Adw.PreferencesDialog):
         dg.add(reset_row)
 
         d_page.add(dg)
+
+        # Images & vision
+        iv_g = Adw.PreferencesGroup()
+        iv_g.set_title("Images &amp; vision")
+        iv_g.set_description(
+            "Show pictures in chat, and choose the model Kali uses to SEE "
+            "images (analyze_image).")
+
+        self.render_images_row = Adw.SwitchRow()
+        self.render_images_row.set_title("Show images in chat")
+        self.render_images_row.set_subtitle(
+            "Render image links as pictures.  Off = a tappable link instead "
+            "(no auto-download; better OPSEC).")
+        self.render_images_row.set_active(
+            bool(parent.settings.get("chat_render_images", True)))
+        self.render_images_row.connect(
+            "notify::active",
+            lambda r, _ps: self._set_render_images(r.get_active()))
+        iv_g.add(self.render_images_row)
+
+        self.vision_provider_row = Adw.ComboRow()
+        self.vision_provider_row.set_title("Vision provider")
+        self.vision_provider_row.set_subtitle(
+            "Which provider hosts the vision model (must have a key set).")
+        _vp_labels = [p.label for p in PROVIDERS]
+        _vp_keys = [p.key for p in PROVIDERS]
+        self.vision_provider_row.set_model(Gtk.StringList.new(_vp_labels))
+        _cur_vp = parent.settings.get("vision_provider", "siliconflow")
+        if _cur_vp in _vp_keys:
+            self.vision_provider_row.set_selected(_vp_keys.index(_cur_vp))
+        self.vision_provider_row.connect(
+            "notify::selected",
+            lambda r, _ps: self._set("vision_provider", _vp_keys[r.get_selected()])
+            if 0 <= r.get_selected() < len(_vp_keys) else None)
+        iv_g.add(self.vision_provider_row)
+
+        self.vision_model_row = Adw.EntryRow()
+        self.vision_model_row.set_title("Vision model")
+        self.vision_model_row.set_text(
+            parent.settings.get("vision_model", "") or "")
+        self.vision_model_row.set_show_apply_button(True)
+        self.vision_model_row.connect(
+            "apply",
+            lambda r: self._set("vision_model", r.get_text().strip()))
+        iv_g.add(self.vision_model_row)
+
+        d_page.add(iv_g)
         self.add(d_page)
 
         # ── BEHAVIOUR ──────────────────────────────────────
@@ -2768,6 +2892,12 @@ class SettingsDialog(Adw.PreferencesDialog):
     def _set(self, key, value):
         self.win.settings[key] = value
         save_settings(self.win.settings)
+
+    def _set_render_images(self, on):
+        # Persist and apply live so the chat renderer picks it up immediately.
+        self._set("chat_render_images", on)
+        global _RENDER_IMAGES
+        _RENDER_IMAGES = bool(on)
 
     def _on_provider_key(self, key, text):
         self.win.settings[f"{key}_api_key"] = text
@@ -3171,14 +3301,19 @@ class MainWindow(Adw.ApplicationWindow):
         sb_header.set_show_end_title_buttons(False)
         sb_header.set_show_start_title_buttons(False)
 
-        title_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-        t = Gtk.Label(label=APP_NAME, xalign=0.0)
+        # Header — KALI (with a live online dot) on the left, new-chat on the
+        # right.  The dot is green when online, red when offline.
+        title_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=7)
+        t = Gtk.Label(label=APP_NAME.upper(), xalign=0.0)
         t.add_css_class("app-title")
-        st = Gtk.Label(label="personal · loyal · yours", xalign=0.0)
-        st.add_css_class("app-subtitle")
+        t.set_valign(Gtk.Align.CENTER)
         title_box.append(t)
-        title_box.append(st)
-        sb_header.set_title_widget(title_box)
+        self.online_dot = Gtk.Label(label="●")
+        self.online_dot.add_css_class("online-dot")
+        self.online_dot.set_valign(Gtk.Align.CENTER)
+        self.online_dot.set_tooltip_text("Connectivity")
+        title_box.append(self.online_dot)
+        sb_header.pack_start(title_box)
 
         new_btn = Gtk.Button.new_from_icon_name("document-new-symbolic")
         new_btn.set_tooltip_text("New chat")
@@ -3243,15 +3378,9 @@ class MainWindow(Adw.ApplicationWindow):
         self.title_widget_box.append(self.chat_subtitle_lbl)
         hb.set_title_widget(self.title_widget_box)
 
-        # Status pills
-        pill_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        self.provider_pill = Gtk.Label(label="…")
-        self.provider_pill.add_css_class("status-pill")
-        pill_box.append(self.provider_pill)
-        self.online_pill = Gtk.Label(label="…")
-        self.online_pill.add_css_class("status-pill")
-        pill_box.append(self.online_pill)
-        hb.pack_end(pill_box)
+        # (Provider + online status used to live here as pills; the operator
+        # knows their provider, so that's gone — connectivity is now just the
+        # green/red dot next to KALI in the sidebar header.)
 
         menu_btn = Gtk.MenuButton()
         menu_btn.set_icon_name("open-menu-symbolic")
@@ -3427,9 +3556,103 @@ class MainWindow(Adw.ApplicationWindow):
         panel.append(sw)
         return panel
 
+    def _model_button_label(self) -> str:
+        key = self.settings.get("active_provider", "siliconflow")
+        spec = PROVIDERS_BY_KEY.get(key)
+        plabel = spec.label if spec else key
+        model = self.settings.get(
+            f"{key}_model", spec.default_model if spec else "")
+        short = model.split("/")[-1] if "/" in model else model
+        return f"⮂  {plabel}  ·  {short or 'pick a model'}"
+
+    def _update_model_button(self):
+        btn = getattr(self, "model_btn", None)
+        if btn is not None:
+            btn.set_label(self._model_button_label())
+
+    def _provider_has_key(self, key: str) -> bool:
+        return bool((self.settings.get(f"{key}_api_key", "") or "").strip())
+
+    def _open_model_switcher(self, *_):
+        pop = Gtk.Popover()
+        pop.set_parent(self.model_btn)
+        pop.add_css_class("model-switch-pop")
+        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        outer.set_margin_top(8)
+        outer.set_margin_bottom(8)
+        outer.set_margin_start(8)
+        outer.set_margin_end(8)
+        sw = Gtk.ScrolledWindow()
+        sw.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        sw.set_max_content_height(440)
+        sw.set_min_content_width(240)
+        sw.set_propagate_natural_height(True)
+        listbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+
+        cur_key = self.settings.get("active_provider", "siliconflow")
+        cur_model = self.settings.get(f"{cur_key}_model", "")
+        any_provider = False
+        for spec in PROVIDERS:
+            if not self._provider_has_key(spec.key):
+                continue
+            any_provider = True
+            hdr = Gtk.Label(label=spec.label.upper(), xalign=0.0)
+            hdr.add_css_class("model-group-header")
+            listbox.append(hdr)
+            for model in spec.chain:
+                short = model.split("/")[-1] if "/" in model else model
+                b = Gtk.Button(label=short)
+                b.add_css_class("model-pick-row")
+                b.set_halign(Gtk.Align.FILL)
+                if spec.key == cur_key and model == cur_model:
+                    b.add_css_class("model-pick-active")
+                b.connect("clicked",
+                          lambda _w, k=spec.key, m=model: self._switch_model(
+                              k, m, pop))
+                listbox.append(b)
+
+        if not any_provider:
+            hint = Gtk.Label(
+                label="No API keys yet.\nAdd one in Settings → Providers.",
+                xalign=0.0)
+            hint.add_css_class("model-group-header")
+            listbox.append(hint)
+
+        sw.set_child(listbox)
+        outer.append(sw)
+        pop.set_child(outer)
+        pop.connect("closed", lambda p: p.unparent())
+        pop.popup()
+
+    def _switch_model(self, provider, model, pop=None):
+        self.settings["active_provider"] = provider
+        self.settings[f"{provider}_model"] = model
+        save_settings(self.settings)
+        self._update_model_button()
+        self.update_status_pills()
+        spec = PROVIDERS_BY_KEY.get(provider)
+        short = model.split("/")[-1] if "/" in model else model
+        self._show_toast(f"Now using {spec.label if spec else provider} · {short}")
+        if pop is not None:
+            pop.popdown()
+
     def _build_input_area(self):
         area = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         area.add_css_class("input-area")
+
+        # Model switcher — shows the active provider · model, click to switch
+        # to any model on any provider you hold a key for, on the fly.
+        model_bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        model_bar.set_margin_start(4)
+        model_bar.set_margin_end(4)
+        self.model_btn = Gtk.Button()
+        self.model_btn.add_css_class("model-switch-btn")
+        self.model_btn.set_halign(Gtk.Align.START)
+        self.model_btn.set_tooltip_text("Switch model / provider")
+        self.model_btn.connect("clicked", self._open_model_switcher)
+        self._update_model_button()
+        model_bar.append(self.model_btn)
+        area.append(model_bar)
 
         # Action chips
         actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
@@ -3519,15 +3742,17 @@ class MainWindow(Adw.ApplicationWindow):
 
         in_scroll = Gtk.ScrolledWindow()
         in_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        in_scroll.set_min_content_height(_scaled(40, floor=28))
-        in_scroll.set_max_content_height(_scaled(220, floor=120))
+        in_scroll.set_min_content_height(_scaled(88, floor=64))
+        in_scroll.set_max_content_height(_scaled(300, floor=170))
         in_scroll.set_propagate_natural_height(True)
         in_scroll.set_hexpand(True)
 
         self.input_view = Gtk.TextView()
         self.input_view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
-        self.input_view.set_top_margin(6)
-        self.input_view.set_bottom_margin(6)
+        self.input_view.set_top_margin(10)
+        self.input_view.set_bottom_margin(10)
+        self.input_view.set_left_margin(4)
+        self.input_view.set_right_margin(4)
         in_scroll.set_child(self.input_view)
         ibox.append(in_scroll)
 
@@ -3581,36 +3806,21 @@ class MainWindow(Adw.ApplicationWindow):
         return True
 
     def update_status_pills(self, online: Optional[bool] = None):
-        # Provider pill — shows the active cloud provider when it has a
-        # key configured, otherwise "NO KEY".
-        backend, key = self.router.active_cloud()
-        if backend is not None and backend.is_available():
-            label = PROVIDERS_BY_KEY[key].label.upper() \
-                if key in PROVIDERS_BY_KEY else key.upper()
-            self.provider_pill.set_text(label)
-            for c in ("offline", "error"):
-                self.provider_pill.remove_css_class(c)
-            self.provider_pill.add_css_class("groq")
-        else:
-            # Distinguish "no key" from "key set but offline"
-            has_key = backend is not None and bool(
-                self.settings.get(f"{key}_api_key", ""))
-            self.provider_pill.set_text("NO KEY" if not has_key else "OFFLINE")
-            for c in ("groq", "offline"):
-                self.provider_pill.remove_css_class(c)
-            self.provider_pill.add_css_class("error")
-
-        # Online pill
+        # Connectivity is now a single green/red dot next to KALI in the
+        # sidebar header (the old provider/online pills were removed).
         if online is None:
             online = is_online(max_age=15)
+        dot = getattr(self, "online_dot", None)
+        if dot is None:
+            return False
         if online:
-            self.online_pill.set_text("ONLINE")
-            self.online_pill.remove_css_class("offline")
-            self.online_pill.add_css_class("online")
+            dot.remove_css_class("offline")
+            dot.add_css_class("online")
+            dot.set_tooltip_text("Online")
         else:
-            self.online_pill.set_text("OFFLINE")
-            self.online_pill.remove_css_class("online")
-            self.online_pill.add_css_class("offline")
+            dot.remove_css_class("online")
+            dot.add_css_class("offline")
+            dot.set_tooltip_text("Offline")
         return False
 
     # ── chat list ───────────────────────────────────────────────
@@ -5354,6 +5564,25 @@ class MainWindow(Adw.ApplicationWindow):
         command needs root (to collect the password)."""
         if not command:
             self._feed_tool_result("error: no command")
+            return
+
+        # ── HARD BLOCK — the one gate with no override ──
+        # A command in the catastrophic class (rm -rf /, mkfs, dd onto a disk,
+        # fork bomb, recursive delete of root/system dirs, …) is REFUSED
+        # outright, before any confirm dialog, before foresight, before the
+        # shell.  There is no "Run anyway" button and no setting that turns
+        # this off: Kali, as an AI, will never be the thing that runs a
+        # system-destroying command.  A human who truly needs such an op does
+        # it themselves in a real terminal.
+        if is_catastrophic_command(command):
+            self.terminal_log("■ BLOCKED — catastrophic command refused "
+                              "(no override)", "error")
+            self._feed_tool_result(
+                "REFUSED. This command is in the catastrophic class — it would "
+                "irreversibly destroy the system or its data — so Kali will not "
+                "run it under any circumstances. There is no override; this is "
+                "a hard safety floor. If a human genuinely needs this, they "
+                "must do it themselves in a real terminal.\n\n  " + command)
             return
 
         # ── foresight gate ──

@@ -60,6 +60,12 @@ _CRITICAL_TOP = {
     "proc", "root", "run", "sbin", "srv", "sys", "usr", "var",
 }
 
+# Top-level data / mount dirs whose DELETION (the directory itself) is
+# catastrophic — /home wipes every user's data, /mnt and /media can wipe
+# mounted disks — but whose SUBDIRECTORIES are fair game (rm -rf /home/me/loot
+# is fine; rm -rf /home is not).  Matched exactly, not by prefix.
+_CRITICAL_EXACT = {"/home", "/mnt", "/media", "/opt"}
+
 # Block devices a raw write / wipe must never hit unattended.
 _BLOCK_DEV_RE = re.compile(r"^/dev/(?:sd|nvme|mmcblk|vd|hd|loop|disk|xvd)")
 
@@ -144,8 +150,21 @@ def _has_recursive_flag(args: List[str]) -> bool:
 
 
 def _operands(args: List[str]) -> List[str]:
-    """Non-flag arguments (the targets)."""
-    return [a for a in args if not a.startswith("-")]
+    """Non-flag arguments (the targets).
+
+    Also recovers a path GLUED to a short-flag cluster — `rm -rf/` passes the
+    single token `-rf/`, and a naive 'starts with - so it's a flag' check would
+    miss the `/` target entirely.  So for a short-flag token we split out any
+    `/...` suffix (e.g. -rf/ -> /, -rf/home -> /home, -rf/* -> /*)."""
+    out: List[str] = []
+    for a in args:
+        if not a.startswith("-"):
+            out.append(a)
+        elif not a.startswith("--"):
+            m = re.match(r"^-[A-Za-z]*(/.*)$", a)
+            if m:
+                out.append(m.group(1))
+    return out
 
 
 def _is_everything_glob(t: str) -> bool:
@@ -179,7 +198,18 @@ def _is_system_target(t: str) -> bool:
 
 
 def _dangerous_target(t: str) -> bool:
-    return _is_everything_glob(t) or _is_root_or_home(t) or _is_system_target(t)
+    return (_is_everything_glob(t) or _is_root_or_home(t)
+            or _is_system_target(t) or _is_critical_dir_itself(t))
+
+
+def _is_critical_dir_itself(t: str) -> bool:
+    """True only when the target IS a bare critical data/mount dir (/home,
+    /mnt, /media, /opt) — deleting the directory itself.  A subdirectory under
+    it (e.g. /home/me/loot) is NOT flagged."""
+    expanded = os.path.expanduser(t) if t.startswith("~") else t
+    norm = expanded.rstrip("/")
+    norm = re.sub(r"/\.$", "", norm)
+    return norm in _CRITICAL_EXACT
 
 
 def _payload_after(args: List[str], flag: str) -> Optional[str]:

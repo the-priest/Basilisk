@@ -300,6 +300,9 @@ class MCPManager:
                 out[name] = [{"_error": str(e)}]
         return out
 
+    def tool_count(self) -> int:
+        return len(self.tool_specs())
+
     def tool_specs(self) -> List[Dict[str, Any]]:
         """Namespaced specs (name/description/schema) for the model's tool list."""
         specs: List[Dict[str, Any]] = []

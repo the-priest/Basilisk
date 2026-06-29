@@ -908,7 +908,45 @@ print(f"  groq_key        = {'set' if out.get('groq_api_key') else '(not set —
 PYEOF
 ok "settings written"
 
-# ── 11. Summary ───────────────────────────────────────────────────
+# ── 10b. Optional MCP setup (opt-in via WITH_MCP=1) ───────────────
+# MCP lets Kali drive external tool servers, but it launches them as
+# subprocesses — a real RCE surface (NSA 2026 guidance; CVE-2025-49596).
+# So it stays OFF unless you explicitly ask for it, and even then we only
+# wire a SAFE read-only default server (web fetch) when a runtime to launch
+# it (uvx or npx) is already present.  Heavier servers you add yourself in
+# Settings.  Runs AFTER settings.json so it isn't overwritten.
+if [ "${WITH_MCP:-0}" = "1" ]; then
+  step "mcp"
+  _MCP_CMD=""; _MCP_ARGS=""
+  if command -v uvx >/dev/null 2>&1; then
+    _MCP_CMD="uvx"; _MCP_ARGS='["mcp-server-fetch"]'
+  elif command -v npx >/dev/null 2>&1; then
+    _MCP_CMD="npx"; _MCP_ARGS='["-y", "@modelcontextprotocol/server-fetch"]'
+  fi
+  if [ -n "${_MCP_CMD}" ]; then
+    SETTINGS_FILE="${SETTINGS_FILE}" MCP_CMD="${_MCP_CMD}" \
+    MCP_ARGS="${_MCP_ARGS}" python3 - <<'PYEOF'
+import json, os, pathlib
+sp = pathlib.Path(os.environ["SETTINGS_FILE"])
+cmd = os.environ["MCP_CMD"]; args = json.loads(os.environ["MCP_ARGS"])
+s = {}
+if sp.exists():
+    try: s = json.loads(sp.read_text())
+    except Exception: s = {}
+servers = s.get("mcp_servers") or []
+if not any(x.get("name") == "fetch" for x in servers):
+    servers.append({"name": "fetch", "command": cmd, "args": args})
+s["mcp_servers"] = servers
+s["mcp_enabled"] = True            # explicit opt-in
+sp.parent.mkdir(parents=True, exist_ok=True)
+sp.write_text(json.dumps(s, indent=2))
+print("  configured MCP 'fetch' server via", cmd)
+PYEOF
+    ok "MCP enabled with a safe 'fetch' server (via ${_MCP_CMD})"
+  else
+    warn "WITH_MCP=1 but neither uvx nor npx found — install one then re-run; MCP left OFF"
+  fi
+fi
 
 step "done in $(elapsed)s"
 echo

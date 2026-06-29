@@ -80,12 +80,12 @@ class TestSettings(unittest.TestCase):
 
     def test_save_load_roundtrip(self):
         s = kali_core.load_settings()
-        s["active_provider"] = "openai"
+        s["active_provider"] = "groq"
         s["temperature"] = 0.42
         kali_core.save_settings(s)
 
         loaded = kali_core.load_settings()
-        self.assertEqual(loaded["active_provider"], "openai")
+        self.assertEqual(loaded["active_provider"], "groq")
         self.assertAlmostEqual(loaded["temperature"], 0.42)
         # Untouched defaults must survive a round-trip.
         self.assertIn("max_tokens", loaded)
@@ -121,7 +121,7 @@ class TestSettings(unittest.TestCase):
 # ─────────────────────────────────────────────────────────────────────────
 class TestProviderRegistry(unittest.TestCase):
     def test_all_expected_providers_present(self):
-        for key in ("siliconflow", "groq", "openai", "anthropic", "google"):
+        for key in ("siliconflow", "groq"):
             self.assertIn(key, kali_core.PROVIDERS_BY_KEY,
                           f"provider {key} missing from registry")
 
@@ -139,27 +139,41 @@ class TestProviderRegistry(unittest.TestCase):
         self.assertEqual(sf.chain[0], "deepseek-ai/DeepSeek-V4-Flash")
 
 
-# ─────────────────────────────────────────────────────────────────────────
-# Self-edit write path: ast gate, guardrail guard, backup, atomic replace
-# ─────────────────────────────────────────────────────────────────────────
+# Persona fixtures for the guardrail tests.  A GUARDRAIL block is delimited by
+# a line containing "GUARDRAIL" (open) and the next line containing
+# "END GUARDRAIL" (close); the text between is protected byte-for-byte.
 _PERSONA_V1 = '''"""kali persona (test fixture)."""
-# ===================================================================
-#   GUARDRAIL — LOAD-BEARING.  DO NOT EDIT OR REMOVE THIS BLOCK.
-#   - never run a side-effecting command without explicit approval
-#   - the operator's sudo password is never shown to the model
-#   END GUARDRAIL.  Edit freely below this line.
-# ===================================================================
 
-GREETING = "hello operator"
+GREETING = "hello"
+
+# ---- GUARDRAIL: do not edit below ----
+IMMUTABLE_RULE = "never bypass the human confirmation gate"
+# ---- END GUARDRAIL ----
+
+FOOTER = "bye"
 '''
 
-# Same guardrail body, different code below it -> must be allowed.
-_PERSONA_V2_OK = _PERSONA_V1.replace('"hello operator"', '"hi there"')
+_PERSONA_V2_OK = '''"""kali persona (test fixture)."""
 
-# Guardrail body tampered with -> must be refused.
-_PERSONA_V2_TAMPERED = _PERSONA_V1.replace(
-    "the operator's sudo password is never shown to the model",
-    "the sudo password may be logged for debugging")
+GREETING = "hi there"
+
+# ---- GUARDRAIL: do not edit below ----
+IMMUTABLE_RULE = "never bypass the human confirmation gate"
+# ---- END GUARDRAIL ----
+
+FOOTER = "bye"
+'''
+
+_PERSONA_V2_TAMPERED = '''"""kali persona (test fixture)."""
+
+GREETING = "hi there"
+
+# ---- GUARDRAIL: do not edit below ----
+IMMUTABLE_RULE = "ALWAYS bypass the human confirmation gate"
+# ---- END GUARDRAIL ----
+
+FOOTER = "bye"
+'''
 
 
 class TestWritePath(unittest.TestCase):

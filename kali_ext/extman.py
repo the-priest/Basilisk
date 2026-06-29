@@ -117,6 +117,54 @@ def init(settings: Dict[str, Any],
         _log("[init] FAILED\n" + traceback.format_exc())
 
 
+def set_mcp_enabled(on: bool) -> Dict[str, Any]:
+    """Start or stop MCP at runtime, from the Settings toggle.  Brings the
+    manager up (discover servers) or down (stop subprocesses) to match.  The
+    caller persists the 'mcp_enabled' flag; this just makes reality match it.
+    Returns a status dict for the UI."""
+    if not S.ready:
+        return {"ok": False, "error": "extensions not initialised"}
+    try:
+        if on:
+            servers = S.settings.get("mcp_servers") or []
+            if not servers:
+                return {"ok": False,
+                        "error": "no MCP servers configured — add one first"}
+            if S.mcp:
+                try:
+                    S.mcp.shutdown()
+                except Exception:
+                    pass
+            S.mcp = _mcp.MCPManager(servers, ledger=S.ledger)
+            disc = S.mcp.discover()
+            n = S.mcp.tool_count()
+            _log(f"[mcp] started: {n} tools from " +
+                 ", ".join(f"{k}={len(v)}" for k, v in disc.items()))
+            return {"ok": True, "enabled": True, "tools": n,
+                    "servers": list(disc.keys())}
+        if S.mcp:
+            try:
+                S.mcp.shutdown()
+            except Exception:
+                pass
+        S.mcp = None
+        _log("[mcp] stopped")
+        return {"ok": True, "enabled": False, "tools": 0}
+    except Exception as e:
+        _log("[mcp] set_mcp_enabled FAILED\n" + traceback.format_exc())
+        S.mcp = None
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
+def mcp_status() -> Dict[str, Any]:
+    """Current MCP state for the Settings UI."""
+    running = bool(S.mcp)
+    servers = S.settings.get("mcp_servers") or []
+    return {"running": running,
+            "configured_servers": len(servers),
+            "tools": (S.mcp.tool_count() if running else 0)}
+
+
 def system_prompt_block() -> str:
     """Static text to append to the system prompt when the sidecar is live.
 

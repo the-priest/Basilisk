@@ -125,28 +125,8 @@ SILICONFLOW_CHAIN = [
     "Qwen/Qwen2.5-72B-Instruct",
 ]
 
-OPENAI_CHAIN = [
-    "gpt-4.1",
-    "gpt-4o",
-    "o4-mini",
-    "gpt-4.1-mini",
-    "gpt-4o-mini",
-]
 
-ANTHROPIC_CHAIN = [
-    "claude-3-5-sonnet-20241022",   # proven, balanced — safe default
-    "claude-sonnet-4-20250514",     # Claude 4 Sonnet (best all-round)
-    "claude-opus-4-20250514",       # Claude 4 Opus (most capable, priciest)
-    "claude-3-5-haiku-20241022",    # cheapest Claude — closest to DeepSeek
-    "claude-3-haiku-20240307",      # older, cheapest of all
-]
 
-GOOGLE_CHAIN = [
-    "gemini-2.5-pro",
-    "gemini-2.5-flash",
-    "gemini-2.5-flash-lite",
-    "gemini-2.0-flash",
-]
 
 
 @dataclass
@@ -185,26 +165,6 @@ PROVIDERS: List[ProviderSpec] = [
         base_url="https://api.siliconflow.com/v1",
         chain=SILICONFLOW_CHAIN,
         key_url="https://cloud.siliconflow.com/account/ak"),
-    ProviderSpec(
-        key="openai", label="OpenAI",
-        blurb="GPT-4o / GPT-4.1 / o-series. Key at platform.openai.com.",
-        base_url="https://api.openai.com/v1",
-        chain=OPENAI_CHAIN,
-        key_url="https://platform.openai.com/api-keys"),
-    ProviderSpec(
-        key="anthropic", label="Anthropic (Claude)",
-        blurb="Claude models via the OpenAI-compatible endpoint. "
-              "Key at console.anthropic.com.",
-        base_url="https://api.anthropic.com/v1",
-        chain=ANTHROPIC_CHAIN,
-        key_url="https://console.anthropic.com/settings/keys",
-        extra_headers={"anthropic-version": "2023-06-01"}),
-    ProviderSpec(
-        key="google", label="Google AI Studio",
-        blurb="Gemini models. Free key at aistudio.google.com.",
-        base_url="https://generativelanguage.googleapis.com/v1beta/openai",
-        chain=GOOGLE_CHAIN,
-        key_url="https://aistudio.google.com/apikey"),
 ]
 
 PROVIDERS_BY_KEY: Dict[str, ProviderSpec] = {p.key: p for p in PROVIDERS}
@@ -276,10 +236,10 @@ DEFAULT_SETTINGS = {
     # injects nothing, spawns no threads, runs no background work, and Kali
     # behaves exactly as a stock build.  Flip them on per feature when you
     # want them — nothing here runs in the background unless you enable it.
-    "memory_enabled":          False,   # persistent cross-session recall
+    "memory_enabled":          True,    # persistent cross-session recall
     "memory_recall_k":         6,       # how many memories to inject per turn
-    "memory_consolidate":      False,   # model-based fact extraction (costs a call)
-    "skills_enabled":          False,   # self-written, sandbox-tested skills
+    "memory_consolidate":      True,    # model-based fact extraction (costs a call)
+    "skills_enabled":          True,    # self-written, sandbox-tested skills
     "foresight_enabled":       True,    # predict consequences before acting
     "foresight_model":         False,   # add a model pass on top of the rules
     "mcp_enabled":             False,   # connect external MCP tool servers (OFF
@@ -401,10 +361,6 @@ def _migrate_settings(merged: Dict[str, Any], raw: Dict[str, Any]) -> None:
     # primary, SiliconFlow.
     if merged.get("active_provider") not in PROVIDERS_BY_KEY:
         merged["active_provider"] = "siliconflow"
-    # The old Anthropic "-latest" aliases 404 on the OpenAI-compat endpoint;
-    # if an upgrade left one selected, move it to a valid dated model.
-    if str(merged.get("anthropic_model", "")).endswith("-latest"):
-        merged["anthropic_model"] = ANTHROPIC_CHAIN[0]
 
 
 def save_settings(settings: Dict[str, Any]) -> None:
@@ -627,6 +583,11 @@ class OpenAICompatBackend:
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
+        # Anthropic's chat endpoint accepts Bearer, but its /models endpoint
+        # (and some accounts) want the native x-api-key header.  Send both so
+        # both the chat call AND live model listing authenticate.
+        if "anthropic" in (self.base_url or ""):
+            h["x-api-key"] = self.api_key
         h.update(self.extra_headers)
         return h
 
@@ -773,8 +734,10 @@ class OpenAICompatBackend:
                     new = [m for m in live if m not in order]
                     if new:
                         log(f"{self.name} {attempt_model} -> {e.code}; "
-                            f"recovered {len(new)} live models")
-                        order.extend(new)
+                            f"recovered {len(new)} live models, trying those")
+                        # Insert the REAL models to try NEXT (before the rest of
+                        # the guessed chain), so a valid id is hit immediately.
+                        order[idx:idx] = new
                     continue
                 # A later 404/400 (after we already tried recovery) → just move
                 # on to the next model in the chain.
@@ -813,6 +776,7 @@ class OpenAICompatBackend:
         on_error(f"{self.name}: couldn't get a response from any model "
                  f"({last_err}). If you just switched provider, check the API "
                  f"key and pick a model in the composer's model switcher.")
+
 
 
 class BackendRouter:
@@ -2759,6 +2723,84 @@ def _browser_available() -> bool:
     return importlib.util.find_spec("playwright") is not None
 
 
+# Read-only browsing without a GUI browser: fetch + parse over HTTP.  Lets
+# goto/read/links work on devices where Playwright's chromium can't launch
+# (e.g. ARM NetHunter).  Keeps a tiny "current page" so read/links work after
+# a goto, just like the real browser.
+_browser_http: Dict[str, str] = {"url": "", "html": "", "text": "", "title": ""}
+
+
+def _extract_links_html(html: str, base: str) -> List[Dict[str, str]]:
+    out: List[Dict[str, str]] = []
+    seen = set()
+    for m in re.finditer(r'<a\s[^>]*href=["\']([^"\']+)["\'][^>]*>(.*?)</a>',
+                          html, re.IGNORECASE | re.DOTALL):
+        href = m.group(1).strip()
+        text = re.sub(r"<[^>]+>", "", m.group(2)).strip()[:80]
+        if not href or href.startswith("#") or href.startswith("javascript:"):
+            continue
+        try:
+            from urllib.parse import urljoin
+            href = urljoin(base, href)
+        except Exception:
+            pass
+        if href in seen:
+            continue
+        seen.add(href)
+        if text:
+            out.append({"t": text, "h": href})
+        if len(out) >= 60:
+            break
+    return out
+
+
+def _browser_http_fallback(action: str, target: str,
+                           value: str) -> Dict[str, Any]:
+    a = action
+    if a == "goto":
+        url = target.strip()
+        if "://" not in url:
+            url = "https://" + url
+        text, source, final_url, title = _fetch_readable(url, timeout=20)
+        html = ""
+        try:
+            req = urllib.request.Request(final_url or url,
+                                         headers={"User-Agent": _WEB_UA})
+            with urllib.request.urlopen(req, timeout=15) as r:
+                html = r.read().decode("utf-8", "replace")
+        except Exception:
+            html = ""
+        _browser_http.update({"url": final_url or url, "html": html,
+                              "text": text or "", "title": title or ""})
+        if not text and not html:
+            return {"ok": False, "error":
+                    "no GUI browser on this device and the HTTP fetch failed "
+                    "(page may be JS-only or behind a login)."}
+        return {"ok": True, "url": _browser_http["url"],
+                "title": _browser_http["title"],
+                "note": "headless HTTP mode (no GUI browser available)"}
+    if a in ("read", "text"):
+        if not _browser_http["text"] and _browser_http["url"]:
+            t, _s, _u, _t = _fetch_readable(_browser_http["url"], timeout=20)
+            _browser_http["text"] = t or ""
+        return {"ok": True, "text": _browser_http["text"][:8000],
+                "url": _browser_http["url"], "note": "headless HTTP mode"}
+    if a == "links":
+        links = _extract_links_html(_browser_http["html"], _browser_http["url"])
+        return {"ok": True, "links": links, "count": len(links),
+                "note": "headless HTTP mode"}
+    if a == "url":
+        return {"ok": True, "url": _browser_http["url"]}
+    if a == "title":
+        return {"ok": True, "title": _browser_http["title"]}
+    # Interactive actions genuinely need the GUI browser.
+    return {"ok": False, "error":
+            f"'{action}' needs the GUI browser (Playwright + chromium), which "
+            "isn't running on this device. Read-only browsing (goto / read / "
+            "links) works in headless mode; for clicking and typing, install a "
+            "working chromium:  playwright install chromium"}
+
+
 def tool_browser(action: str, target: str = "",
                  value: str = "") -> Dict[str, Any]:
     """Drive a real browser (one persistent session, so logins stick).  Actions:
@@ -2776,13 +2818,12 @@ def tool_browser(action: str, target: str = "",
       • close                                  shut the browser down
     Requires Playwright (clear error returned if absent)."""
     action = (action or "").strip().lower()
-    if not _browser_available():
-        return {"ok": False, "error":
-                "Playwright not installed. Enable browser automation with:  "
-                "pip install playwright  &&  playwright install chromium"}
     if action == "close":
         _browser_worker.shutdown()
         return {"ok": True, "closed": True}
+    # No Playwright at all → headless HTTP for read-only actions.
+    if not _browser_available():
+        return _browser_http_fallback(action, target, value)
 
     def op(page) -> Dict[str, Any]:
         if action == "goto":
@@ -2857,7 +2898,17 @@ def tool_browser(action: str, target: str = "",
             return {"ok": True, "url": page.url}
         return {"ok": False, "error": f"unknown browser action '{action}'"}
 
-    return _browser_worker.call(op)
+    result = _browser_worker.call(op)
+    # If chromium couldn't launch (common on ARM / headless NetHunter), fall
+    # back to headless HTTP for read-only actions so browsing still works.
+    err = result.get("error", "") if isinstance(result, dict) else ""
+    if (not result.get("ok")) and isinstance(err, str) and \
+            "launch failed" in err.lower():
+        fb = _browser_http_fallback(action, target, value)
+        if fb.get("ok") or action in ("click", "fill", "type", "press",
+                                      "submit", "scroll"):
+            return fb
+    return result
 
 
 # ═════════════════════════════════════════════════════════════════════

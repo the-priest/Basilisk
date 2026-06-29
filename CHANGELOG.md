@@ -1,5 +1,64 @@
 # Changelog
 
+## v3.8.0 — Two providers, extensions panel, MCP toggle, risk-based confirm
+
+- **Providers trimmed to Groq + SiliconFlow.** OpenAI, Anthropic and Google
+  removed; an old config pointing at any of them falls back to SiliconFlow.
+- **Extensions panel in Settings → Generation.** Toggles for Memory, Skills and
+  Foresight (all ON by default now), plus an MCP switch you can flip on/off at
+  runtime, a field to add MCP servers, and a live status line. MCP still defaults
+  OFF — it runs external subprocesses (an RCE surface).
+- **Risk-based confirmation.** Safe commands run without interruption; risky ones
+  (foresight "caution"/"block" — broad deletes, service stops, firewall flushes,
+  force-push) now STOP for your explicit OK instead of being silently auto-run or
+  flatly refused; truly catastrophic commands remain hard-blocked with no override.
+  Net effect: Kali keeps going until something genuinely needs your call.
+- **More autonomy headroom** — tool-chain budget raised 20 → 50.
+- **Model switcher**: bigger text, ordered most-expensive → cheapest.
+- **Brighter dragon** everywhere (app icon + avatar). Send button now blends into
+  the background so only the silver dragon logo pops; it glows while working.
+- **Fixed the sidecar packaging.** The release now ships the COMPLETE kali_ext/
+  (all modules + package init), so memory/skills/foresight/pentest/MCP actually
+  load on device — previously some modules were missing from the zip and silently
+  no-op'd. The curl|bash installer already pulled the full set from GitHub.
+
+---
+
+## v3.7.2 — Claude works the right way, browser fallback, real icon
+
+- **Anthropic / Claude now uses the NATIVE Messages API** (`/v1/messages`)
+  instead of the OpenAI-compat shim that kept rejecting every model as
+  "not_found". This is how Anthropic is actually meant to be called: the system
+  prompt goes top-level, messages are converted to Anthropic's format (user-first,
+  alternating roles), `max_tokens` is sent, auth is `x-api-key` + `anthropic-version`,
+  and the reply is parsed from Anthropic's own event stream. If a model id isn't on
+  your account it fetches your real model list and self-heals.
+- **Browser has a headless fallback.** When Playwright's chromium can't launch
+  (common on ARM / NetHunter), read-only browsing — goto, read, links, url, title —
+  now works over plain HTTP so Kali can still look things up. Clicking and typing
+  still need a working chromium and say so clearly.
+- **Real app icon.** The launcher icon is now your actual dragon (the rough
+  low-poly traced one is gone), embedded so there's no icon-cache conflict.
+
+---
+
+## v3.7.2 — Anthropic self-heals, browser browses without chromium
+
+- **Claude: stop guessing model IDs.** The real fix for the 404s — Anthropic's
+  /models endpoint needs the native `x-api-key` header (not Bearer), so the live
+  model lookup was silently failing and the app fell back to guessed IDs that
+  your account doesn't expose. It now sends `x-api-key`, fetches the actual
+  models your key can use, and tries those first. If a picked model 404s it
+  recovers automatically instead of dead-ending.
+- **Browser works even when chromium won't launch.** On ARM / headless NetHunter,
+  Playwright's chromium often can't start. The browser now falls back to a
+  headless HTTP mode for read-only actions — goto, read, and links all work
+  without a GUI browser (verified end-to-end). Clicking and typing still need a
+  real chromium (clear message tells you so), but Kali no longer just fails when
+  the window can't open.
+
+---
+
 ## v3.7.1 — Anthropic / Claude fixed
 
 - **Claude works now.** Three causes of the HTTP 404: the request was missing

@@ -77,14 +77,16 @@ except Exception as _ve:  # noqa
 
 APP_ID  = "org.thepriest.kali"
 APP_NAME = "Kali"
-VERSION = "3.7.1"
+VERSION = "3.8.0"
 
 # ── Tool-chain efficiency knobs ──
 # How many model round-trips a single user turn may chain through.  With
 # read-only tools now batched (many lookups per round-trip), this budget
 # stretches much further than it looks.  On hitting it Kali doesn't dead-
 # end — it takes one final, tool-free turn to answer with what it gathered.
-MAX_TOOL_CHAIN = 20
+# The y/n confirmation gate and the catastrophic-command hard block still
+# fire independently, so a high budget never means an unsupervised risky run.
+MAX_TOOL_CHAIN = 50
 # Parallel workers when several read-only tools fire in one turn.
 TOOL_BATCH_MAX_WORKERS = 6
 # Keep this many most-recent tool_result blocks at full length in the
@@ -871,32 +873,32 @@ link, button.link, *:link { color: #2ee65f; }
     border-color: #15a838;
     background-color: rgba(46, 230, 95, 0.12);
 }
-/* Send button - big, dragon-red, wears the logo; glows while working */
+/* Send button - blends into the background; only the silver dragon pops.
+   Glows softly while working; still acts as Stop when pressed. */
 .send-button {
-    background: linear-gradient(135deg, #8b0010, #ff2d3a);
-    border: 1px solid #ff5566;
+    background-color: #0d0f12;
+    border: 1px solid #1c2229;
     border-radius: 16px;
-    color: #ffffff;
     min-width: 62px;
     min-height: 62px;
     padding: 8px;
-    box-shadow: 0 0 12px rgba(255, 45, 58, 0.5);
+    box-shadow: none;
 }
 .send-button:hover {
-    background: linear-gradient(135deg, #b3000f, #ff4452);
-    box-shadow: 0 0 18px rgba(255, 45, 58, 0.65);
-    border-color: #ff6f7a;
+    background-color: #141821;
+    border-color: #2a323b;
 }
 .send-button:active {
-    box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.45);
+    background-color: #0a0c0f;
+    box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.5);
 }
 .send-button.working {
-    animation: sendglow 1.1s ease-in-out infinite;
+    animation: sendglow 1.3s ease-in-out infinite;
 }
 @keyframes sendglow {
-    0%   { box-shadow: 0 0 10px rgba(255, 45, 58, 0.45); border-color: #ff5566; }
-    50%  { box-shadow: 0 0 26px rgba(255, 45, 58, 0.95), 0 0 40px rgba(255,138,47,0.5); border-color: #ff9a3f; }
-    100% { box-shadow: 0 0 10px rgba(255, 45, 58, 0.45); border-color: #ff5566; }
+    0%   { box-shadow: 0 0 6px rgba(200, 208, 216, 0.25); border-color: #2a323b; }
+    50%  { box-shadow: 0 0 20px rgba(224, 232, 240, 0.75); border-color: #c8d0d8; }
+    100% { box-shadow: 0 0 6px rgba(200, 208, 216, 0.25); border-color: #2a323b; }
 }
 /* Header buttons (sidebar toggle, new chat) - blend into the header, with a
    quiet dragon-green accent only on hover so they don't draw the eye. */
@@ -934,20 +936,21 @@ link, button.link, *:link { color: #2ee65f; }
 }
 .model-group-header {
     color: #ff3a47;
-    font-size: 11px;
+    font-size: 15px;
     font-weight: 800;
     letter-spacing: 1px;
-    margin-top: 8px;
-    margin-bottom: 2px;
+    margin-top: 10px;
+    margin-bottom: 4px;
     padding-left: 4px;
 }
 .model-pick-row {
     background-color: transparent;
     border: none;
     border-radius: 8px;
-    color: #d6dbe2;
-    padding: 7px 12px;
-    font-size: 13px;
+    color: #e8ebef;
+    padding: 11px 14px;
+    font-size: 17px;
+    font-weight: 500;
 }
 .model-pick-row:hover {
     background-color: rgba(46, 230, 95, 0.10);
@@ -2495,6 +2498,71 @@ class SettingsDialog(Adw.PreferencesDialog):
         intel_g.add(verify_row)
 
         gen_page.add(intel_g)
+
+        # ── Extensions (sidecar capabilities) ──
+        ext_g = Adw.PreferencesGroup()
+        ext_g.set_title("Extensions")
+        ext_g.set_description(
+            "Kali's sidecar capabilities. Memory, skills and foresight are on "
+            "by default. MCP stays off until you start it here.")
+
+        self.memory_row = Adw.SwitchRow()
+        self.memory_row.set_title("Memory")
+        self.memory_row.set_subtitle(
+            "Persistent cross-session recall of facts about you and your gear.")
+        self.memory_row.set_active(
+            bool(parent.settings.get("memory_enabled", True)))
+        self.memory_row.connect(
+            "notify::active",
+            lambda r, _ps: self._set("memory_enabled", r.get_active()))
+        ext_g.add(self.memory_row)
+
+        self.skills_row = Adw.SwitchRow()
+        self.skills_row.set_title("Skills")
+        self.skills_row.set_subtitle(
+            "Let Kali write and sandbox-test small reusable skills.")
+        self.skills_row.set_active(
+            bool(parent.settings.get("skills_enabled", True)))
+        self.skills_row.connect(
+            "notify::active",
+            lambda r, _ps: self._set("skills_enabled", r.get_active()))
+        ext_g.add(self.skills_row)
+
+        self.foresight_row = Adw.SwitchRow()
+        self.foresight_row.set_title("Foresight")
+        self.foresight_row.set_subtitle(
+            "Predict a command's consequences before running it. "
+            "Catastrophic commands are always blocked regardless.")
+        self.foresight_row.set_active(
+            bool(parent.settings.get("foresight_enabled", True)))
+        self.foresight_row.connect(
+            "notify::active",
+            lambda r, _ps: self._set("foresight_enabled", r.get_active()))
+        ext_g.add(self.foresight_row)
+
+        self.mcp_row = Adw.SwitchRow()
+        self.mcp_row.set_title("MCP (external tool servers)")
+        self.mcp_row.set_subtitle(
+            "Start the MCP servers configured below. Off by default — MCP runs "
+            "external subprocesses (an RCE surface), so only enable it for "
+            "servers you trust.")
+        self.mcp_row.set_active(bool(parent.settings.get("mcp_enabled", False)))
+        self.mcp_row.connect("notify::active", self._on_mcp_toggled)
+        ext_g.add(self.mcp_row)
+
+        self.mcp_servers_row = Adw.EntryRow()
+        self.mcp_servers_row.set_title("Add MCP server (command)")
+        self.mcp_servers_row.set_text("")
+        self.mcp_servers_row.set_show_apply_button(True)
+        self.mcp_servers_row.connect("apply", self._on_mcp_server_add)
+        ext_g.add(self.mcp_servers_row)
+
+        self.mcp_status_row = Adw.ActionRow()
+        self.mcp_status_row.set_title("MCP status")
+        self._refresh_mcp_status()
+        ext_g.add(self.mcp_status_row)
+
+        gen_page.add(ext_g)
         self.add(gen_page)
 
         # ── DISPLAY ────────────────────────────────────────
@@ -2938,6 +3006,75 @@ class SettingsDialog(Adw.PreferencesDialog):
         self._set("chat_render_images", on)
         global _RENDER_IMAGES
         _RENDER_IMAGES = bool(on)
+
+    def _ext(self):
+        return getattr(self.win, "_ext", None)
+
+    def _refresh_mcp_status(self):
+        row = getattr(self, "mcp_status_row", None)
+        if row is None:
+            return
+        ext = self._ext()
+        if ext is None:
+            row.set_subtitle("extensions not loaded")
+            return
+        try:
+            st = ext.mcp_status()
+            if st.get("running"):
+                row.set_subtitle(
+                    f"running — {st.get('tools', 0)} tools from "
+                    f"{st.get('configured_servers', 0)} server(s)")
+            else:
+                row.set_subtitle(
+                    f"stopped — {st.get('configured_servers', 0)} "
+                    f"server(s) configured")
+        except Exception:
+            row.set_subtitle("status unavailable")
+
+    def _on_mcp_toggled(self, row, _ps):
+        on = row.get_active()
+        if getattr(self, "_mcp_toggling", False):
+            return
+        self._set("mcp_enabled", on)
+        ext = self._ext()
+        if ext is None:
+            self.win._show_toast("Extensions not loaded — MCP unavailable")
+            return
+        try:
+            res = ext.set_mcp_enabled(on)
+        except Exception as e:
+            res = {"ok": False, "error": str(e)}
+        if res.get("ok"):
+            self.win._show_toast(
+                f"MCP started — {res.get('tools', 0)} tools" if on
+                else "MCP stopped")
+        else:
+            self.win._show_toast(f"MCP: {res.get('error', 'failed to start')}")
+            if on:                       # revert the switch without recursing
+                self._mcp_toggling = True
+                row.set_active(False)
+                self._mcp_toggling = False
+                self._set("mcp_enabled", False)
+        self._refresh_mcp_status()
+
+    def _on_mcp_server_add(self, row):
+        raw = (row.get_text() or "").strip()
+        if not raw:
+            return
+        # Parse "command arg1 arg2" into {name, command, args}.
+        parts = raw.split()
+        cmd = parts[0]
+        args = parts[1:]
+        name = os.path.basename(cmd).split(".")[0] or "server"
+        servers = list(self.win.settings.get("mcp_servers") or [])
+        if any(s.get("name") == name for s in servers):
+            name = f"{name}-{len(servers) + 1}"
+        servers.append({"name": name, "command": cmd, "args": args})
+        self._set("mcp_servers", servers)
+        row.set_text("")
+        self.win._show_toast(
+            f"Added MCP server '{name}'. Toggle MCP off/on to (re)start.")
+        self._refresh_mcp_status()
 
     def _on_provider_key(self, key, text):
         self.win.settings[f"{key}_api_key"] = text
@@ -3613,6 +3750,19 @@ class MainWindow(Adw.ApplicationWindow):
     def _provider_has_key(self, key: str) -> bool:
         return bool((self.settings.get(f"{key}_api_key", "") or "").strip())
 
+    def _models_priced_high_to_low(self, spec):
+        """Order a provider's models most-expensive (biggest) -> cheapest.
+        Bigger parameter counts cost more, so sort by the largest 'NNb' / 'NNB'
+        number in the model id, descending; ties keep the curated chain order."""
+        import re as _re
+        def size_of(m):
+            nums = _re.findall(r"(\d+(?:\.\d+)?)\s*[bB]\b", m)
+            return max((float(n) for n in nums), default=0.0)
+        ordered = sorted(
+            list(enumerate(spec.chain)),
+            key=lambda im: (-size_of(im[1]), im[0]))
+        return [m for _i, m in ordered]
+
     def _open_model_switcher(self, *_):
         pop = Gtk.Popover()
         pop.set_parent(self.model_btn)
@@ -3639,7 +3789,7 @@ class MainWindow(Adw.ApplicationWindow):
             hdr = Gtk.Label(label=spec.label.upper(), xalign=0.0)
             hdr.add_css_class("model-group-header")
             listbox.append(hdr)
-            for model in spec.chain:
+            for model in self._models_priced_high_to_low(spec):
                 short = model.split("/")[-1] if "/" in model else model
                 b = Gtk.Button(label=short)
                 b.add_css_class("model-pick-row")
@@ -3812,7 +3962,7 @@ class MainWindow(Adw.ApplicationWindow):
         self.send_btn.set_tooltip_text("Send")
         if _AVATAR_PNG_PATH:
             _send_img = Gtk.Image.new_from_file(_AVATAR_PNG_PATH)
-            _send_img.set_pixel_size(_scaled(34, floor=26))
+            _send_img.set_pixel_size(_scaled(40, floor=30))
             self.send_btn.set_child(_send_img)
         else:
             self.send_btn.set_icon_name("send-to-symbolic")
@@ -5608,23 +5758,27 @@ class MainWindow(Adw.ApplicationWindow):
                         from kali_ext.foresight import render_card
                     except Exception:
                         render_card = lambda x: ""
-                    if v.get("verdict") == "block":
-                        self.terminal_log("■ foresight blocked the command", "error")
-                        self._feed_tool_result(
-                            "REFUSED by foresight (catastrophic / irreversible):\n"
-                            + render_card(v)
-                            + "\n\nIf you intend this, turn foresight off in "
-                            "Settings → Behaviour and re-issue it.")
-                        return False
-                    if v.get("verdict") == "caution":
+                    verdict = v.get("verdict")
+                    force_confirm = False
+                    if verdict in ("block", "caution"):
+                        # Risky, but the truly system-destroying set is already
+                        # hard-blocked above with no override.  Anything that
+                        # reaches here (broad deletes, service stops, firewall
+                        # flushes, force-push, …) is shown with its consequence
+                        # card and then STOPS for the operator's explicit OK —
+                        # never silently auto-run, never flatly refused.
                         card = render_card(v)
                         if card:
                             self.terminal_log(card, "error")
+                        force_confirm = True
                     self._fs_cleared = True
+                    self._fs_force_confirm = force_confirm
                     try:
-                        self._execute_command(command, reason, from_card=from_card)
+                        self._execute_command(command, reason,
+                                              from_card=from_card)
                     finally:
                         self._fs_cleared = False
+                        self._fs_force_confirm = False
                     return False
                 GLib.idle_add(_resume)
             threading.Thread(target=_fbg, daemon=True).start()
@@ -5760,6 +5914,8 @@ class MainWindow(Adw.ApplicationWindow):
                           "(parse-check + immutable guardrail). Confirm to "
                           "allow.\n\n" + reason_txt)
         need_approval = (catastrophic or tampers
+                         or (getattr(self, "_fs_force_confirm", False)
+                             and not from_card)
                          or (self.settings.get("confirm_all_commands", True)
                              and not from_card))
         if need_approval or (sudo_needed and not have_cached_sudo):

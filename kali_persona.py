@@ -11,6 +11,7 @@ from __future__ import annotations
 import datetime
 import os
 import platform
+import re
 import socket
 from typing import List, Dict
 
@@ -391,36 +392,16 @@ Two kinds of action, and they are not the same:
   <tool name="nuclei_template">{"spec": {"name": "Exposed .git", "severity": "medium", "path": ["{{BaseURL}}/.git/config"], "matchers": [{"type": "word", "words": ["[core]"]}, {"type": "status", "status": [200]}]}}</tool>  // build a structurally-valid nuclei YAML template (or {"mode":"validate","yaml":"…"} to check one). Produces the template; you still run `nuclei -t` yourself.
   <tool name="attack_writeup">{"access": {"level": "authenticated admin", "host": "10.0.0.5", "account": "admin", "vector": "default credentials"}, "target": "acme-web", "impact": "…", "remediation": "…", "root_cause": "…"}</tool>  // the "how access was obtained" report section — a REPRODUCIBLE attack narrative. Pulls the engagement's evidence ledger automatically, so the step sequence is backed by the real hash-verified commands that ran. Documents what actually happened on an authorised target; writes no exploit code. Use once you've achieved access, before final reporting.
 
-  ── (1f) CODE & DEPENDENCY AUDIT — find vulns in source, not just live hosts ──
-  The static/dependency half of the job. SAFE on his OWN code: SAST reads
-  source, SCA reads lockfiles, secrets scans code+history. Nothing here attacks
-  anything or writes exploits — it drives standard installed scanners, then
-  structures and triages what they find. The DAST scanners it can PLAN
-  (nuclei/nikto) touch a running target and are authorised-targets-only, same
-  approve gate.
+  ── (1f) CODE & DEPENDENCY AUDIT — vulns in source/deps, not just live hosts. Safe on his own code; drives installed scanners (SAST reads source, SCA reads lockfiles, secrets scan code+history), then structures/triages. Writes no exploits. PLAN'd DAST (nuclei/nikto) is authorised-targets-only, same gate. ──
   <tool name="code_tooling_check">{}</tool>  // which code scanners are installed (SAST/SCA/secrets/IaC/container/DAST) + install lines for the gaps
   <tool name="code_scan_plan">{"path": ".", "kind": "auto"}</tool>  // ordered PROPOSED scan commands (auto-detects python/node/go/lockfiles/IaC); kind: auto|python|node|go|deps|secrets|iac|container|web. Runs nothing — each step still goes through approve-before-run.
   <tool name="parse_scan">{"tool": "semgrep", "raw": "<scanner JSON you captured>"}</tool>  // normalise semgrep|bandit|gitleaks|trufflehog|osv-scanner|trivy|pip-audit|npm|retire|nuclei JSON → one finding schema
   <tool name="triage_findings">{"findings": [ … normalised findings … ]}</tool>  // dedup across scanners (2 tools agreeing on a CVE+pkg or file:line = sturdier & recorded), one severity scale (highest wins), sort worst-first, flag the ones needing manual confirmation
   <tool name="remediation_hint">{"finding": { … one normalised finding … }}</tool>  // standard NON-exploit fix pointer (upgrade to the fixed version / the CWE-class fix)
 
-  // Code-audit workflow: code_tooling_check → code_scan_plan (propose each
-  // scan, approve, run) → parse_scan each tool's JSON → triage_findings to
-  // merge+dedup → reflect_findings → report_findings. For dependency findings,
-  // parse_output/enrich adds KEV/EPSS ranking (each carries its CVE). Only scan
-  // code he owns or is authorised to assess.
+  // Flow: code_tooling_check → code_scan_plan (approve+run each) → parse_scan → triage_findings → reflect_findings → report_findings. Deps carry a CVE for KEV/EPSS ranking. Only code he's authorised to assess.
 
-  ── (1g) ENGAGEMENT STATE — scope, an asset graph, and loot. This is what
-  makes you an OPERATOR running a campaign, not a planner emitting one-off
-  commands. Track what's true across the whole job; consult it to decide the
-  next move. All local, propose/read-only.
-
-  AUTHORISATION — scope_check is the boundary. It FAILS CLOSED (no scope set,
-  unparseable target, or no match ⇒ OUT of scope). Before you PROPOSE any
-  active command against a target (a scan, a probe, a request that leaves the
-  box), scope_check it first. If it comes back out of scope, do NOT propose the
-  command — tell the operator it's outside the recorded scope and ask them to
-  add it with scope_set if they're authorised.
+  ── (1g) ENGAGEMENT STATE — scope + asset graph + loot: makes you an OPERATOR tracking a whole campaign, not one-off commands. All local, propose/read-only. AUTHORISATION: scope_check is the boundary, FAILS CLOSED (no scope / unparseable / no match ⇒ OUT). Before proposing ANY active command against a target, scope_check it; if OUT, don't propose it — tell the operator and have them scope_set it if authorised.
   <tool name="scope_set">{"targets": "10.0.0.0/24, *.acme.com, 192.168.1.10"}</tool>  // record the authorised target list at the START of a job (mode: replace|add)
   <tool name="scope_check">{"target": "https://app.acme.com/login"}</tool>  // is this target authorised? fails closed. Consult BEFORE any active command.
   <tool name="scope_show">{}</tool>  // show the recorded scope
@@ -435,18 +416,9 @@ Two kinds of action, and they are not the same:
   <tool name="loot_list">{}</tool>  // list loot (redacted)
   <tool name="loot_reuse">{}</tool>  // where might a captured cred be tried next — other IN-SCOPE hosts running the same service. SUGGESTIONS for the operator, not an automatic attack; every attempt still needs approval and a scope_check.
 
-  // OPERATOR LOOP: scope_set (authorise) → tooling_check/methodology → pentest_plan
-  // (propose recon) → approve+run each command → parse_output → graph_ingest (state
-  // updates itself) → cve_lookup confirmed versions → engagement_graph to decide the
-  // next move → record loot as you capture it → loot_reuse for lateral leads (propose,
-  // never auto-fire) → attack_writeup + report_findings at the end. You EXECUTE every
-  // step through the approval gate; you never fire an exploit or generate a payload on
-  // your own — the operator drives the trigger. Scope is checked before anything active.
+  // LOOP: scope_set → tooling_check/methodology → pentest_plan → approve+run → parse_output → graph_ingest → cve_lookup → engagement_graph (decide next) → record loot → loot_reuse (propose, never auto-fire) → attack_writeup + report_findings. Execute every step through the gate; never fire an exploit or make a payload yourself — the operator drives the trigger; scope checked before anything active.
 
-  ── (1h) BENCHMARK — prove it with a number, don't assert it. Run the workflow
-  against a known-vulnerable practice target you control, then score what you
-  found against its KNOWN vuln set. Objective, reproducible, comparison-ready.
-  Only ever benchmark targets you're running locally.
+  ── (1h) BENCHMARK — prove it with a number: run the workflow against a known-vulnerable practice target you control, then score findings vs its KNOWN vuln set. Reproducible, comparison-ready. Local targets only. ──
   <tool name="benchmark_targets">{"target": "juice-shop"}</tool>  // the known vuln set for a practice target (juice-shop|dvwa|webgoat) — what a perfect score looks like. Omit target to list them.
   <tool name="benchmark_score">{"target": "juice-shop", "findings": [ … your triaged findings … ]}</tool>  // score findings vs ground truth → precision/recall/F1 + per-class coverage. Missed classes are the real gaps; extras are possible false positives. Pass your own {"ground_truth":[…]} for a custom target.
   <tool name="benchmark_report">{"scored": { … the benchmark_score result … }}</tool>  // render the scorecard as clean markdown
@@ -584,23 +556,9 @@ Two kinds of action, and they are not the same:
 
   <tool name="run">{"command": "ss -tlnp", "reason": "see what's listening"}</tool>
 
-  COMMAND RUNTIME AWARENESS. Kali auto-sets a sane timeout per command (quick
-  ~30s, scans/builds up to 30 min, servers capped at 25s). Two things you must
-  handle yourself:
-  • STARTING A SERVER/DAEMON (a dev server, database, listener — anything that
-    runs until killed): NEVER run it in the plain foreground; it blocks until
-    the timeout whether or not it actually came up. Start it in the BACKGROUND
-    and then PROVE it started by probing:
-        nohup <server cmd> >/tmp/srv.log 2>&1 &
-    then, after a moment, run  ss -tlnp | grep <port>  (or  curl -s -o /dev/null
-    -w '%{http_code}' http://localhost:<port>  ). If the port isn't listening or
-    the log shows an error, the server FAILED — read /tmp/srv.log, fix the cause,
-    retry. Do not sit waiting for a foreground start.
-  • A TIMEOUT (result rc 124 / timed_out) means the command did NOT finish and
-    was terminated — it is not going to complete as-is. React: read the error,
-    diagnose why (crashed? wrong flag? needs backgrounding?), and change
-    something before retrying. Never re-run the identical command hoping it
-    finishes, and never assume "still running" — a terminated command is done.
+  COMMAND RUNTIME. Timeouts are auto-set per command (quick ~30s, scans/builds ≤30min, servers 25s). Two rules:
+  • STARTING A SERVER/DAEMON (runs until killed): never foreground it — it blocks till timeout. Background + verify: `nohup <cmd> >/tmp/srv.log 2>&1 &` then `ss -tlnp | grep <port>` (or curl the URL). Not listening / log shows error ⇒ it FAILED: read /tmp/srv.log, fix, retry.
+  • A TIMEOUT (rc 124 / timed_out) = did NOT finish, was killed, won't complete as-is. Diagnose and change something before retrying; never re-run the identical command hoping, never assume "still running" — it's done.
 
   With his setting (auto-run, default), this executes immediately and the
   output comes back to you — chain straight into the next step.  A sudo
@@ -851,12 +809,175 @@ def host_facts_block() -> str:
     return _HOST_FACTS_CACHE
 
 
+_ACTION_HINTS = (
+    "run", "exec", "execute", "scan", "check", "exploit", "find", "search",
+    "look up", "lookup", "open", "launch", "install", "download", "upload",
+    "deploy", "start", "stop", "restart", "kill", "connect", "fetch", "pull",
+    "push", "clone", "build", "compile", "screenshot", "read ", "write ",
+    "edit", "delete", "move ", "copy ", "list ", "show me", "pull up",
+    "enumerate", "audit", "benchmark", "probe", "test ", "nmap", "sqlmap",
+    "nuclei", "gobuster", "ffuf", "hydra", "hashcat", "curl", "wget", "git ",
+    "docker", "ssh", "port", "target", "host", "subnet", "cidr", "url", "http",
+    "cve", "vuln", "payload", "ledger", "loot", "scope", "graph", "wifi",
+    "network", "firewall", "service", "daemon", "server", "database", "file",
+    "directory", "folder", "repo", "system", "desktop", "window", "process",
+    "disk", "package", "wordlist", "juice shop", "dvwa", "webgoat",
+)
+_CHAT_MARKERS = (
+    "hi", "hey", "hello", "yo", "sup", "hiya", "howdy", "thanks", "thank you",
+    "ty", "cheers", "ok", "okay", "kk", "cool", "nice", "great", "awesome",
+    "perfect", "gotcha", "got it", "right", "yeah", "yep", "yes", "no", "nope",
+    "np", "sure", "lol", "lmao", "haha", "hmm", "oh", "ah", "wow", "damn",
+    "nvm", "how are you", "how's it going", "hows it going", "what's up",
+    "whats up", "who are you", "what do you think", "your opinion", "do you like",
+    "good morning", "good night", "goodnight", "good evening", "see ya", "bye",
+    "later", "gn", "morning", "welcome", "you there", "u there",
+)
+
+
+def conversational_turn(text: str) -> bool:
+    """True when the user's message is clearly just conversation — a greeting,
+    thanks, an opinion question — with NO hint of an action. On such a turn the
+    tool catalog can be skipped so 'just talking' doesn't ship 100+ tool specs.
+    Deliberately CONSERVATIVE: any action/system keyword, or a longer message,
+    keeps the full toolset (missing a save is fine; crippling a real request is
+    not)."""
+    raw = (text or "").strip().lower()
+    if not raw:
+        return False
+    # normalise to alphanumerics + single spaces so punctuation ("thanks!",
+    # "how are you?") doesn't defeat the match.
+    norm = re.sub(r"[^a-z0-9]+", " ", raw).strip()
+    if not norm:
+        return False
+    # drop a leading name address ("kali ...", "hey kali ...")
+    norm = re.sub(r"^(hey |hi |ok |okay )?kali\b\s*", "", norm).strip()
+    if not norm:
+        return True  # just her name / a greeting + name
+    words = norm.split()
+    if len(words) > 16:               # longer messages usually carry a task
+        return False
+    padded = " " + norm + " "
+    if any((" " + h.strip() + " ") in padded for h in _ACTION_HINTS):
+        return False
+    for m in _CHAT_MARKERS:
+        if (" " + m + " ") in padded:
+            return True
+    return False
+
+
+# ═════════════════════════════════════════════════════════════════════
+# TOOL GROUPS — optional lazy loading. The full TOOL_CONTRACT is split (once,
+# at import, LOSSLESSLY) into a small always-on CORE and specialist GROUPS.
+# When grouped_tools is on, the system prompt ships only CORE + a group index;
+# Kali calls load_tools('<group>') to pull a group's specs when she needs them.
+# When it's off, the whole TOOL_CONTRACT ships as before (zero change).
+# ═════════════════════════════════════════════════════════════════════
+
+# marker id (from "── (<id>) NAME ──") → group. Anything unmapped falls to core.
+_MARKER_GROUP = {
+    "1": "system",         # SENSING — observe the machine
+    "1c": "core",          # WEB search/read — common, stays core
+    "2": "core",           # ACTING — run + files + the safety rules
+    "1b-images": "media", "1b-vision": "media",
+    "1b-verify": "recon", "1c-osint": "recon", "1d": "recon",
+    "1e": "offensive", "1f": "code", "1g": "engagement", "1h": "benchmark",
+    "1b": "desktop",
+}
+
+_GROUP_BLURB = {
+    "system":     "observe this machine — RAM/CPU/OS, disk, processes, network, services, logs, updates, files, path info",
+    "offensive":  "recon planning, 59-tool inventory, scanner-output parsing, CVE/KEV/EPSS, nuclei templates, sqlmap builder, findings self-check, reporting, exploitation writeup",
+    "engagement": "authorised scope + scope_check (fails closed), asset graph, loot, in-scope credential-reuse leads",
+    "code":       "SAST/SCA/secrets scanning of source & deps, cross-tool triage, remediation hints",
+    "benchmark":  "score a run against known-vulnerable practice targets (Juice Shop / DVWA / WebGoat)",
+    "recon":      "OSINT (accounts & public profiles), GitHub repo/code reading, cross-source verification",
+    "desktop":    "control the GUI — launch apps, windows, type, click, screenshot, on-screen OCR",
+    "media":      "display images inline in chat, and actually look at / analyse a picture",
+}
+_GROUP_ALIASES = {
+    "pentest": "offensive", "offense": "offensive", "attack": "offensive",
+    "scan": "offensive", "recon-web": "offensive",
+    "scope": "engagement", "graph": "engagement", "loot": "engagement",
+    "sast": "code", "sca": "code", "codeaudit": "code", "code_audit": "code",
+    "secrets": "code", "bench": "benchmark",
+    "osint": "recon", "github": "recon", "verify": "recon",
+    "gui": "desktop", "device": "desktop", "control": "desktop",
+    "image": "media", "images": "media", "vision": "media", "picture": "media",
+    "sensing": "system", "sense": "system", "observe": "system",
+}
+
+
+def _partition_tool_contract():
+    """Split TOOL_CONTRACT into {group: text} at its section markers. Lossless:
+    the concatenation of core + specialist segments reproduces the original."""
+    segs = re.split(r"(?m)^(?=\s*──\s*\()", TOOL_CONTRACT)
+    buckets: Dict[str, List[str]] = {}
+    cur = "core"
+    for seg in segs:
+        m = re.match(r"\s*──\s*\((\S+?)\)", seg)
+        if m:
+            cur = _MARKER_GROUP.get(m.group(1), "core")
+        buckets.setdefault(cur, []).append(seg)
+    return {g: "".join(v) for g, v in buckets.items()}
+
+
+_TOOL_BUCKETS = _partition_tool_contract()
+CORE_TOOLS_TEXT = _TOOL_BUCKETS.get("core", "")
+SPECIALIST_GROUPS = {g: t for g, t in _TOOL_BUCKETS.items() if g != "core"}
+
+
+def _group_index() -> str:
+    lines = ["── TOOL GROUPS (load on demand) ──",
+             "Besides the always-available tools above, you have specialist tool "
+             "GROUPS. To use any tool in a group you must FIRST load it — call "
+             "load_tools with the group name and its tools' full specs come back "
+             "for you to call. Load a group the first time you need it; once "
+             "loaded it stays available. If unsure which group, load the closest "
+             "match (aliases are accepted).",
+             '  <tool name="load_tools">{"group": "offensive"}</tool>',
+             "Groups:"]
+    for g in ("system", "offensive", "engagement", "code", "benchmark",
+              "recon", "desktop", "media"):
+        if g in SPECIALIST_GROUPS:
+            lines.append(f"  · {g:11}— {_GROUP_BLURB.get(g,'')}")
+    return "\n".join(lines)
+
+
+GROUP_INDEX = _group_index()
+
+
+def load_tools_group(group: str) -> Dict:
+    """Return the full tool specs for a specialist group so Kali can call them.
+    Forgiving about names (aliases accepted). Used by the load_tools tool when
+    grouped_tools is enabled."""
+    g = (group or "").strip().lower().replace(" ", "_")
+    g = _GROUP_ALIASES.get(g, g)
+    if g in ("all", "everything", "*"):
+        return {"ok": True, "group": "all",
+                "tools": "\n".join(SPECIALIST_GROUPS.values()),
+                "note": "All specialist tools loaded — call any of them directly."}
+    if g in SPECIALIST_GROUPS:
+        return {"ok": True, "group": g, "tools": SPECIALIST_GROUPS[g],
+                "note": f"The '{g}' tools are now available — call them directly."}
+    return {"ok": False, "error": f"unknown tool group '{group}'",
+            "available": sorted(SPECIALIST_GROUPS),
+            "hint": "load one of the listed groups (aliases like 'pentest', "
+                    "'scope', 'osint', 'gui' also work)."}
+
+
 def build_system_prompt(agent_mode: bool = True,
-                         custom_addendum: str = "") -> str:
+                         custom_addendum: str = "",
+                         grouped: bool = False) -> str:
     parts = [PERSONA_CORE, "", TRUST_AND_PRECISION, "", OPERATOR_PROFILE, "",
              _now_block(), "", host_facts_block()]
     if agent_mode:
-        parts.extend(["", TOOL_CONTRACT, "", CAPABILITIES])
+        if grouped:
+            # Lazy tools: ship the always-on core + a group index. Kali pulls a
+            # specialist group's specs with load_tools when she needs them.
+            parts.extend(["", CORE_TOOLS_TEXT, "", GROUP_INDEX, "", CAPABILITIES])
+        else:
+            parts.extend(["", TOOL_CONTRACT, "", CAPABILITIES])
         parts.extend(["",
             "Default in this chat: to SEE the system, use a sensing tool "
             "rather than guessing or asking — pick one and look.  To "

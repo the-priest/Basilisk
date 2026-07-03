@@ -1,5 +1,64 @@
 # Changelog
 
+## v4.4.0 — lazy tool groups (opt-in): pay for the tools you use
+
+The system prompt re-ships every call, and the tool catalog is the bulk of it.
+This release lets you stop sending tools you aren't using.
+
+- **Lazy tool groups (new, OFF by default; Settings → Intelligence & trust).**
+  The tool catalog is split — losslessly, at import — into a small always-on
+  CORE (the safety framing, `run`, files, web search) and specialist GROUPS
+  (system/sensing, offensive, engagement, code, benchmark, recon, desktop,
+  media). With it on, the base system prompt drops from ~12.2K to ~6.7K tokens;
+  Kali pulls a group's full specs on demand with the new **`load_tools`** tool
+  (aliases accepted). Every tool remains reachable — verified none are orphaned.
+- **Why opt-in:** loading a group costs an extra round-trip, and a tool-heavy
+  session that touches many groups can offset the base saving — so it's a real
+  win for focused work and a wash-or-worse for sprawling multi-group runs.
+  Default off; test it against your model (especially a fast/cheap one) before
+  relying on it. Non-grouped mode is byte-for-byte unchanged.
+- Combined with lean chat (v4.3.0): a pure conversational turn is ~2.1K tokens,
+  a focused grouped task ~6.7K + one group, a full toolset only when you want it.
+  Covered by tests/test_grouped.py (16).
+
+---
+
+## v4.3.0 — lean chat: just talking is cheap again
+
+The system prompt (and full history) is re-sent on every model call — that's how
+the API works, and a tool call is a call. The tool catalog is ~8K tokens of that,
+and it was riding along even on "hey" and "thanks" because agent mode is on by
+default. Fixed.
+
+- **Lean chat (new, on by default; Settings → Intelligence & trust).** A
+  conservative detector spots a plainly conversational turn — a greeting, thanks,
+  an opinion question, with no hint of an action — and skips the tool catalog for
+  that turn, dropping the system prompt from ~12K to ~2K tokens. The full toolset
+  returns the instant a message hints at an action (a target, a file, run/scan/
+  check/benchmark…), and it never triggers mid-tool-chain, so real work is
+  untouched. Missing a save is fine; crippling a real request is not — the
+  detector errs toward keeping tools. Covered by tests/test_leanchat.py (32).
+- Confirmed already-present savers: history is capped (~80 messages, first
+  message kept for framing), bulky tool output is compressed, old tool results
+  are trimmed, and replayed reasoning is stripped.
+
+---
+
+## v4.2.2 — token diet (no loss of tools, memory, or quality)
+
+- **Trimmed the system prompt.** The tool-catalog sections added over the last
+  few releases carried verbose prose; condensed it — every tool definition and
+  every safety rule kept verbatim, just tighter wording. ~366 fewer tokens on
+  *every* request, which adds up across a long benchmark run. No capability,
+  memory, or guidance lost (105 tools all present, verified).
+- **Confirmed the token savers are intact and working:** context compression
+  (on by default, fail-open, ~98% shrink on bulky tool output while preserving
+  every finding/CVE line), old-tool-result trimming (only the last 2 stay full),
+  and reasoning-stripping from replayed history. Quality and memory untouched —
+  these only trim already-consumed output and scratch reasoning.
+
+---
+
 ## v4.2.1 — command runtime awareness + tighter bubbles
 
 - **Kali knows how long a command should take, and stops waiting on a hung one.**

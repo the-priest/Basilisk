@@ -54,7 +54,7 @@ from kali_core import (
     tool_parse_scan, tool_triage_findings, tool_remediation_hint,
     tool_scope_set, tool_scope_check, tool_scope_show, tool_asset_record,
     tool_engagement_graph, tool_loot_record, tool_loot_list, tool_loot_reuse,
-    tool_graph_ingest, tool_sqlmap_plan,
+    tool_graph_ingest, tool_sqlmap_plan, tool_load_tools,
     tool_benchmark_targets, tool_benchmark_score, tool_benchmark_report,
     tool_benchmark_compare,
     tool_osint_username, tool_osint_lookup, tool_social_read,
@@ -70,6 +70,7 @@ from kali_core import (
 )
 from kali_persona import (
     build_system_prompt, assemble_messages, title_from_first_message,
+    conversational_turn,
 )
 
 # Voice (speech in / speech out) is optional.  If kali_voice is missing or
@@ -85,7 +86,7 @@ except Exception as _ve:  # noqa
 
 APP_ID  = "org.thepriest.kali"
 APP_NAME = "Kali"
-VERSION = "4.2.1"
+VERSION = "4.4.0"
 
 # ── Tool-chain efficiency knobs ──
 # How many model round-trips a single user turn may chain through.  With
@@ -2503,6 +2504,33 @@ class SettingsDialog(Adw.PreferencesDialog):
             lambda r, _ps: self._set("headroom_enabled", r.get_active()))
         intel_g.add(self.headroom_row)
 
+        self.lean_chat_row = Adw.SwitchRow()
+        self.lean_chat_row.set_title("Lean chat")
+        self.lean_chat_row.set_subtitle(
+            "Skip the tool list on plain conversational messages (a greeting, "
+            "thanks, an opinion) — big token save for just talking. The full "
+            "toolset returns the moment a message asks for an action.")
+        self.lean_chat_row.set_active(
+            bool(parent.settings.get("lean_chat", True)))
+        self.lean_chat_row.connect(
+            "notify::active",
+            lambda r, _ps: self._set("lean_chat", r.get_active()))
+        intel_g.add(self.lean_chat_row)
+
+        self.grouped_tools_row = Adw.SwitchRow()
+        self.grouped_tools_row.set_title("Lazy tool groups (experimental)")
+        self.grouped_tools_row.set_subtitle(
+            "Ship a lean tool core plus a group index; Kali loads a specialist "
+            "group (offensive, engagement, code…) only when she needs it — "
+            "biggest per-request save, at the cost of an occasional load step. "
+            "Test it against your model before relying on it.")
+        self.grouped_tools_row.set_active(
+            bool(parent.settings.get("grouped_tools", False)))
+        self.grouped_tools_row.connect(
+            "notify::active",
+            lambda r, _ps: self._set("grouped_tools", r.get_active()))
+        intel_g.add(self.grouped_tools_row)
+
         self.thoughts_row = Adw.SwitchRow()
         self.thoughts_row.set_title("Show reasoning panel")
         self.thoughts_row.set_subtitle(
@@ -4546,6 +4574,7 @@ class MainWindow(Adw.ApplicationWindow):
         "benchmark_score":    "scoring the run",
         "benchmark_report":   "building the scorecard",
         "benchmark_compare":  "comparing runs",
+        "load_tools":         "loading tools",
         "read_file":        "reading a file",
         "write_file":       "writing a file",
         "list_dir":         "listing files",
@@ -4701,9 +4730,24 @@ class MainWindow(Adw.ApplicationWindow):
                     addendum = (addendum + "\n\n" + extra).strip()
             except Exception:
                 pass
+        # Lean-chat: on a plainly conversational OPENING turn (a greeting,
+        # thanks, an opinion question — no hint of an action), skip the ~8K-token
+        # tool catalog. "Just talking" shouldn't ship 100+ tool specs. Only the
+        # first step of a turn, never mid-tool-chain; conservative detector keeps
+        # the full toolset the moment a message hints at any action.
+        _lean = False
+        if (self.settings.get("lean_chat", True)
+                and self.current_agent_mode
+                and self._tool_chain_depth == 1 and not self._tools_locked):
+            _last_user = next(
+                (m.get("content", "") for m in reversed(history)
+                 if m.get("role") == "user"
+                 and "<tool_result>" not in m.get("content", "")), "")
+            _lean = conversational_turn(_last_user)
         sysprompt = build_system_prompt(
-            agent_mode=self.current_agent_mode,
-            custom_addendum=addendum)
+            agent_mode=(False if _lean else self.current_agent_mode),
+            custom_addendum=addendum,
+            grouped=self.settings.get("grouped_tools", False))
         full = assemble_messages(sysprompt, history)
         # Splice in relevance-scoped recall (top-k memories for THIS turn).
         # No-op unless memory is enabled; never grows with history length.
@@ -5101,6 +5145,9 @@ class MainWindow(Adw.ApplicationWindow):
         if n == "benchmark_compare":
             return lambda: tool_benchmark_compare(
                 a.get("runs", a.get("results", a.get("items", []))))
+        if n == "load_tools":
+            return lambda: tool_load_tools(
+                a.get("group", a.get("name", a.get("groups", ""))))
         # Pure system / desktop sensing (independent subprocesses).
         if n == "system_info":
             return tool_system_info
@@ -5561,6 +5608,9 @@ class MainWindow(Adw.ApplicationWindow):
             "benchmark_compare":  lambda a: self._tool_simple(
                 lambda: tool_benchmark_compare(
                     a.get("runs", a.get("results", a.get("items", []))))),
+            "load_tools":         lambda a: self._tool_simple(
+                lambda: tool_load_tools(
+                    a.get("group", a.get("name", a.get("groups", ""))))),
         }
         # Merge sidecar tools (memory_*, skill_list, skill_run).  Returns an
         # empty dict unless the matching feature is enabled, so stock Kali is

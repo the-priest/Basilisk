@@ -308,6 +308,15 @@ DEFAULT_SETTINGS = {
     # own messages are NEVER touched; the most-recent N tool results stay
     # full.  On by default; harmless when there's nothing big to compress.
     "headroom_enabled":        True,    # master switch for compression
+    "lean_chat":               True,    # skip the tool catalog on plainly
+                                        # conversational turns (big token save
+                                        # for "just talking"; full toolset the
+                                        # moment a message hints at an action)
+    "grouped_tools":           False,   # EXPERIMENTAL: ship only a lean tool
+                                        # core + a group index; Kali loads a
+                                        # specialist group on demand with
+                                        # load_tools. Off by default — test it
+                                        # against your model before relying on it
     "headroom_min_chars":      1200,    # don't compress a block under this size
     "headroom_keep_recent":    2,       # leave the last N tool results full
     "headroom_target_ratio":   0.35,    # fallback engine: keep ~this fraction
@@ -4274,6 +4283,21 @@ def tool_remediation_hint(finding: Any) -> Dict[str, Any]:
         return _cs.remediation_hint(finding)
     except Exception as e:
         return {"ok": False, "error": f"remediation_hint failed: {e}"}
+
+
+def tool_load_tools(group: str = "") -> Dict[str, Any]:
+    """Load a specialist tool group's full specs so they can be called. Used
+    when grouped tools are enabled: the base prompt lists the groups, and this
+    pulls one in on demand (group ∈ system|offensive|engagement|code|benchmark|
+    recon|desktop|media; aliases accepted)."""
+    try:
+        from kali_persona import load_tools_group
+    except Exception as e:
+        return {"ok": False, "error": f"tool groups unavailable: {e}"}
+    try:
+        return load_tools_group(group or "")
+    except Exception as e:
+        return {"ok": False, "error": f"load_tools failed: {e}"}
 
 
 def _current_engagement() -> str:

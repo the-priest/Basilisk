@@ -145,6 +145,30 @@ _LIST_NUM      = re.compile(r"^\s{0,3}\d+[.)]\s+")
 _HRULE         = re.compile(r"^\s{0,3}([-*_])\s*(?:\1\s*){2,}$")
 _WS            = re.compile(r"[ \t]+")
 
+# ── punctuation smoothing: the marks that make a TTS engine lurch ──
+# Em/en dashes, parentheticals, ellipses and semicolons all read as long dead
+# pauses. Turn them into a comma's worth of natural pause (or none) so speech
+# flows instead of stopping and starting.
+_SMOOTH_DASH = re.compile(r"\s*[—–]\s*")
+_SMOOTH_HYPHEN = re.compile(r" - ")
+_SMOOTH_ELLIPSIS = re.compile(r"\s*(?:\.\.\.|…)\s*")
+_SMOOTH_SEMI = re.compile(r"\s*;\s*")
+_SMOOTH_MULTICOMMA = re.compile(r"(?:\s*,\s*){2,}")
+_SMOOTH_COMMA_STOP = re.compile(r"\s*,\s*([.!?])")
+
+
+def _smooth_punctuation(s: str) -> str:
+    s = _SMOOTH_DASH.sub(", ", s)          # a — b  -> a, b
+    s = _SMOOTH_HYPHEN.sub(", ", s)        # a - b  -> a, b
+    s = _SMOOTH_ELLIPSIS.sub(", ", s)      # a...b  -> a, b
+    s = s.replace("(", ", ").replace(")", ", ")   # (aside) -> , aside,
+    s = _SMOOTH_SEMI.sub(", ", s)          # a; b   -> a, b
+    s = _SMOOTH_MULTICOMMA.sub(", ", s)    # collapse ", ,"
+    s = _SMOOTH_COMMA_STOP.sub(r"\1", s)   # ", ."  -> "."
+    s = re.sub(r"\s+,", ",", s)            # "word ," -> "word,"
+    s = re.sub(r"\s+", " ", s)
+    return s.strip(" ,")
+
 
 def _clean_inline(line: str) -> str:
     """Strip inline markdown from a single line, leaving readable words."""
@@ -158,6 +182,7 @@ def _clean_inline(line: str) -> str:
     s = _LIST_NUM.sub("", s)
     s = _EMPHASIS.sub("", s)              # **bold** / _italic_ markers
     s = s.replace("`", "")
+    s = _smooth_punctuation(s)            # dashes/parens/ellipses -> flowing
     s = _WS.sub(" ", s).strip()
     if _HRULE.match(line.strip()):
         return ""
@@ -344,18 +369,18 @@ class SpeechStreamer:
             return []
         if final:
             self._pending = ""
-            return sentences
+            return merge_for_speech(sentences)
         # Mid-stream: hold the last fragment back unless the source clearly
         # ended it with sentence punctuation (so we don't speak half a
         # thought).  Heuristic: if pending doesn't end on a boundary, keep
         # the final chunk buffered.
         if re.search(r"[.!?…][\"')\]]?\s*$", self._pending):
             self._pending = ""
-            return sentences
+            return merge_for_speech(sentences)
         held = sentences[-1]
         self._pending = held + "\n"
         emit = sentences[:-1]
-        return emit
+        return merge_for_speech(emit)
 
     def feed(self, full_content: str) -> List[str]:
         if "\n" not in full_content:

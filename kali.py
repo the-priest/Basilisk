@@ -55,6 +55,8 @@ from kali_core import (
     tool_scope_set, tool_scope_check, tool_scope_show, tool_asset_record,
     tool_engagement_graph, tool_loot_record, tool_loot_list, tool_loot_reuse,
     tool_graph_ingest, tool_sqlmap_plan, tool_load_tools,
+    tool_submit_flag, tool_xbow_score, tool_xbow_report,
+    tool_juiceshop_score, tool_juiceshop_report,
     tool_benchmark_targets, tool_benchmark_score, tool_benchmark_report,
     tool_benchmark_compare,
     tool_osint_username, tool_osint_lookup, tool_social_read,
@@ -86,7 +88,7 @@ except Exception as _ve:  # noqa
 
 APP_ID  = "org.thepriest.kali"
 APP_NAME = "Basilisk"
-VERSION = "4.5.0"
+VERSION = "4.7.0"
 
 # ── Tool-chain efficiency knobs ──
 # How many model round-trips a single user turn may chain through.  With
@@ -4647,6 +4649,11 @@ class MainWindow(Adw.ApplicationWindow):
         "benchmark_report":   "building the scorecard",
         "benchmark_compare":  "comparing runs",
         "load_tools":         "loading tools",
+        "juiceshop_score":    "reading the scoreboard",
+        "juiceshop_report":   "building the scorecard",
+        "submit_flag":        "submitting the flag",
+        "xbow_score":         "scoring the benchmark",
+        "xbow_report":        "building the scorecard",
         "read_file":        "reading a file",
         "write_file":       "writing a file",
         "list_dir":         "listing files",
@@ -5221,6 +5228,20 @@ class MainWindow(Adw.ApplicationWindow):
         if n == "load_tools":
             return lambda: tool_load_tools(
                 a.get("group", a.get("name", a.get("groups", ""))))
+        if n == "submit_flag":
+            return lambda: tool_submit_flag(
+                a.get("flag", a.get("value", "")), a.get("challenge", ""))
+        if n == "juiceshop_score":
+            return lambda: tool_juiceshop_score(
+                a.get("base_url", a.get("url", a.get("target",
+                      "http://localhost:3000"))))
+        if n == "juiceshop_report":
+            return lambda: tool_juiceshop_report(a.get("scored", a.get("result", a)))
+        if n == "xbow_score":
+            return lambda: tool_xbow_score(
+                a.get("results", a.get("records", a.get("items", []))))
+        if n == "xbow_report":
+            return lambda: tool_xbow_report(a.get("scored", a.get("result", a)))
         # Pure system / desktop sensing (independent subprocesses).
         if n == "system_info":
             return tool_system_info
@@ -5686,6 +5707,20 @@ class MainWindow(Adw.ApplicationWindow):
             "load_tools":         lambda a: self._tool_simple(
                 lambda: tool_load_tools(
                     a.get("group", a.get("name", a.get("groups", ""))))),
+            "submit_flag":        lambda a: self._tool_simple(
+                lambda: tool_submit_flag(
+                    a.get("flag", a.get("value", "")), a.get("challenge", ""))),
+            "juiceshop_score":    lambda a: self._tool_simple(
+                lambda: tool_juiceshop_score(
+                    a.get("base_url", a.get("url", a.get("target",
+                          "http://localhost:3000"))))),
+            "juiceshop_report":   lambda a: self._tool_simple(
+                lambda: tool_juiceshop_report(a.get("scored", a.get("result", a)))),
+            "xbow_score":         lambda a: self._tool_simple(
+                lambda: tool_xbow_score(
+                    a.get("results", a.get("records", a.get("items", []))))),
+            "xbow_report":        lambda a: self._tool_simple(
+                lambda: tool_xbow_report(a.get("scored", a.get("result", a)))),
         }
         # Merge sidecar tools (memory_*, skill_list, skill_run).  Returns an
         # empty dict unless the matching feature is enabled, so stock Basilisk is
@@ -6109,7 +6144,8 @@ class MainWindow(Adw.ApplicationWindow):
         # stop affordance so a long command can be interrupted.
         self.streaming_chat_id = self.current_chat_id
         self._tool_chain_depth = 0
-        self._set_working(True, "running…")
+        _cmd_head = command.strip().split()[0] if command.strip() else ""
+        self._set_working(True, f"running {_cmd_head}…" if _cmd_head else "running…")
         self._set_send_mode(True)
         # The click on the card IS the approval, so don't re-confirm a safe
         # command — only stop for a sudo password when root is required.

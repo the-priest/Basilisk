@@ -4291,6 +4291,101 @@ def tool_remediation_hint(finding: Any) -> Dict[str, Any]:
         return {"ok": False, "error": f"remediation_hint failed: {e}"}
 
 
+def tool_juiceshop_score(base_url: str = "http://localhost:3000") -> Dict[str, Any]:
+    """Score Basilisk against the LIVE OWASP Juice Shop scoreboard — the hard,
+    comparable benchmark. Fetches GET {base_url}/api/Challenges from the running
+    target and reports solved/available broken down by difficulty (1-6 stars).
+    Each challenge counts only when the app confirmed the exploit worked, so it
+    can't be faked. Run the target with NODE_ENV=unsafe for the full set."""
+    import json as _json
+    base = (base_url or "http://localhost:3000").strip().rstrip("/")
+    url = base + "/api/Challenges"
+    try:
+        req = urllib.request.Request(url, headers={"Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            payload = _json.loads(r.read())
+    except Exception as e:
+        return {"ok": False, "error": f"could not read the scoreboard at {url}: "
+                f"{e}. Is Juice Shop running there?"}
+    try:
+        from kali_ext import juiceshop as _js
+        return _js.score_challenges(payload)
+    except Exception as e:
+        return {"ok": False, "error": f"scoring failed: {e}"}
+
+
+def tool_juiceshop_report(scored: Any = None) -> Dict[str, Any]:
+    """Render the Juice Shop scoreboard score (from juiceshop_score) as a
+    markdown scorecard with the per-difficulty breakdown."""
+    try:
+        from kali_ext import juiceshop as _js
+    except Exception as e:
+        return {"ok": False, "error": f"juiceshop module unavailable: {e}"}
+    try:
+        return _js.juiceshop_report(scored)
+    except Exception as e:
+        return {"ok": False, "error": f"juiceshop_report failed: {e}"}
+
+
+def tool_submit_flag(flag: str = "", challenge: str = "") -> Dict[str, Any]:
+    """Submit a captured CTF flag during an XBOW (or any flag-capture) run. Kali
+    calls this the moment it retrieves a flag from a challenge; the flag is
+    recorded so the benchmark runner can check it against the injected answer.
+    Records to ~/.local/share/kali/xbow_flags.json keyed by challenge."""
+    flag = (flag or "").strip()
+    if not flag:
+        return {"ok": False, "error": "no flag provided"}
+    try:
+        from kali_ext import xbow as _xbow
+        clean = _xbow.extract_flag(flag) or flag
+    except Exception:
+        clean = flag
+    path = os.path.expanduser("~/.local/share/kali/xbow_flags.json")
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        store = {}
+        if os.path.isfile(path):
+            try:
+                with open(path, encoding="utf-8") as f:
+                    store = json.load(f)
+            except Exception:
+                store = {}
+        key = (challenge or "current").strip()
+        store[key] = clean
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(store, f)
+        return {"ok": True, "challenge": key, "flag": clean,
+                "note": "flag recorded for the benchmark runner to verify."}
+    except Exception as e:
+        return {"ok": False, "error": f"could not record flag: {e}", "flag": clean}
+
+
+def tool_xbow_score(results: Any = None) -> Dict[str, Any]:
+    """Aggregate XBOW per-challenge results into a solved/total pass rate — the
+    number comparable to a published XBOW figure. `results` is a list of records
+    from the runner (each {challenge, submitted, expected, solved})."""
+    try:
+        from kali_ext import xbow as _xbow
+    except Exception as e:
+        return {"ok": False, "error": f"xbow module unavailable: {e}"}
+    try:
+        return _xbow.score_results(results)
+    except Exception as e:
+        return {"ok": False, "error": f"xbow_score failed: {e}"}
+
+
+def tool_xbow_report(scored: Any = None) -> Dict[str, Any]:
+    """Render an XBOW score (from xbow_score) as a markdown scorecard."""
+    try:
+        from kali_ext import xbow as _xbow
+    except Exception as e:
+        return {"ok": False, "error": f"xbow module unavailable: {e}"}
+    try:
+        return _xbow.xbow_report(scored)
+    except Exception as e:
+        return {"ok": False, "error": f"xbow_report failed: {e}"}
+
+
 def tool_load_tools(group: str = "") -> Dict[str, Any]:
     """Load a specialist tool group's full specs so they can be called. Used
     when grouped tools are enabled: the base prompt lists the groups, and this

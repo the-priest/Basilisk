@@ -1,7 +1,7 @@
 """
-skills — Kali writes, tests, and saves her own Python tools.
+skills — Basilisk writes, tests, and saves her own Python tools.
 
-The Hermes "self-improving skills" idea, fitted to Kali's existing safety
+The Hermes "self-improving skills" idea, fitted to Basilisk's existing safety
 model instead of bolted on beside it.  The flow mirrors propose_edit exactly:
 
   1. The model calls skill_write(name, code, test, description, capabilities).
@@ -17,7 +17,7 @@ model instead of bolted on beside it.  The flow mirrors propose_edit exactly:
         d. writes name/, code, manifest (with a content hash), registers it.
   3. From then on the skill is exposed as the tool skill_run{name,args}, and
      every invocation goes back through the sandbox.  There is no path by
-     which skill code executes in Kali's own interpreter.
+     which skill code executes in Basilisk's own interpreter.
 
 Curation (Hermes' curator, shrunk): skills unused past a threshold are
 ARCHIVED, never deleted.  Archive is one move from restored.

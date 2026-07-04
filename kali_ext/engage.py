@@ -1,5 +1,5 @@
 """
-engage — engagement state for Kali: authorised scope, an asset graph, and a loot
+engage — engagement state for Basilisk: authorised scope, an asset graph, and a loot
 store.  The persistent memory of a single job.
 
 Where the evidence ledger records *what happened* (an append-only, hashed log),
@@ -18,7 +18,7 @@ last command.  Three parts, all local, all propose/read-only:
   2. ASSET GRAPH — a structured picture of the engagement: hosts, the services
      on them, findings against them, and any access obtained.  `asset_record`
      adds/updates a node; `graph_query` returns the current state.  This is what
-     lets Kali answer "which hosts have I confirmed SSH on / where do I have a
+     lets Basilisk answer "which hosts have I confirmed SSH on / where do I have a
      foothold / what's left" — the queryable state most open-source AI-pentest
      tools lack.
 
@@ -29,7 +29,7 @@ last command.  Three parts, all local, all propose/read-only:
      worth trying next — other IN-SCOPE hosts running the same service — as
      SUGGESTIONS for the operator, never an automatic credential attack.
 
-Design contract (kali_ext/__init__.py): imports NOTHING from the Kali core;
+Design contract (kali_ext/__init__.py): imports NOTHING from the Basilisk core;
 pure stdlib; GTK-free; trivially unit-testable offline.  State persists as one
 JSON file per engagement under ~/.config/kali/engagements/.  Every write is
 fail-safe — a state write must never break the caller.  Nothing here attacks

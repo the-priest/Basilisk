@@ -2,7 +2,7 @@
 
 ## v4.4.1 — "keep going" actually keeps going
 
-Fixes the bug where, after a long run hit the tool-step budget, Kali would
+Fixes the bug where, after a long run hit the tool-step budget, Basilisk would
 refuse to continue on the next message and claim the budget was "per session."
 
 - **The budget resets per turn — now genuinely.** It always reset the counter,
@@ -33,7 +33,7 @@ This release lets you stop sending tools you aren't using.
   CORE (the safety framing, `run`, files, web search) and specialist GROUPS
   (system/sensing, offensive, engagement, code, benchmark, recon, desktop,
   media). With it on, the base system prompt drops from ~12.2K to ~6.7K tokens;
-  Kali pulls a group's full specs on demand with the new **`load_tools`** tool
+  Basilisk pulls a group's full specs on demand with the new **`load_tools`** tool
   (aliases accepted). Every tool remains reachable — verified none are orphaned.
 - **Why opt-in:** loading a group costs an extra round-trip, and a tool-heavy
   session that touches many groups can offset the base saving — so it's a real
@@ -84,14 +84,14 @@ default. Fixed.
 
 ## v4.2.1 — command runtime awareness + tighter bubbles
 
-- **Kali knows how long a command should take, and stops waiting on a hung one.**
+- **Basilisk knows how long a command should take, and stops waiting on a hung one.**
   A new runtime estimator sets the timeout per command instead of a blunt
   120s/1800s: quick commands ~30s, scans/builds up to 30 min, and — the real
   fix — **servers/daemons capped at 25s**. Starting a server in the foreground
   used to block for the full window whether or not it actually came up; now a
   failed start is caught in seconds. A timeout returns rc 124 with an
   informative message (expected vs actual, and "background it + probe the port"
-  for servers), and the persona teaches Kali to background servers and verify
+  for servers), and the persona teaches Basilisk to background servers and verify
   they started rather than sit waiting. Covered by tests/test_runtime.py.
 - **Chat bubbles hug their text.** A short reply no longer draws a full-width
   bubble — the assistant bubble sizes to its content and left-aligns, while long
@@ -110,7 +110,7 @@ that turns "it's the best" into a measurable, reproducible score.
   `benchmark_score` (match a run's findings against that ground truth →
   precision, recall, F1, per-class coverage; missed classes are the real gaps,
   extras are possible false positives); `benchmark_report` (a clean markdown
-  scorecard); and `benchmark_compare` (rank several runs by F1 — Kali vs another
+  scorecard); and `benchmark_compare` (rank several runs by F1 — Basilisk vs another
   tool, or version vs version, so "beats the best" is a sortable column). Scores
   by canonical vuln class via CWE and keyword matching, and honors an explicit
   class a finding already carries.
@@ -122,7 +122,7 @@ that turns "it's the best" into a measurable, reproducible score.
 
 ## v4.1.1 — engagement state + operator loop
 
-Kali stops forgetting. This release adds the campaign-level brain that turns it
+Basilisk stops forgetting. This release adds the campaign-level brain that turns it
 from a tool that runs one-off commands into an operator that runs a whole job —
 plus scope enforcement and a scanner invocation builder.
 
@@ -169,7 +169,7 @@ that documents how access was obtained, and a visual refresh.
   section: the step sequence is backed by the actual hash-verified commands that
   ran, and secrets are auto-redacted. Documents an authorised, already-executed
   path; writes no exploit code.
-- **Silver theme.** Kali's chat bubble and name label move from red to a
+- **Silver theme.** Basilisk's chat bubble and name label move from red to a
   metallic silver that matches her icon.
 - **Coverage.** New offline suites (`tests/test_codescan.py`, plus write-up and
   headroom checks) — the code-audit parsers, cross-tool triage, secret
@@ -198,7 +198,7 @@ This release:
 - **The browser drives Brave when it's installed.** Brave is Chromium underneath,
   so Playwright runs it directly — and its Shields block ads and trackers, so
   pages load clean. Falls back to bundled Chromium if Brave isn't present.
-- **Cookie/consent walls no longer stop browsing.** After a page loads, Kali
+- **Cookie/consent walls no longer stop browsing.** After a page loads, Basilisk
   auto-clicks the common "Accept all / I agree" buttons and strips leftover
   consent/cookie modals, and the most common consent-management, ad and tracker
   hosts are blocked at the network layer so their banners never load. This
@@ -267,7 +267,7 @@ Fixes from a full on-device self-test (62 tool calls, ThinkPad X395):
   so there's no long stop after every period (espeak gets `-g 0`); and replies
   are spoken as fewer, larger utterances so there are fewer gaps. Tunable via a
   new tts_sentence_pause setting (default 0).
-- **She knows what she is.** Kali no longer roleplays being your operating
+- **She knows what she is.** Basilisk no longer roleplays being your operating
   system — she's the assistant (JARVIS / your Skynet) running as an app ON your
   machine, with real hands on it through her tools, loyal to you.
 - **Header slimmed.** Removed the model + agent line from the top (the model
@@ -275,7 +275,7 @@ Fixes from a full on-device self-test (62 tool calls, ThinkPad X395):
   the title bar is thinner.
 - **Composer input is a bubble now** so it reads as a field instead of bleeding
   into the bottom edge; it highlights green while focused.
-- **Kali's message bubbles are translucent red** — see-through, contrasting your
+- **Basilisk's message bubbles are translucent red** — see-through, contrasting your
   translucent green.
 - **Log button moved** in next to the other toolbar buttons.
 - **Removed the chat search box.**
@@ -294,7 +294,7 @@ Fixes from a full on-device self-test (62 tool calls, ThinkPad X395):
   (foresight "caution"/"block" — broad deletes, service stops, firewall flushes,
   force-push) now STOP for your explicit OK instead of being silently auto-run or
   flatly refused; truly catastrophic commands remain hard-blocked with no override.
-  Net effect: Kali keeps going until something genuinely needs your call.
+  Net effect: Basilisk keeps going until something genuinely needs your call.
 - **More autonomy headroom** — tool-chain budget raised 20 → 50.
 - **Model switcher**: bigger text, ordered most-expensive → cheapest.
 - **Brighter dragon** everywhere (app icon + avatar). Send button now blends into
@@ -317,7 +317,7 @@ Fixes from a full on-device self-test (62 tool calls, ThinkPad X395):
   your account it fetches your real model list and self-heals.
 - **Browser has a headless fallback.** When Playwright's chromium can't launch
   (common on ARM / NetHunter), read-only browsing — goto, read, links, url, title —
-  now works over plain HTTP so Kali can still look things up. Clicking and typing
+  now works over plain HTTP so Basilisk can still look things up. Clicking and typing
   still need a working chromium and say so clearly.
 - **Real app icon.** The launcher icon is now your actual dragon (the rough
   low-poly traced one is gone), embedded so there's no icon-cache conflict.
@@ -336,7 +336,7 @@ Fixes from a full on-device self-test (62 tool calls, ThinkPad X395):
   Playwright's chromium often can't start. The browser now falls back to a
   headless HTTP mode for read-only actions — goto, read, and links all work
   without a GUI browser (verified end-to-end). Clicking and typing still need a
-  real chromium (clear message tells you so), but Kali no longer just fails when
+  real chromium (clear message tells you so), but Basilisk no longer just fails when
   the window can't open.
 
 ---
@@ -362,18 +362,18 @@ Fixes from a full on-device self-test (62 tool calls, ThinkPad X395):
   every tool call ran on its own thread — so the browser worked once then threw
   thread/greenlet errors on every call after. All browser operations now run on
   one dedicated worker thread, so a session survives across calls. Also added
-  more actions so Kali can browse freely: submit (fill + Enter), press a key,
+  more actions so Basilisk can browse freely: submit (fill + Enter), press a key,
   scroll, back/forward, and list links — alongside goto/read/click/fill/screenshot.
-- **Kali's avatar is the clean dragon now** — a solid silver dragon PNG, and the
+- **Basilisk's avatar is the clean dragon now** — a solid silver dragon PNG, and the
   green ring is gone from the emblem SVG (it looked like a sticker).
 - **Chat bubbles reworked.** Your messages are translucent (the dragon shows
-  through); Kali's were invisible (transparent) and are now a solid, clearly
+  through); Basilisk's were invisible (transparent) and are now a solid, clearly
   visible bubble.
 - **New chats are clean** — the "Hello, Priest" greeting and the
   audit/downloads/updates suggestion buttons are gone (those live in the
   toolbar); a fresh chat just shows the dragon watermark.
 - **One big Send button.** The mic/STT button is removed; Send is now large and
-  wears the dragon logo. While Kali is working it pulses with a red glow instead
+  wears the dragon logo. While Basilisk is working it pulses with a red glow instead
   of turning into a stop icon — and tapping it still stops her.
 
 ---
@@ -389,15 +389,15 @@ Fixes from a full on-device self-test (62 tool calls, ThinkPad X395):
   OpenAI-compatible endpoint). An old config pointing at a removed provider
   falls back to SiliconFlow automatically.
 - **Bigger text input** — the compose box is now much taller by default.
-- **Header redesign.** Dropped the "personal · loyal · yours" tagline; KALI is
+- **Header redesign.** Dropped the "personal · loyal · yours" tagline; BASILISK is
   now a menacing red, letter-spaced title sitting next to the new-chat button.
   The SiliconFlow / Online pills in the top-right are gone — connectivity is now
-  a single green (online) / red (offline) dot next to KALI.
+  a single green (online) / red (offline) dot next to BASILISK.
 - **The saved-chats list looks the part now** — a fire-coloured accent stripe,
   cleaner typography, and a subtle ember-glow animation on the selected chat
   instead of plain text on black.
 - **Pick the vision model in Settings.** Display → Images & vision lets you set
-  the vision provider + model Kali uses to see images, and toggle inline image
+  the vision provider + model Basilisk uses to see images, and toggle inline image
   rendering.
 - **Smarter auto-naming.** New chats are titled from the first message with the
   filler stripped ("can you scan my network…" → "Scan my network").
@@ -418,7 +418,7 @@ default — so nothing actually stopped `rm -rf /`. That's fixed.
   `mkfs`, `dd` onto a disk, fork bomb, recursive delete of root / system /
   data dirs) is now REFUSED outright at the top of the execution path — before
   any dialog, before foresight, before the shell. There is no "Run anyway"
-  button and no setting that disables it. Kali, as an AI, will never run a
+  button and no setting that disables it. Basilisk, as an AI, will never run a
   system-destroying command.
 - **Foresight on by default.** `foresight_enabled` now defaults to **on**, so
   the consequence predictor actually runs and gates risky commands instead of
@@ -432,23 +432,23 @@ default — so nothing actually stopped `rm -rf /`. That's fixed.
 
 ---
 
-## v3.5.0 — Kali can see, faster speech
+## v3.5.0 — Basilisk can see, faster speech
 
-- **Kali can SEE images now.** New `analyze_image` sends a photo or screenshot
+- **Basilisk can SEE images now.** New `analyze_image` sends a photo or screenshot
   to a vision model and returns what's actually in it — the scene, objects,
   people, and any text in the image. She's no longer limited to text. Needs a
   vision model configured (`vision_model` + that provider's key; defaults to a
   SiliconFlow VL model).
 - **Camera + face detection.** A new camera button in the composer captures a
   photo (`capture_photo`, with libcamera/fswebcam/ffmpeg fallbacks) and drops it
-  in ready for Kali to look at. `detect_faces` finds/counts faces locally
+  in ready for Basilisk to look at. `detect_faces` finds/counts faces locally
   (detection only).
 - **Speech is much faster and smoother.** The reader used to spawn a new process
   at every period, so it stopped between every sentence and was slow to start.
   It now merges sentences into a few larger utterances (no gap at each period),
   keeps the first chunk short so audio starts quickly, and the default rate is a
   bit snappier (1.15x).
-- **A deliberate boundary:** Kali will not identify a person or find their
+- **A deliberate boundary:** Basilisk will not identify a person or find their
   social-media accounts from their face. Face *detection* (where faces are) is
   fine; biometric *identification* of strangers is not — it's surveillance, and
   it's out.
@@ -491,7 +491,7 @@ A round of interface fixes and theming polish.
 
 A visual overhaul of the look.
 
-- **Dragon emblem icon.** A simple low-poly SVG traced from the Kali dragon
+- **Dragon emblem icon.** A simple low-poly SVG traced from the Basilisk dragon
   logo (coiled body, spread wings, circle ring) in a blackout style with a green
   accent ring. Used as the app/taskbar icon and the chat avatar.
 - **Dragon watermark behind the chat.** The dragon logo now sits faintly behind
@@ -500,7 +500,7 @@ A visual overhaul of the look.
   watermark loader handles PNG or SVG.
 - **Red / green / black theme.** Swapped the old blue accent for toxic green as
   the primary accent (links, focus, online, the operator label) and red for
-  Kali's identity (the Kali label, the emblem glow, alerts). All backgrounds
+  Basilisk's identity (the Basilisk label, the emblem glow, alerts). All backgrounds
   stay black.
 - **Plumbing:** `install.sh` ships `kali-watermark.png` and places it (and the
   emblem) in the install dir so the watermark works on a fresh install.
@@ -510,7 +510,7 @@ A visual overhaul of the look.
 ## v3.3.1 — Reliable image search + sharper self-awareness
 
 Fixes a real-world failure where showing a picture fell apart, and tightens how
-well Kali knows its own abilities.
+well Basilisk knows its own abilities.
 
 - **`image_search` rebuilt on reliable APIs.** The old version scraped
   DuckDuckGo's anti-bot image endpoint, which returned invalid JSON in practice
@@ -522,13 +522,13 @@ well Kali knows its own abilities.
   degrades gracefully instead of erroring.
 - **No more flailing to show a picture.** The persona now spells out the
   one-step path (call `image_search` once with a plain subject → embed a
-  returned URL as `![desc](url)`) and explicitly tells Kali *not* to hand-scrape
+  returned URL as `![desc](url)`) and explicitly tells Basilisk *not* to hand-scrape
   stock-photo sites or guess Wikimedia file names — the behaviour that burned
   the tool-step budget before.
-- **Self-awareness fix.** The capability summary was stale and even claimed Kali
+- **Self-awareness fix.** The capability summary was stale and even claimed Basilisk
   "cannot reach the internet" — contradicting its own web tools. Rewrote it into
   a complete, accurate map (web, images, OSINT, GitHub, evidence ledger, MCP,
-  pentest tools, memory, skills, voice) so Kali stops having to test itself to
+  pentest tools, memory, skills, voice) so Basilisk stops having to test itself to
   discover what it can do.
 - **Tool-step budget 12 → 20.** A legitimate multi-stage task (a full self-test
   sweep, a long pentest plan) was hitting the 12-round cap. Raised to 20; the
@@ -539,9 +539,9 @@ well Kali knows its own abilities.
 
 ---
 
-## v3.3.0 — Kali can show pictures in chat
+## v3.3.0 — Basilisk can show pictures in chat
 
-Kali can now **display images inline** in the conversation, not just link them.
+Basilisk can now **display images inline** in the conversation, not just link them.
 
 - **Inline image rendering.** Any image the model puts in a reply as markdown —
   `![description](url)` — is fetched and rendered as a real picture in the chat
@@ -569,7 +569,7 @@ Kali can now **display images inline** in the conversation, not just link them.
 Four capability additions (no local-model support, by request).
 
 ### Evidence ledger (new `kali_ledger.py`)
-Every command Kali runs is now recorded to an append-only, tamper-evident JSONL
+Every command Basilisk runs is now recorded to an append-only, tamper-evident JSONL
 ledger: timestamp, engagement, step number, command, reason, exit code,
 duration, and the SHA-256 of stdout/stderr. Full output is saved to a side
 artifact whose hash is recorded, so `evidence_verify` can re-hash and prove
@@ -579,7 +579,7 @@ the case), `evidence_report` (summary + integrity + a readable markdown ledger),
 command. This is what turns a chat transcript into a defensible deliverable.
 
 ### MCP client (new `kali_ext/mcp.py`)
-Kali can now connect to external **Model Context Protocol** servers (the
+Basilisk can now connect to external **Model Context Protocol** servers (the
 ecosystem of security MCP servers — nmap/sqlmap/ffuf/nuclei/ZAP wrappers, etc.)
 over stdio JSON-RPC. Discovered tools are exposed to the model namespaced
 `mcp__<server>__<tool>` and listed via `mcp_tools`. **Security:** OFF by default
@@ -663,7 +663,7 @@ build/validate, findings reflection, and the MCP argument safety screen.
   It is a **strict superset** of the old detector — nothing it used to catch is
   now missed — and stays narrow: `nmap`, `nuclei`, `sqlmap`, and own-directory
   file ops (`rm -rf ~/loot`, `rm -rf ./build`) do not trip it.
-- **Self-tamper detection hardened** — writes to Kali's own source via `sh -c`/
+- **Self-tamper detection hardened** — writes to Basilisk's own source via `sh -c`/
   `eval` and `$IFS` are now caught; the `cp`/`mv` check is direction-aware, so
   `cp kali_core.py backup.py` (reading) no longer false-positives while
   `cp evil.py kali_core.py` (overwriting) still force-confirms.

@@ -8,7 +8,7 @@ READ THIS, it is the whole point of the feature:
   __builtins__ / "RestrictedPython" sandbox in the same interpreter is theatre
   — CPython has too many escape hatches (object graph walks, gc, frame
   introspection, c-extension reentry).  Anyone who tells you otherwise is
-  wrong.  So this module never exec()s skill code in Kali's process.  It
+  wrong.  So this module never exec()s skill code in Basilisk's process.  It
   always spawns a fresh `python3 -I -S` child and isolates THAT.
 
 Isolation tiers, best first; we use the best one present:

@@ -1,15 +1,15 @@
 """
-bench — reproducible benchmark scoring for Kali.
+bench — reproducible benchmark scoring for Basilisk.
 
 "It beats the best" is a claim until it's a number.  This module is how you get
-the number: run Kali's workflow against a known-vulnerable practice target you
+the number: run Basilisk's workflow against a known-vulnerable practice target you
 control (OWASP Juice Shop, DVWA, …), then score what it found against that
 target's KNOWN vulnerability set — the ground truth.  Out comes precision,
 recall, F1, and per-category coverage: an objective, reproducible scorecard you
 can put next to any other tool's, or track across your own versions.
 
 Why this is the right lever.  You can't out-benchmark the field on vibes.  A
-scorecard tells you exactly what Kali missed (false negatives to fix) and what
+scorecard tells you exactly what Basilisk missed (false negatives to fix) and what
 it over-reported (false positives to tighten) on a target where the right answer
 is already known — so effort goes to real gaps, not imagined ones.
 
@@ -21,10 +21,10 @@ What's here:
     generous but honest: a finding counts for a ground-truth vuln if the CWE
     matches, or the vuln class matches, or the name clearly refers to it.
   • benchmark_report() — a clean markdown scorecard.
-  • compare_runs() — put several scored runs side by side (Kali vs another tool,
+  • compare_runs() — put several scored runs side by side (Basilisk vs another tool,
     or version N vs N+1).
 
-Contract (kali_ext/__init__.py): imports NOTHING from the Kali core; pure
+Contract (kali_ext/__init__.py): imports NOTHING from the Basilisk core; pure
 stdlib; runs nothing itself (it scores results you already produced); trivially
 unit-testable offline.  Ground-truth data is the public, well-known vuln makeup
 of these deliberately-vulnerable training apps.
@@ -375,7 +375,7 @@ def benchmark_report(scored: Any) -> Dict[str, Any]:
 
 
 def compare_runs(runs: Any) -> Dict[str, Any]:
-    """Put several scored runs side by side (Kali vs another tool, or version N
+    """Put several scored runs side by side (Basilisk vs another tool, or version N
     vs N+1).  `runs` is a list of score_run results.  Returns a ranked table by
     F1, so 'beats the best' becomes a sortable column instead of an assertion."""
     if isinstance(runs, str):

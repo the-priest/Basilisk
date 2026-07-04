@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# install.sh — Kali assistant: zero-to-running installer
+# install.sh — Basilisk assistant: zero-to-running installer
 #
 # What it does, in order:
 #   1. checks Python 3.10+
@@ -11,7 +11,7 @@
 #   9. writes settings.json so the app opens straight into a working chat
 #   10. (if present) migrates oracle/* chats and settings to kali/*
 #
-# After this: click "Kali" in your app grid.  That's it.
+# After this: click "Basilisk" in your app grid.  That's it.
 #
 # Estimated time on a OnePlus 6 over WiFi:
 #   - first install:  ~1-3 min
@@ -20,7 +20,7 @@
 # Usage:
 #   ./install.sh                     # install or update
 #   ./install.sh --update            # explicit update (same code path)
-#   ./install.sh --uninstall         # remove Kali (chat history kept)
+#   ./install.sh --uninstall         # remove Basilisk (chat history kept)
 #   ./install.sh --remove-oracle     # remove the old Oracle install
 #   ./install.sh --no-systemd        # don't install the systemd unit
 #   ./install.sh --no-helpers        # skip optional desktop helpers
@@ -30,7 +30,7 @@
 #   ./install.sh --no-prompt         # skip ALL interactive prompts
 #
 # Env overrides:
-#   KALI_REPO=the-priest/oracle5  KALI_BRANCH=main  ./install.sh
+#   BASILISK_REPO=the-priest/oracle5  BASILISK_BRANCH=main  ./install.sh
 #   GROQ_API_KEY=gsk_...        ./install.sh    # preset key, no prompt
 #
 # One-liner install from GitHub:
@@ -109,8 +109,8 @@ OPTIONAL_FILES=(org.thepriest.kali.svg kali-dragon.svg kali-watermark.png kali-c
 # memory/skills/foresight extensions), not just the core four files.
 EXT_FILES=(__init__.py bench.py codescan.py engage.py extman.py foresight.py headroom.py memory.py mcp.py \
            pentest.py sandbox.py skills.py verify.py worker.py)
-GITHUB_REPO="${KALI_REPO:-the-priest/oracle5}"
-GITHUB_BRANCH="${KALI_BRANCH:-main}"
+GITHUB_REPO="${BASILISK_REPO:-the-priest/oracle5}"
+GITHUB_BRANCH="${BASILISK_BRANCH:-main}"
 
 # How to re-invoke this installer in the hints we print.  Under `curl|bash`
 # $0 is just "bash" (the script came down a pipe, it's not a file on disk),
@@ -132,7 +132,7 @@ APP_ID="org.thepriest.kali"
 # ── uninstall path ────────────────────────────────────────────────
 
 uninstall() {
-  step "uninstalling Kali"
+  step "uninstalling Basilisk"
   systemctl --user stop    kali-ollama.service 2>/dev/null || true
   systemctl --user disable kali-ollama.service 2>/dev/null || true
   rm -f  "${SYSTEMD_DIR}/kali-ollama.service"
@@ -148,7 +148,7 @@ uninstall() {
   rm -f "${INSTALL_DIR}/${APP_ID}.svg" 2>/dev/null || true
   warn "chat history and settings were NOT removed."
   echo "      To wipe: rm -rf ${DATA_DIR} ${CONFIG_DIR}"
-  ok "Kali uninstalled."
+  ok "Basilisk uninstalled."
   exit 0
 }
 
@@ -162,7 +162,7 @@ remove_oracle() {
   rm -f  "${DESKTOP_DIR}/oracle.desktop"
   update-desktop-database "${DESKTOP_DIR}" 2>/dev/null || true
   # Migrate any chat history before removing the old data dir, in case
-  # Kali doesn't have its own DB yet.
+  # Basilisk doesn't have its own DB yet.
   if [ -f "${OLD_DATA_DIR}/chats.db" ] && [ ! -f "${DATA_DIR}/chats.db" ]; then
     mkdir -p "${DATA_DIR}"
     cp "${OLD_DATA_DIR}/chats.db" "${DATA_DIR}/chats.db"
@@ -170,7 +170,7 @@ remove_oracle() {
   fi
   rm -rf "${OLD_DATA_DIR}"
   rm -rf "${OLD_CONFIG_DIR}"
-  ok "Oracle fully removed.  (Kali install untouched.)"
+  ok "Oracle fully removed.  (Basilisk install untouched.)"
   exit 0
 }
 
@@ -182,7 +182,7 @@ remove_oracle() {
 cat <<EOF
 
 ${M}╔═══════════════════════════════════════╗${X}
-${M}║${X}  ${B}Kali${X} — personal, loyal AI assistant  ${M}║${X}
+${M}║${X}  ${B}Basilisk${X} — personal, loyal AI assistant  ${M}║${X}
 ${M}╚═══════════════════════════════════════╝${X}
 
   repo:            ${GITHUB_REPO}@${GITHUB_BRANCH}
@@ -278,7 +278,7 @@ fi
 # ── 3b. Headroom (optional context compression) ──────────────────
 #
 # Headroom crushes bulky tool output before it reaches the model, saving
-# context and tokens on long sessions.  Fully optional — Kali ships a
+# context and tokens on long sessions.  Fully optional — Basilisk ships a
 # built-in pure-Python fallback compressor, so if this won't install she
 # still compresses, just a little less aggressively.
 
@@ -290,14 +290,14 @@ elif python3 -m pip install --user --quiet headroom-ai 2>/dev/null; then
 elif python3 -m pip install --user --break-system-packages --quiet headroom-ai 2>/dev/null; then
   ok "headroom installed (pip --user --break-system-packages)"
 else
-  warn "headroom-ai not installed — Kali falls back to her built-in"
+  warn "headroom-ai not installed — Basilisk falls back to her built-in"
   warn "compressor (still works).  To add it later:"
   warn "   python3 -m pip install --user --break-system-packages headroom-ai"
 fi
 
 # ── 4. Optional desktop-control helpers ──────────────────────────
 #
-# Kali's device-control tools (launch apps, type/click, screenshots,
+# Basilisk's device-control tools (launch apps, type/click, screenshots,
 # screen OCR, browser automation) lean on small system helpers.  They
 # all degrade gracefully if absent — each tool reports what's missing —
 # but installing them up front means "do anything I ask" works on day
@@ -327,7 +327,7 @@ if [ $SKIP_HELPERS -eq 0 ] && command -v apt-get >/dev/null; then
   if sudo apt-get install -y $HELPERS 2>/dev/null; then
     ok "desktop helpers installed"
   else
-    warn "some helpers unavailable on this mirror — Kali still runs;"
+    warn "some helpers unavailable on this mirror — Basilisk still runs;"
     warn "missing tools just report themselves when used"
   fi
   # Browser automation (optional, larger): Playwright + Chromium.
@@ -341,7 +341,7 @@ if [ $SKIP_HELPERS -eq 0 ] && command -v apt-get >/dev/null; then
       warn "to enable it later:  pip install playwright && playwright install chromium"
     fi
 
-    # Brave: Kali's browser tool drives Brave when present (its Shields block
+    # Brave: Basilisk's browser tool drives Brave when present (its Shields block
     # ads/trackers, so pages load without consent walls).  Opt in with
     # WITH_BRAVE=1; otherwise we just detect an existing install.
     if command -v brave-browser >/dev/null 2>&1 || [ -x /usr/bin/brave-browser ] \
@@ -391,7 +391,7 @@ if [ $SKIP_HELPERS -eq 0 ]; then
       || warn "font packages unavailable — UI falls back to system fonts"
   fi
   # JetBrains Mono is the branding/header/code font, but it isn't reliably
-  # packaged on Kali/Debian rolling (the apt package above is often absent —
+  # packaged on Basilisk/Debian rolling (the apt package above is often absent —
   # exactly what happened on this box).  If it still isn't present, fetch the
   # official release straight into the user font dir: works on any distro,
   # needs no root.  Best-effort; every branch ends in ok/warn.
@@ -428,7 +428,7 @@ fi
 # Piper      = local NEURAL voice — sounds pleasant, the real default
 # voice model = a natural British voice (~63MB) for Piper
 # All best-effort: nothing here aborts the install.  If Piper or the
-# model don't land, Kali falls back to espeak; if no recorder lands,
+# model don't land, Basilisk falls back to espeak; if no recorder lands,
 # voice input just stays hidden and you type as normal.
 if [ $SKIP_VOICE -eq 0 ]; then
   step "voice (speech in / speech out)"
@@ -475,7 +475,7 @@ if [ $SKIP_VOICE -eq 0 ]; then
   elif python3 -m pip install --user --break-system-packages --quiet piper-tts 2>/dev/null; then
     ok "piper installed (pip)"
   else
-    warn "piper not installed — Kali uses espeak until you add it:"
+    warn "piper not installed — Basilisk uses espeak until you add it:"
     warn "   python3 -m pip install --user --break-system-packages piper-tts"
   fi
 
@@ -642,11 +642,11 @@ NEW_VER="$(_ver_of "${SRC_DIR}/kali.py")"
 OLD_VER=""
 [ -f "${INSTALL_DIR}/kali.py" ] && OLD_VER="$(_ver_of "${INSTALL_DIR}/kali.py")"
 if [ -n "${OLD_VER}" ] && [ -n "${NEW_VER}" ] && [ "${OLD_VER}" != "${NEW_VER}" ]; then
-  ok "updating Kali ${OLD_VER} → ${NEW_VER}"
+  ok "updating Basilisk ${OLD_VER} → ${NEW_VER}"
 elif [ -n "${OLD_VER}" ] && [ "${OLD_VER}" = "${NEW_VER}" ]; then
-  say "Kali ${NEW_VER} already current — refreshing files"
+  say "Basilisk ${NEW_VER} already current — refreshing files"
 elif [ -n "${NEW_VER}" ]; then
-  ok "installing Kali ${NEW_VER}"
+  ok "installing Basilisk ${NEW_VER}"
 fi
 
 for f in "${REQUIRED_FILES[@]}"; do
@@ -656,7 +656,7 @@ done
 ok "code installed at ${INSTALL_DIR}"
 
 # ── 7a2. Install the optional kali_ext sidecar (memory/skills/foresight) ──
-# Additive: if absent, Kali simply runs without the extensions (every hook
+# Additive: if absent, Basilisk simply runs without the extensions (every hook
 # is guarded). If present, parse-check every module before copying so a
 # broken sidecar can never overwrite a working one.
 if [ -d "${SRC_DIR}/kali_ext" ]; then
@@ -678,7 +678,7 @@ PYEOF
     rm -rf "${INSTALL_DIR}/kali_ext/__pycache__"
     ok "kali_ext sidecar installed (extensions are off until enabled in settings)"
   else
-    warn "kali_ext has a syntax error — skipping it; Kali will run without extensions"
+    warn "kali_ext has a syntax error — skipping it; Basilisk will run without extensions"
   fi
 fi
 
@@ -705,7 +705,7 @@ done
 write_dragon_svg() {
   local target="$1"
   mkdir -p "$(dirname "${target}")"
-  cat > "${target}" <<'KALI_DRAGON_SVG_EOF'
+  cat > "${target}" <<'BASILISK_DRAGON_SVG_EOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
   <rect x="8" y="8" width="240" height="240" rx="52" ry="52" fill="#1e1e2e"/>
@@ -753,10 +753,10 @@ write_dragon_svg() {
     <polygon points="124,194 128,224 132,194"/>
   </g>
 </svg>
-KALI_DRAGON_SVG_EOF
+BASILISK_DRAGON_SVG_EOF
 }
 
-# Icon: prefer the real Kali logo if it shipped with this install (it's in
+# Icon: prefer the real Basilisk logo if it shipped with this install (it's in
 # SRC_DIR for a local checkout, or was fetched into TMP for a curl|bash
 # install — both land in SRC_DIR).  Fall back to the embedded placeholder
 # only if the logo isn't there, so the app always has *an* icon.
@@ -802,7 +802,7 @@ rm -f "${DESKTOP_DIR}/kali.desktop"   # remove legacy entry to avoid a dupe
 cat > "${DESKTOP_DIR}/${APP_ID}.desktop" <<EOF
 [Desktop Entry]
 Type=Application
-Name=Kali
+Name=Basilisk
 GenericName=AI Assistant
 Comment=Personal, loyal AI assistant with full OS access
 Exec=${BIN_DIR}/kali
@@ -948,7 +948,7 @@ PYEOF
 ok "settings written"
 
 # ── 10b. Optional MCP setup (opt-in via WITH_MCP=1) ───────────────
-# MCP lets Kali drive external tool servers, but it launches them as
+# MCP lets Basilisk drive external tool servers, but it launches them as
 # subprocesses — a real RCE surface (NSA 2026 guidance; CVE-2025-49596).
 # So it stays OFF unless you explicitly ask for it, and even then we only
 # wire a SAFE read-only default server (web fetch) when a runtime to launch
@@ -989,7 +989,7 @@ fi
 
 step "done in $(elapsed)s"
 echo
-echo "  Open your app grid → click ${G}Kali${X}"
+echo "  Open your app grid → click ${G}Basilisk${X}"
 echo "  Or from terminal:  ${G}kali${X}"
 echo
 echo "  ${Y}If the icon looks wrong (old/missing/generic):${X}"

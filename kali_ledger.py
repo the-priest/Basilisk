@@ -1,6 +1,6 @@
 """
 kali_ledger.py — an append-only, integrity-checkable evidence ledger for every
-command Kali runs.
+command Basilisk runs.
 
 The difference between a chat transcript and a defensible pentest deliverable is
 *evidence*: a tamper-evident record of exactly what ran, when, with what result,

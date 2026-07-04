@@ -1,5 +1,5 @@
 """
-kali_ext — a sidecar for Kali (oracle5).
+kali_ext — a sidecar for Basilisk (oracle5).
 
 Design contract (read this before wiring):
 
@@ -9,7 +9,7 @@ Design contract (read this before wiring):
     thing be deleted with zero residue.
 
   * Everything is OFF until enabled in settings.  Absent package or absent
-    keys => every hook is a no-op and Kali behaves exactly as it does today.
+    keys => every hook is a no-op and Basilisk behaves exactly as it does today.
 
   * Nothing here writes outside ~/.local/share/kali/ext/.  No system files,
     no NetHunter units, no root.  The optional daemon is `systemd --user`.

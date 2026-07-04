@@ -1,31 +1,31 @@
 <!--
-title: Kali — the AI security operator that runs on your own machine (Oracle5)
-description: Kali is an open-source AI security operator that runs as a native GTK4 desktop app on your own Linux box. You bring a large language model (SiliconFlow, Groq); Kali gives it hands — a full offensive-security toolchain, code & dependency auditing, a tamper-evident evidence ledger, real web browsing through Brave, external tools over MCP, a memory, and a voice — all behind a hard structural safety floor and under your control. A private, security-native, self-hosted alternative to cloud AI assistants.
+title: Basilisk — the AI security operator that runs on your own machine (Oracle5)
+description: Basilisk is an open-source AI security operator that runs as a native GTK4 desktop app on your own Linux box. You bring a large language model (SiliconFlow, Groq); Basilisk gives it hands — a full offensive-security toolchain, code & dependency auditing, a tamper-evident evidence ledger, real web browsing through Brave, external tools over MCP, a memory, and a voice — all behind a hard structural safety floor and under your control. A private, security-native, self-hosted alternative to cloud AI assistants.
 keywords: ai security operator, kali linux ai, ai pentest tool, offensive security ai, llm security agent, self-hosted ai, local ai agent, evidence ledger, sast sca ai, cve enrichment, kev epss, model context protocol, mcp client, nethunter ai, gtk4 app, deepseek, siliconflow, brave automation, red team assistant
 -->
 
 <div align="center">
 
 ```
-        ⟁   ⟁   ⟁
-     ██╗  ██╗ █████╗ ██╗     ██╗
-     ██║ ██╔╝██╔══██╗██║     ██║
-     █████╔╝ ███████║██║     ██║
-     ██╔═██╗ ██╔══██║██║     ██║
-     ██║  ██╗██║  ██║███████╗██║
-     ╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚═╝
-    t h e   d r a g o n   o n   y o u r   m a c h i n e
+              ⟁      ⟁      ⟁
+██████╗  █████╗ ███████╗██╗██╗     ██╗███████╗██╗  ██╗
+██╔══██╗██╔══██╗██╔════╝██║██║     ██║██╔════╝██║ ██╔╝
+██████╔╝███████║███████╗██║██║     ██║███████╗█████╔╝ 
+██╔══██╗██╔══██║╚════██║██║██║     ██║╚════██║██╔═██╗ 
+██████╔╝██║  ██║███████║██║███████╗██║███████║██║  ██╗
+╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝╚══════╝╚═╝╚══════╝╚═╝  ╚═╝
+     t h e   s e r p e n t   o n   y o u r   m a c h i n e
 ```
 
-# ⟁ KALI
+# ⟁ BASILISK
 
 ### An AI security operator that lives on **your** machine — not someone else's cloud.
 
-*You bring the model. Kali brings the hands, the toolchain, the discipline, and the paper trail.*
+*You bring the model. Basilisk brings the hands, the toolchain, the discipline, and the paper trail.*
 
 <br>
 
-![version](https://img.shields.io/badge/version-4.4.2-c4cad4?style=for-the-badge&labelColor=0d0f12)
+![version](https://img.shields.io/badge/version-4.5.0-c4cad4?style=for-the-badge&labelColor=0d0f12)
 ![license](https://img.shields.io/badge/license-MIT-2ee65f?style=for-the-badge&labelColor=0d0f12)
 ![platform](https://img.shields.io/badge/Linux-X11%20%7C%20Wayland-9aa4b2?style=for-the-badge&logo=linux&logoColor=white&labelColor=0d0f12)
 ![python](https://img.shields.io/badge/python-3.10+-3776ab?style=for-the-badge&logo=python&logoColor=white&labelColor=0d0f12)
@@ -57,11 +57,11 @@ No Docker. No daemon. No account. No cloud. Paste it once to install; paste the 
 
 ---
 
-## What Kali is
+## What Basilisk is
 
-Kali is a **native Linux desktop application** that turns a large language model into a working **security operator** — one that runs entirely on your own hardware and answers only to you.
+Basilisk is a **native Linux desktop application** that turns a large language model into a working **security operator** — one that runs entirely on your own hardware and answers only to you.
 
-A language model on its own is just a brain in a jar. It can *talk* about a port scan, but it can't run one. It can't see your desktop, touch your files, remember yesterday's engagement, or prove what it did. **Kali is the body around that brain.** You supply the model through an API key you own; Kali supplies everything that turns "a clever chatbot" into "an operator who can actually do the work — and hand you a receipt for every move."
+A language model on its own is just a brain in a jar. It can *talk* about a port scan, but it can't run one. It can't see your desktop, touch your files, remember yesterday's engagement, or prove what it did. **Basilisk is the body around that brain.** You supply the model through an API key you own; Basilisk supplies everything that turns "a clever chatbot" into "an operator who can actually do the work — and hand you a receipt for every move."
 
 That distinction is the whole point:
 
@@ -69,9 +69,9 @@ That distinction is the whole point:
 - **It is not a jailbroken chatbot.** It doesn't beg a hosted model to ignore its rules. It's a purpose-built operator's tool with real engineering around it — a structural safety floor, a cryptographic evidence trail, a full toolchain.
 - **It is yours.** Open source, MIT-licensed. Your data, your keys, your machine, your rules. Choose the model. Fork the code. Own the whole thing.
 
-Where a hosted assistant refuses half of real security work and ships every prompt to a datacenter you don't control, Kali keeps your work local, doesn't moralize over a scan you're authorized to run, and leaves a tamper-evident record you can put in front of a client.
+Where a hosted assistant refuses half of real security work and ships every prompt to a datacenter you don't control, Basilisk keeps your work local, doesn't moralize over a scan you're authorized to run, and leaves a tamper-evident record you can put in front of a client.
 
-> **In one sentence:** every "AI hacking tool" is a chatbot behind a prompt. Kali is the opposite — a disciplined, auditable operator's tool that runs on your hardware, draws a hard line at the one mistake you can't undo, and never forgets what it touched.
+> **In one sentence:** every "AI hacking tool" is a chatbot behind a prompt. Basilisk is the opposite — a disciplined, auditable operator's tool that runs on your hardware, draws a hard line at the one mistake you can't undo, and never forgets what it touched.
 
 <br>
 
@@ -79,10 +79,10 @@ Where a hosted assistant refuses half of real security work and ships every prom
 
 ## What you can use it for
 
-Kali isn't a single-trick tool. It's one app that covers a security operator's whole day. Here's what that looks like in practice.
+Basilisk isn't a single-trick tool. It's one app that covers a security operator's whole day. Here's what that looks like in practice.
 
 ### 🎯 Run a penetration test, end to end
-Point Kali at an authorized target and walk the full engagement without leaving the window. It inventories your installed tooling, builds an **ordered recon plan** (passive first, then active), proposes each command for you to approve, parses the raw output into clean findings, and **auto-ranks the CVEs by what's actually being exploited in the wild** (NVD + CISA KEV + EPSS). When you get in, it writes the **reproducible "how we got in" report section straight from the evidence ledger** — backed by the real hashed commands that ran, not a freeform retelling. It can **benchmark itself** against known-vulnerable practice targets (Juice Shop, DVWA, WebGoat) and score the run — precision, recall, coverage — so its performance is a reproducible number you can put next to any other tool's. It maintains a live **engagement graph** (hosts, services, footholds) that populates itself from the scans it runs, enforces your authorised **scope** before touching a target, and records everything to a tamper-evident trail you can hand to the client as proof of work.
+Point Basilisk at an authorized target and walk the full engagement without leaving the window. It inventories your installed tooling, builds an **ordered recon plan** (passive first, then active), proposes each command for you to approve, parses the raw output into clean findings, and **auto-ranks the CVEs by what's actually being exploited in the wild** (NVD + CISA KEV + EPSS). When you get in, it writes the **reproducible "how we got in" report section straight from the evidence ledger** — backed by the real hashed commands that ran, not a freeform retelling. It can **benchmark itself** against known-vulnerable practice targets (Juice Shop, DVWA, WebGoat) and score the run — precision, recall, coverage — so its performance is a reproducible number you can put next to any other tool's. It maintains a live **engagement graph** (hosts, services, footholds) that populates itself from the scans it runs, enforces your authorised **scope** before touching a target, and records everything to a tamper-evident trail you can hand to the client as proof of work.
 
 ### 🔍 Audit your own code and dependencies
 Give it a repo. It detects the languages, lockfiles and IaC, then drives the industry-standard scanners — **Semgrep, Bandit, gitleaks, OSV-Scanner, Trivy, pip-audit, `npm audit`** — and does the part those tools *don't*: it **normalizes ten scanners into one finding list and triages across them**, so two tools flagging the same issue collapse into one *corroborated* finding, the weak ones get flagged for review, and you get a clean, prioritized list with concrete fixes instead of ten different JSON dumps.
@@ -108,11 +108,11 @@ It **writes and sandbox-tests its own Python tools** when you need a capability 
 
 ## How it works
 
-Three pieces, and understanding them is understanding Kali.
+Three pieces, and understanding them is understanding Basilisk.
 
-**1 — You bring the brain.** Kali is model-agnostic. You point it at a large open model through a provider you choose (SiliconFlow with DeepSeek by default, Groq as a fast fallback) using your own API key. The intelligence is rented by the call, for pennies; nothing is baked in or locked down.
+**1 — You bring the brain.** Basilisk is model-agnostic. You point it at a large open model through a provider you choose (SiliconFlow with DeepSeek by default, Groq as a fast fallback) using your own API key. The intelligence is rented by the call, for pennies; nothing is baked in or locked down.
 
-**2 — Kali is the body.** Around that model sits the part that actually matters and that a hosted chatbot can never give you: a full offensive-security toolchain, code and dependency auditing, real web browsing, desktop and shell control, a local memory, a voice, and external-tool integration. This is where the value lives.
+**2 — Basilisk is the body.** Around that model sits the part that actually matters and that a hosted chatbot can never give you: a full offensive-security toolchain, code and dependency auditing, real web browsing, desktop and shell control, a local memory, a voice, and external-tool integration. This is where the value lives.
 
 **3 — Two things keep it honest.** A **structural safety floor** guarantees the one irreversible class of mistake always stops for a human, no matter how the model was steered. A **tamper-evident evidence ledger** records every command and hashes its output, so you can prove exactly what happened. Decisive on routine work, un-catastrophic by construction, auditable end to end.
 
@@ -120,7 +120,7 @@ Three pieces, and understanding them is understanding Kali.
 
 ---
 
-## Everything Kali can do
+## Everything Basilisk can do
 
 Read-only **sensing** runs freely. Anything that changes your system either runs directly (default) or becomes an approve-first card (*Confirm every command* mode) — and the irreversible class always stops for a card regardless. The lists below are grouped by what you'd actually reach for.
 
@@ -140,7 +140,7 @@ Read-only **sensing** runs freely. Anything that changes your system either runs
 - **`attack_writeup`** — the **exploitation narrative**: a reproducible account of how access was obtained, pulled straight from the evidence ledger so the steps are backed by real hashed commands; secrets auto-redacted. Documents an authorized, already-executed path — it writes no exploit code.
 - **`methodology` · `wordlist_find` · `cheatsheet` · `report_findings`** — PTES / OWASP / AD-killchain checklists, installed-wordlist finder, correct tool syntax, and clean markdown engagement reports.
 
-*All offensive tooling is propose-only / read-only. Kali plans, inventories, parses, enriches, and documents — it writes no exploit code and attacks nothing on its own.*
+*All offensive tooling is propose-only / read-only. Basilisk plans, inventories, parses, enriches, and documents — it writes no exploit code and attacks nothing on its own.*
 
 </details>
 
@@ -164,7 +164,7 @@ The static half of the job — finding vulnerabilities in source, dependencies, 
 
 <br>
 
-Every command Kali runs is recorded automatically to an append-only JSONL ledger — timestamp, command, exit code, duration, and the **SHA-256** of its output, with full output saved as a hashed artifact.
+Every command Basilisk runs is recorded automatically to an append-only JSONL ledger — timestamp, command, exit code, duration, and the **SHA-256** of its output, with full output saved as a hashed artifact.
 
 - **`evidence_engagement`** — name/switch the case you're working; commands file under it.
 - **`evidence_report`** — summary, integrity check, and a readable markdown ledger of everything run.
@@ -207,8 +207,8 @@ Every command Kali runs is recorded automatically to an append-only JSONL ledger
 <br>
 
 - **Memory (optional, local):** `memory_remember` · `memory_recall` · `memory_forget` — relevance-scoped recall that connects security paraphrases ("SQL injection" finds "SQLi") and injects only the top-k per turn. Nothing leaves the box.
-- **Self-written tools (optional, sandboxed):** `skill_write` → Kali drafts a Python tool, it's `ast`-parsed and statically screened, run in a **bubblewrap** jail, and must pass its **own test** before you Apply it. Then it's callable as `skill_run`.
-- **Self-modification:** Kali can rewrite its own source and persona — proposed as a diff you Apply. Python is parse-checked, the original is backed up, writes are atomic, and the **guardrail block is immutable by design**.
+- **Self-written tools (optional, sandboxed):** `skill_write` → Basilisk drafts a Python tool, it's `ast`-parsed and statically screened, run in a **bubblewrap** jail, and must pass its **own test** before you Apply it. Then it's callable as `skill_run`.
+- **Self-modification:** Basilisk can rewrite its own source and persona — proposed as a diff you Apply. Python is parse-checked, the original is backed up, writes are atomic, and the **guardrail block is immutable by design**.
 
 </details>
 
@@ -219,7 +219,7 @@ Every command Kali runs is recorded automatically to an append-only JSONL ledger
 
 - **Voice:** STT via SiliconFlow SenseVoice or Groq Whisper (auto-picked), with a *Test microphone* button. TTS via Piper (neural) or espeak-ng, tuned for natural pacing with no dead air, and per-message play/pause.
 - **Working smart:** batched parallel tool calls · trimmed history · context compression that always preserves findings while cutting token cost · a collapsed **💭 Thoughts** reasoning panel · live status banner · `/panic` health sweep · degraded-output failover to your next provider.
-- **Background worker (optional):** a `systemd --user` service for genuinely-headless jobs (periodic checks, memory consolidation). Fully optional — Kali works identically without it.
+- **Background worker (optional):** a `systemd --user` service for genuinely-headless jobs (periodic checks, memory consolidation). Fully optional — Basilisk works identically without it.
 
 </details>
 
@@ -229,11 +229,11 @@ Every command Kali runs is recorded automatically to an append-only JSONL ledger
 
 ## The safety model — why you can hand it root
 
-Kali is **decisive by default and un-catastrophic by construction.**
+Basilisk is **decisive by default and un-catastrophic by construction.**
 
-- **Two speeds, you pick.** *Default:* read-only sensing runs free, and when you ask for something Kali does it, reads the result, and continues — no clicking through routine work. *Confirm every command (one toggle):* every side-effecting action becomes a card you approve one at a time.
+- **Two speeds, you pick.** *Default:* read-only sensing runs free, and when you ask for something Basilisk does it, reads the result, and continues — no clicking through routine work. *Confirm every command (one toggle):* every side-effecting action becomes a card you approve one at a time.
 - **The irreversible class always stops for a confirm** — even in auto-run, even if the model was steered by something it read on a webpage. A **structural** detector (shlex-tokenized, `$IFS`/quote-normalized, recursing into `sh -c` / `eval`) force-confirms disk/filesystem wipes, recursive root/`$HOME` deletes, fork bombs, and raw block-device writes. It sees through tricks a regex misses — `rm '-rf' /`, `rm${IFS}-rf${IFS}/`, `cd / && rm -rf *`, `find / -delete`, `echo … | base64 -d | sh` — while staying narrow enough that `nmap`, `nuclei`, `sqlmap` and `rm -rf ~/loot` never trip it. The full catch/ignore contract is **pinned in the test suite.**
-- **Kali's own safety code can't be shell-stripped**, your **sudo password is never stored or shown to the model**, and self-written code runs only in a **bubblewrap jail** after passing its own test.
+- **Basilisk's own safety code can't be shell-stripped**, your **sudo password is never stored or shown to the model**, and self-written code runs only in a **bubblewrap jail** after passing its own test.
 - **It can't lie about your machine.** Hardware and system facts are read live with a tool, never guessed.
 - **No exploit generation, ever.** Security tooling is propose-only / read-only; you drive the trigger, against scope you set.
 
@@ -270,7 +270,7 @@ Run it once to install; run the **exact same line** any time to update. The inst
 | flag | what it does |
 | --- | --- |
 | `--update` | explicit update (same as the default path) |
-| `--uninstall` | remove Kali (chat history kept) |
+| `--uninstall` | remove Basilisk (chat history kept) |
 | `--no-systemd` | skip the background-worker systemd unit |
 | `--no-helpers` | skip optional desktop-control helpers |
 | `--no-browser` | skip Playwright + Chromium |
@@ -281,7 +281,7 @@ Run it once to install; run the **exact same line** any time to update. The inst
 GROQ_API_KEY=gsk_...  ./install.sh      # preset a key, no prompt
 WITH_BRAVE=1          ./install.sh      # also install Brave
 WITH_MCP=1            ./install.sh      # configure a safe starter MCP server
-KALI_REPO=user/fork  KALI_BRANCH=dev  ./install.sh
+BASILISK_REPO=user/fork  BASILISK_BRANCH=dev  ./install.sh
 ```
 
 </details>
@@ -292,14 +292,14 @@ KALI_REPO=user/fork  KALI_BRANCH=dev  ./install.sh
 
 ## Benchmark
 
-Kali can score itself. Point it at a known-vulnerable practice target, and it
+Basilisk can score itself. Point it at a known-vulnerable practice target, and it
 scores what it found against that target's *known* vulnerability set —
 precision, recall, coverage — so its performance is a number you can reproduce,
 not a claim.
 
 **OWASP Juice Shop — 14/14 vuln classes, 100% coverage, F1 0.95** *(2026-07-03)*
 
-Running the built-in web workflow against a local Juice Shop instance, Kali
+Running the built-in web workflow against a local Juice Shop instance, Basilisk
 identified and confirmed all 14 OWASP-class vulnerabilities in the target's
 ground-truth set — SQL injection (UNION extraction + auth bypass), DOM /
 stored / reflected XSS, broken access control (IDOR + exposed admin config),
@@ -315,12 +315,12 @@ Reproduce it yourself:
 docker run -d -p 3000:3000 --name juiceshop bkimminich/juice-shop
 ```
 
-Then ask Kali to benchmark against Juice Shop end to end (it drives Docker,
+Then ask Basilisk to benchmark against Juice Shop end to end (it drives Docker,
 scans, and scores via `benchmark_score`). The scorecard is generated by the
 `bench` module and is fully reproducible.
 
 **On comparisons:** this is one score on one deliberately-vulnerable target with
-a documented answer key — it demonstrates that Kali's methodology and
+a documented answer key — it demonstrates that Basilisk's methodology and
 orchestration are sound, not that it beats any specific tool. There are no
 competitor numbers here because publishing benchmark figures we didn't measure
 would be dishonest. Instead: the harness is open, the target is standard, and
@@ -330,7 +330,7 @@ honest, reproducible number beats a marketing table.
 
 ## Get an API key
 
-Kali is multi-provider — you only need a key for the one(s) you want. Set the active provider and key in **Settings → Backends**.
+Basilisk is multi-provider — you only need a key for the one(s) you want. Set the active provider and key in **Settings → Backends**.
 
 | Provider | Get a key | Notes |
 | --- | --- | --- |
@@ -399,10 +399,10 @@ For per-machine persona tweaks that survive upgrades, use **Settings → Persona
 
 ---
 
-## What Kali will *not* do
+## What Basilisk will *not* do
 
 - **Destroy your system or its storage on its own.** Disk/FS wipes, recursive root/`$HOME` deletes, fork bombs and raw block-device writes are *always* force-confirmed — even in decisive auto-run, even via quoting / `$IFS` / `bash -c` tricks.
-- **Be an always-on autonomous fleet agent.** A deliberate non-goal — Kali keeps you in the loop for the irreversible.
+- **Be an always-on autonomous fleet agent.** A deliberate non-goal — Basilisk keeps you in the loop for the irreversible.
 - **See your sudo password**, or reach private content it hasn't been given a token for.
 - **Invent facts about your machine.** Hardware and system state are read with a tool, not guessed.
 - **Write exploit code or attack a target on its own.** Security tooling is propose-only / read-only; you drive the trigger, against scope you set.

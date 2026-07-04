@@ -1,10 +1,10 @@
 """
-codescan — code & dependency vulnerability assessment for Kali.
+codescan — code & dependency vulnerability assessment for Basilisk.
 
 The companion to pentest.py, aimed at the *other half* of the job: finding
 vulnerabilities in source, dependencies, secrets and IaC rather than in a live
 network target.  Same design contract as the rest of kali_ext — it imports
-NOTHING from the Kali core, is pure stdlib, runs nothing itself, and writes no
+NOTHING from the Basilisk core, is pure stdlib, runs nothing itself, and writes no
 exploit code.  It orchestrates standard, installed, battle-tested scanners
 (the same engines the expensive commercial suites are built around), turns
 their noisy output into one clean finding schema, and triages across them so
@@ -404,7 +404,7 @@ def scan_plan(path: str = ".", kind: str = "auto",
         "steps": steps,
         "runnable_now": len(installed),
         "missing_tools": gaps,
-        "note": "Each step is PROPOSED — Kali runs none of them; they go through the "
+        "note": "Each step is PROPOSED — Basilisk runs none of them; they go through the "
                 "approve-before-run gate one at a time. SAST/SCA/secrets steps are safe on "
                 "your own code. 'active' steps touch a running target and are "
                 "authorised-targets-only. Feed each tool's JSON to parse_scan, then triage.",

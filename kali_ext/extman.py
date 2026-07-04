@@ -1,12 +1,12 @@
 """
-extman — the one seam between Kali and the sidecar.
+extman — the one seam between Basilisk and the sidecar.
 
 Holds the injected primitives (settings, model-completion callable, optional
 embedder), owns the long-lived stores (memory, skills), and exposes the four
 hook functions the host calls.  Every public function is null-safe: if the
 sidecar was never init()'d, or the relevant setting is off, it returns the
 input unchanged / an empty result, so a broken or absent sidecar can never
-take Kali down.
+take Basilisk down.
 """
 
 from __future__ import annotations
@@ -186,7 +186,7 @@ def system_prompt_block() -> str:
     """Static text to append to the system prompt when the sidecar is live.
 
     Documents the new tools so the model knows they exist.  Empty if the
-    sidecar is off — so a stock Kali prompt is unchanged.  Host appends this
+    sidecar is off — so a stock Basilisk prompt is unchanged.  Host appends this
     via the persona custom-addendum seam (no edit to kali_persona.py needed).
     """
     if not S.ready:
@@ -287,7 +287,7 @@ def extra_tools(host: Any) -> Dict[str, Callable[[Dict[str, Any]], str]]:
 
     if S.on("skills_enabled") and S.skl:
         # skill_write is registered by the HOST (kali.py), not here, so its
-        # save can go through Kali's own confirm dialog before the sidecar
+        # save can go through Basilisk's own confirm dialog before the sidecar
         # validates + sandbox-tests + persists via commit_skill().
         out["skill_list"] = lambda a: S.skl.tool_list()
         out["skill_run"] = lambda a: S.skl.tool_run(

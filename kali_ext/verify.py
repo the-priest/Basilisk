@@ -1,5 +1,5 @@
 """
-verify — multi-source verification for Kali.
+verify — multi-source verification for Basilisk.
 
 The job: when the operator asks for a fact about the current world — or
 anything where being wrong matters — don't answer from one page and don't
@@ -24,8 +24,8 @@ a single search can't:
      (numbers, dates, named entities) overlap (they agree) or diverge
      (treat with suspicion).
 
-Design contract (kali_ext/__init__.py): imports nothing from the Kali core.
-The web fetchers are injected — it reuses Kali's own robust search/read
+Design contract (kali_ext/__init__.py): imports nothing from the Basilisk core.
+The web fetchers are injected — it reuses Basilisk's own robust search/read
 stack (DDG+Mojeek+Wayback+reader-proxy) rather than re-implementing HTTP.
 """
 
@@ -319,7 +319,7 @@ def verify(
         except Exception:
             pass
 
-    # 1 — search (Kali's stack already tries DDG html/lite + Mojeek).
+    # 1 — search (Basilisk's stack already tries DDG html/lite + Mojeek).
     try:
         sr = search_fn(query, max_results=max(max_sources * 3, 10))
     except Exception as e:

@@ -1,4 +1,4 @@
-# Wiring kali_ext into Kali
+# Wiring kali_ext into Basilisk
 
 Two ways. Pick one. Read both first.
 
@@ -18,7 +18,7 @@ into the UI.)
 ## Option A — minimal hooks (recommended)
 
 Six additive lines across `kali.py`, each guarded so deleting the `kali_ext/`
-folder reverts Kali to exactly today's behaviour. This is the maintainable
+folder reverts Basilisk to exactly today's behaviour. This is the maintainable
 choice: explicit seams beat monkeypatch magic.
 
 ### 1. Boot — once, at the end of `MainWindow.__init__`
@@ -139,7 +139,7 @@ those onto the card so the Apply handler has them.
 ## Option B — zero core edits (monkeypatch launcher)
 
 If you want `kali.py` literally untouched, launch through a shim that imports
-Kali, wraps the same methods at runtime, then runs. Trade-off: it binds to
+Basilisk, wraps the same methods at runtime, then runs. Trade-off: it binds to
 private method names, so it can break on a refactor. Option A won't.
 
 Create `kali_boot.py` next to `kali.py`:
@@ -191,7 +191,7 @@ Drop the folder next to your other files:
 cp -r kali_ext ~/.local/share/kali/kali_ext
 ```
 
-Add the install dir to the path Kali runs under (your launcher already runs
+Add the install dir to the path Basilisk runs under (your launcher already runs
 from `~/.local/share/kali`, so `from kali_ext import extman` resolves).
 
 Sandbox: install bubblewrap for real skill isolation.
@@ -212,4 +212,4 @@ rm -rf ~/.local/share/kali/kali_ext
 
 Delete the six hook lines (or just stop importing — they're all guarded by
 `getattr(self, "_ext", None)`, so a missing package no-ops every one). Disable
-the user service if you enabled it. Kali is back to today's build.
+the user service if you enabled it. Basilisk is back to today's build.

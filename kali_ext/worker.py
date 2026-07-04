@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-worker — Kali's headless background companion.
+worker — Basilisk's headless background companion.
 
-Why a separate process and not "daemonize the GUI": Kali is a GTK app; you
+Why a separate process and not "daemonize the GUI": Basilisk is a GTK app; you
 don't systemd a window.  The reliability the Hermes video is selling comes
 from the BACKGROUND responsibilities — periodic system checks, memory
 consolidation, skill curation — which have no UI and genuinely want to run
@@ -10,7 +10,7 @@ as a supervised service.  So we split those out here.  The GUI stays a GUI;
 this worker runs under `systemd --user` with auto-restart and writes events
 to a spool file the GUI tails.
 
-It is fully optional.  If it never runs, Kali works exactly as today (the
+It is fully optional.  If it never runs, Basilisk works exactly as today (the
 in-app watcher thread still exists).  If it does run, disable the in-app
 watcher to avoid double-checking.
 

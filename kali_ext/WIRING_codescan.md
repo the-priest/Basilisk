@@ -1,4 +1,4 @@
-# Wiring `codescan` into Kali
+# Wiring `codescan` into Basilisk
 
 `kali_ext/codescan.py` is self-contained (imports nothing from core, stdlib
 only, 35/35 offline tests pass). To expose its five capabilities as
@@ -206,7 +206,7 @@ PENTEST SUPPORT section (~line 383):
 python3 -c "from kali_ext import codescan as c; print(c.code_tooling_check()['summary'])"
 ```
 
-Then in-app: ask Kali to `code_scan_plan` on a repo path, approve the
+Then in-app: ask Basilisk to `code_scan_plan` on a repo path, approve the
 `semgrep`/`osv-scanner` steps it proposes, paste their JSON back for
 `parse_scan`, and `triage_findings` to merge. Every scan still runs through the
 approve gate and lands in the evidence ledger like any other command.

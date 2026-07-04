@@ -1,5 +1,5 @@
 """
-headroom — context compression for Kali.
+headroom — context compression for Basilisk.
 
 What this does, in one line: before a turn's messages go to the model, the
 big `<tool_result>` dumps (nmap, recon, journal tails, web reads, JSON
@@ -22,7 +22,7 @@ Two engines, picked automatically:
 Design contract (see kali_ext/__init__.py): this module imports NOTHING
 from kali.py / kali_core.py / kali_persona.py.  It takes the message list
 and the settings dict and hands back a compressed message list.  Delete the
-package and Kali behaves exactly as before.
+package and Basilisk behaves exactly as before.
 
 Protocol safety — this is load-bearing:
   * The system prompt (role="system") is NEVER touched.  It carries the

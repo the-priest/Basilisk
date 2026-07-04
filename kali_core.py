@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-kali_core — non-UI logic for Kali.
+kali_core — non-UI logic for Basilisk.
 
   · Backend abstraction (multiple cloud providers, OpenAI-compatible)
   · Streaming chat
@@ -58,7 +58,7 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
 # ── Evidence ledger ──
-# Every command Kali runs is recorded to a tamper-evident JSONL ledger so an
+# Every command Basilisk runs is recorded to a tamper-evident JSONL ledger so an
 # engagement produces real evidence, not just a chat transcript.  Lazily
 # created so importing kali_core stays cheap and a ledger failure can never
 # block startup (kali_ledger itself is fail-safe on every call).
@@ -211,8 +211,8 @@ DEFAULT_SETTINGS = {
 
     # Behaviour
     "system_prompt": "",
-    "agent_mode_default": True,        # Kali defaults to agent on
-    # Off by default: a command Kali decides to run executes without a card
+    "agent_mode_default": True,        # Basilisk defaults to agent on
+    # Off by default: a command Basilisk decides to run executes without a card
     # click.  The hard catastrophic-command backstop (is_catastrophic_command)
     # still forces an explicit confirm for system-destroying commands even
     # when this is off, so "no friction" never means "no floor".
@@ -233,7 +233,7 @@ DEFAULT_SETTINGS = {
 
     # ── kali_ext sidecar (memory / skills / foresight / headless worker) ──
     # Everything here is OFF by default.  With all of these false, the sidecar
-    # injects nothing, spawns no threads, runs no background work, and Kali
+    # injects nothing, spawns no threads, runs no background work, and Basilisk
     # behaves exactly as a stock build.  Flip them on per feature when you
     # want them — nothing here runs in the background unless you enable it.
     "memory_enabled":          True,    # persistent cross-session recall
@@ -251,7 +251,7 @@ DEFAULT_SETTINGS = {
                                         # turn off for OPSEC / no host contact)
     "vision_model":            "Qwen/Qwen2.5-VL-7B-Instruct",  # vision-capable
                                         # model on the active OpenAI-compatible
-                                        # provider (SiliconFlow); lets Kali SEE
+                                        # provider (SiliconFlow); lets Basilisk SEE
                                         # images.  Change to any VL model the
                                         # provider offers.
     "vision_provider":         "siliconflow",  # which provider hosts the VL
@@ -313,12 +313,12 @@ DEFAULT_SETTINGS = {
                                         # for "just talking"; full toolset the
                                         # moment a message hints at an action)
     "grouped_tools":           False,   # EXPERIMENTAL: ship only a lean tool
-                                        # core + a group index; Kali loads a
+                                        # core + a group index; Basilisk loads a
                                         # specialist group on demand with
                                         # load_tools. Off by default — test it
                                         # against your model before relying on it
     "max_tool_steps":          150,     # tool round-trips allowed per turn
-                                        # before Kali finalizes. Resets every
+                                        # before Basilisk finalizes. Resets every
                                         # turn (send another message to continue).
                                         # Raise for very long autonomous runs; a
                                         # cap still guards against a runaway loop
@@ -362,7 +362,7 @@ def load_settings() -> Dict[str, Any]:
 
 
 def _migrate_settings(merged: Dict[str, Any], raw: Dict[str, Any]) -> None:
-    """In-place upgrade of settings loaded from an older Kali/Oracle
+    """In-place upgrade of settings loaded from an older Basilisk/Oracle
     install so adding multi-provider support never silently drops the
     operator's existing Groq config."""
     # Older builds may carry prefer_groq / prefer_cloud / local-model keys;
@@ -1304,7 +1304,7 @@ def tool_write_file(path: str, content: str,
     in order:
       1. If the target is a .py file, parse-check the NEW content with
          ast BEFORE touching disk.  A syntax error means we refuse the
-         write entirely — this is what stops Kali from rewriting its own
+         write entirely — this is what stops Basilisk from rewriting its own
          source into something that won't launch.
       2. Back up the existing file to backups/ with a timestamp so any
          change is one copy away from being undone.
@@ -1332,7 +1332,7 @@ def tool_write_file(path: str, content: str,
         # removes, or alters the text inside it is refused outright,
         # before any backup or write happens.  This is what makes the
         # safety block tamper-proof rather than just visually labelled —
-        # Kali can rewrite anything else in its own source, but it
+        # Basilisk can rewrite anything else in its own source, but it
         # physically cannot edit (or delete) its own guardrails.
         guard = _check_protected_regions(rp, content)
         if guard is not None:
@@ -1684,7 +1684,7 @@ def estimate_runtime(command: str) -> Dict[str, Any]:
 
 
 def _timeout_note(command: str, timeout: int) -> str:
-    """An informative timeout message so Kali knows the command didn't complete
+    """An informative timeout message so Basilisk knows the command didn't complete
     (and, if it's a server, what to do about it) instead of silently waiting."""
     est = estimate_runtime(command)
     note = (f"timed out after {timeout}s (expected ~{est['expected_seconds']}s "
@@ -2191,7 +2191,7 @@ def recent_duplicate(cmd: str, window_s: float = 600) -> bool:
 # ═════════════════════════════════════════════════════════════════════
 # DESKTOP CONTROL — launch apps, list/focus/close windows, type & click
 #
-# These give Kali hands on the running desktop.  They degrade based on
+# These give Basilisk hands on the running desktop.  They degrade based on
 # what's installed: app launching works anywhere with gtk-launch / the
 # binary on PATH; window + input control needs a helper for the active
 # session type.  We detect Wayland vs X11 and pick the right backend:
@@ -2331,7 +2331,7 @@ def tool_list_apps(filter_text: str = "") -> Dict[str, Any]:
 def tool_launch_app(app: str, args: str = "") -> Dict[str, Any]:
     """Launch a desktop application by .desktop id, binary name, or URI.
 
-    Detached from Kali (start_new_session) so closing Kali doesn't kill
+    Detached from Basilisk (start_new_session) so closing Basilisk doesn't kill
     it.  Tries, in order: gtk-launch with a desktop id, the binary on
     PATH, then xdg-open (handles URLs, files, and mime-typed targets).
     """
@@ -2442,7 +2442,7 @@ def tool_close_window(title: str) -> Dict[str, Any]:
             "error": f"no window-control helper for {sess} session"}
 
 
-def tool_notify(message: str, title: str = "Kali") -> Dict[str, Any]:
+def tool_notify(message: str, title: str = "Basilisk") -> Dict[str, Any]:
     """Pop a desktop notification — useful to ping the operator when a
     long task finishes.  Prefers notify-send (works on KDE/GNOME/etc.),
     falls back to kdialog --passivepopup on KDE."""
@@ -2465,7 +2465,7 @@ def tool_notify(message: str, title: str = "Kali") -> Dict[str, Any]:
 def tool_type_text(text: str) -> Dict[str, Any]:
     """Type a string into the focused window as synthetic keystrokes.
 
-    Wayland: wtype (or ydotool).  X11: xdotool.  This is how Kali fills
+    Wayland: wtype (or ydotool).  X11: xdotool.  This is how Basilisk fills
     fields in apps that aren't a browser (the browser has its own tool).
     """
     if not text:
@@ -2626,7 +2626,7 @@ def tool_screenshot(save_path: str = "") -> Dict[str, Any]:
 
 
 def tool_read_screen(region: str = "") -> Dict[str, Any]:
-    """Screenshot the screen and OCR it to text — lets Kali 'read' what's
+    """Screenshot the screen and OCR it to text — lets Basilisk 'read' what's
     on screen.  Needs a screenshot tool + tesseract.  Returns extracted
     text."""
     if not _have("tesseract"):
@@ -3629,7 +3629,7 @@ def tool_web_search(query: str, max_results: int = 6,
 def tool_analyze_image(image_path: str, question: str = "",
                        api_key: str = "", base_url: str = "",
                        model: str = "") -> Dict[str, Any]:
-    """Let Kali actually SEE an image: send it to a vision-capable model and
+    """Let Basilisk actually SEE an image: send it to a vision-capable model and
     return what's in it.  Works on a local file (a screenshot, a captured
     photo, an attachment) or a downloaded image.  This is real visual
     understanding — describing scenes, reading text in the image, identifying
@@ -3696,7 +3696,7 @@ def tool_analyze_image(image_path: str, question: str = "",
 
 def tool_capture_photo(out_path: str = "") -> Dict[str, Any]:
     """Capture a single photo from the device camera and save it to a file, so
-    Kali can then SEE it with analyze_image.  Tries the common Linux/mobile
+    Basilisk can then SEE it with analyze_image.  Tries the common Linux/mobile
     capture tools in turn (libcamera, fswebcam, gstreamer, ffmpeg)."""
     import shutil
     import subprocess
@@ -3854,7 +3854,7 @@ def _img_duckduckgo(q: str, n: int) -> List[Dict[str, Any]]:
 
 
 def tool_image_search(query: str, max_results: int = 4) -> Dict[str, Any]:
-    """Find images on the web and return DIRECT image URLs so Kali can show
+    """Find images on the web and return DIRECT image URLs so Basilisk can show
     pictures inline in chat.  No API key.
 
     It tries three keyless sources in order of reliability and STOPS at the
@@ -4538,7 +4538,7 @@ def tool_benchmark_report(scored: Any) -> Dict[str, Any]:
 
 
 def tool_benchmark_compare(runs: Any) -> Dict[str, Any]:
-    """Put several scored runs side by side (Kali vs another tool, or version N
+    """Put several scored runs side by side (Basilisk vs another tool, or version N
     vs N+1), ranked by F1 — so 'beats the best' is a sortable column, not an
     assertion. `runs` is a list of benchmark_score results."""
     try:
@@ -4614,7 +4614,7 @@ _OSINT_SITES: List[Tuple[str, str, str, str]] = [
 def _extract_og_image(body: str, base_url: str = "") -> str:
     """Pull a profile/preview image URL from a page's social meta tags
     (og:image, twitter:image).  Most profile pages set og:image to the user's
-    avatar, so this gives Kali a picture to show for a found OSINT hit."""
+    avatar, so this gives Basilisk a picture to show for a found OSINT hit."""
     if not body:
         return ""
     for pat in (
@@ -6040,7 +6040,7 @@ def strip_tool_calls(text: str) -> str:
     # model can always invent a tag shape we didn't anticipate.  The execution
     # side can't run a tag it couldn't parse — but the one thing that must
     # NEVER happen is a raw <tool …> tag being shown to the operator as chat
-    # text (the bug that made Kali look like it was "typing" commands instead
+    # text (the bug that made Basilisk look like it was "typing" commands instead
     # of running them).  So whatever shape slipped through, scrub any residual
     # <tool …>…</tool> block and any leftover bare <tool …> opener from the
     # DISPLAY string.  This only affects what's rendered, never what executed.

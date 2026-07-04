@@ -85,13 +85,13 @@ except Exception as _ve:  # noqa
     _VOICE_OK = False
 
 APP_ID  = "org.thepriest.kali"
-APP_NAME = "Kali"
-VERSION = "4.4.2"
+APP_NAME = "Basilisk"
+VERSION = "4.5.0"
 
 # ── Tool-chain efficiency knobs ──
 # How many model round-trips a single user turn may chain through.  With
 # read-only tools now batched (many lookups per round-trip), this budget
-# stretches much further than it looks.  On hitting it Kali doesn't dead-
+# stretches much further than it looks.  On hitting it Basilisk doesn't dead-
 # end — it takes one final, tool-free turn to answer with what it gathered.
 # The y/n confirmation gate and the catastrophic-command hard block still
 # fire independently, so a high budget never means an unsupervised risky run.
@@ -121,10 +121,10 @@ HISTORY_TRIM_HEAD_CHARS = 600
 
 CSS = b"""
 /* =====================================================================
-   KALI THEME - modelled on the official Kali Linux desktop palette:
-   near-black surfaces, the Kali dragon-blue accent (#15a838 / #2ee65f),
+   BASILISK THEME - modelled on the official Kali Linux desktop palette:
+   near-black surfaces, the Basilisk dragon-blue accent (#15a838 / #2ee65f),
    red for danger, monospace for headers and machine output.  Built to
-   read like a first-party Kali tool, not a pastel toy.
+   read like a first-party Basilisk tool, not a pastel toy.
    GTK CSS has no variables across rules, so the palette is inlined.
 
    Palette:
@@ -139,7 +139,7 @@ CSS = b"""
    focus rings, selections, links) pull these named colours.  Without
    overriding them every built-in control renders in GTK's stock blue or
    the user's Plasma accent - which is exactly what made the UI look
-   inconsistent.  Retint them ALL to the Kali palette in one place. */
+   inconsistent.  Retint them ALL to the Basilisk palette in one place. */
 
 @define-color accent_color              #2ee65f;
 @define-color accent_bg_color           #15a838;
@@ -208,7 +208,7 @@ headerbar {
     letter-spacing: 4px;
     text-shadow: 0 0 12px rgba(255, 58, 71, 0.45);
 }
-/* Connectivity dot beside KALI: green online, red offline */
+/* Connectivity dot beside BASILISK: green online, red offline */
 .online-dot {
     font-size: 13px;
     margin-top: 2px;
@@ -330,7 +330,7 @@ headerbar {
     border: 1px solid rgba(46, 230, 95, 0.22);
 }
 
-/* Assistant: left-aligned, translucent SILVER bubble (matches Kali's icon;
+/* Assistant: left-aligned, translucent SILVER bubble (matches Basilisk's icon;
    contrasts the user's green) */
 .msg-assistant {
     background-color: rgba(196, 202, 212, 0.10);
@@ -701,7 +701,7 @@ passwordentry {
 .cmd-copy-btn:hover { background-color: #1f2530; border-color: #15a838; }
 
 /* ===== libadwaita rows / settings / dialogs =====
-   Force the Kali surfaces on the built-in widgets so Settings and
+   Force the Basilisk surfaces on the built-in widgets so Settings and
    dialogs match the rest of the app instead of showing stock Adwaita
    grey. */
 
@@ -839,7 +839,7 @@ button.suggested-action {
 }
 .chat-watermark { background: transparent; }
 
-/* Links (e.g. 'Get an API key') in Kali blue */
+/* Links (e.g. 'Get an API key') in Basilisk blue */
 link, button.link, *:link { color: #2ee65f; }
 
 /* Voice: mic button + active recording state */
@@ -891,6 +891,20 @@ link, button.link, *:link { color: #2ee65f; }
     color: #9aa3ad;
     padding: 7px;
 }
+.notif-badge {
+    background-color: #e5484d;
+    color: #ffffff;
+    font-size: 11px;
+    font-weight: 700;
+    border-radius: 9px;
+    padding: 0px 5px;
+    margin-top: -2px;
+    margin-right: -2px;
+    min-width: 14px;
+}
+.notif-title { font-weight: 700; color: #eef1f5; font-size: 14px; }
+.notif-body { color: #c4cad4; font-size: 13px; }
+.notif-time { color: #6b737d; font-size: 11px; }
 .icon-button:hover {
     background-color: #1b2128;
     color: #2ee65f;
@@ -1142,7 +1156,7 @@ list.boxed-list {
     box-shadow: 0 2px 12px rgba(0,0,0,0.30);
 }
 
-/* ---- Auto-run note: when Kali runs a command without a card ---- */
+/* ---- Auto-run note: when Basilisk runs a command without a card ---- */
 .autorun-note {
     color: #6f7a88;
     font-size: 13px;
@@ -1220,7 +1234,7 @@ def split_message_into_blocks(text: str) -> List[Dict[str, str]]:
 
 
 # Markdown image syntax: ![alt](url) — optionally with a "title" after the URL.
-# This is how the model asks Kali to SHOW a picture inline (a web image-search
+# This is how the model asks Basilisk to SHOW a picture inline (a web image-search
 # result, an OSINT profile photo, a screenshot it just took, …): it simply
 # writes the image in markdown and the renderer turns it into a real picture.
 IMAGE_MD_RE = re.compile(
@@ -1334,7 +1348,7 @@ class ImageWidget(Gtk.Box):
 
     The model shows a picture by emitting markdown — ![alt](url) — and this
     widget turns it into a real image: a web image-search result, an OSINT
-    profile photo, a screenshot Kali just took.  The download and decode happen
+    profile photo, a screenshot Basilisk just took.  The download and decode happen
     OFF the UI thread (chat never blocks), the bytes are size-capped, and the
     picture is scaled down to fit the bubble.  Any failure degrades to a small
     caption with the link, so a dead URL can never break the conversation."""
@@ -1342,7 +1356,7 @@ class ImageWidget(Gtk.Box):
     _MAX_BYTES = 12_000_000          # don't pull more than ~12 MB for one image
     _MAX_W = 480                     # display cap (px) — scaled down, never up
     _MAX_H = 480
-    _UA = "Mozilla/5.0 (X11; Linux x86_64) Kali/3.2 image-fetch"
+    _UA = "Mozilla/5.0 (X11; Linux x86_64) Basilisk/3.2 image-fetch"
 
     def __init__(self, url: str, alt: str = ""):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=3)
@@ -1461,7 +1475,7 @@ class ImageWidget(Gtk.Box):
 
 
 class ProposedCommandWidget(Gtk.Box):
-    """A command Kali wants to run, shown as an advisory card.
+    """A command Basilisk wants to run, shown as an advisory card.
 
     Nothing executes until the operator clicks Run.  on_run is called
     with (command, explanation) when they do.
@@ -1553,7 +1567,7 @@ class ProposedCommandWidget(Gtk.Box):
 
 
 class ProposedEditWidget(Gtk.Box):
-    """A file edit Kali wants to make, shown as an advisory card with a
+    """A file edit Basilisk wants to make, shown as an advisory card with a
     compact diff.  Nothing is written until the operator clicks Apply.
 
     Mirrors ProposedCommandWidget's flow exactly — same one-shot button
@@ -1694,7 +1708,7 @@ _DRAGON_SVG_PATH = _find_dragon_svg()
 
 
 def _find_avatar_png() -> Optional[str]:
-    """Locate the dragon PNG used as Kali's chat avatar (clean, no ring)."""
+    """Locate the dragon PNG used as Basilisk's chat avatar (clean, no ring)."""
     candidates = [
         os.path.expanduser("~/.local/share/kali/kali-avatar.png"),
         os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -1768,7 +1782,7 @@ def _svg_texture(path: str, px: int):
 
 
 def Avatar(kind: str = "user") -> Gtk.Widget:
-    """Square avatar.  Kali shows the dragon emblem; the user shows an
+    """Square avatar.  Basilisk shows the dragon emblem; the user shows an
     initial.  Falls back to a letter if the emblem SVG can't be loaded so
     the UI never breaks on a missing file.  Returns a plain Gtk.Image or
     Gtk.Label (both are valid box children) rather than a custom widget
@@ -1954,7 +1968,7 @@ class MessageWidget(Gtk.Box):
             # button on the right (so each reply can be read, paused, and
             # replayed on its own).
             header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-            label = Gtk.Label(label="KALI", xalign=0.0)
+            label = Gtk.Label(label="BASILISK", xalign=0.0)
             label.add_css_class("role-label")
             label.add_css_class("kali")
             header.append(label)
@@ -2103,7 +2117,7 @@ class MessageWidget(Gtk.Box):
                                or call.args.get("cmd") or "").strip()
                         if not cmd:
                             self._append_card_warn(
-                                "Kali tried to propose a command but the call "
+                                "Basilisk tried to propose a command but the call "
                                 "had no command text — nothing to run.")
                             break
                         try:
@@ -2116,7 +2130,7 @@ class MessageWidget(Gtk.Box):
                         except Exception as e:
                             log(f"command card build failed: {e}")
                             self._append_card_warn(
-                                f"Kali proposed a command but the card failed "
+                                f"Basilisk proposed a command but the card failed "
                                 f"to render ({e}). Nothing was run.")
                             break
                     elif call.name in ("propose_edit", "write_file"):
@@ -2128,7 +2142,7 @@ class MessageWidget(Gtk.Box):
                         econtent = call.args.get("content")
                         # The tag WAS emitted but the args are unusable — say
                         # WHY in the chat instead of silently drawing nothing
-                        # and letting Kali claim a card that isn't there.
+                        # and letting Basilisk claim a card that isn't there.
                         if "_raw" in call.args or not epath or econtent is None:
                             if "_raw" in call.args:
                                 why = ("the file contents couldn't be parsed — "
@@ -2139,7 +2153,7 @@ class MessageWidget(Gtk.Box):
                             else:
                                 why = "no file content was given"
                             self._append_card_warn(
-                                f"⚠ Kali tried to write a file but {why}, so no "
+                                f"⚠ Basilisk tried to write a file but {why}, so no "
                                 f"diff card could be drawn and nothing was "
                                 f"written. Ask it to re-send the change.")
                             break
@@ -2162,7 +2176,7 @@ class MessageWidget(Gtk.Box):
                         except Exception as e:
                             log(f"edit card build failed: {e}")
                             self._append_card_warn(
-                                f"⚠ Kali proposed an edit to {epath} but the "
+                                f"⚠ Basilisk proposed an edit to {epath} but the "
                                 f"diff card failed to render ({e}). Nothing was "
                                 f"written.")
                             break
@@ -2176,7 +2190,7 @@ class MessageWidget(Gtk.Box):
     def _append_card_warn(self, msg: str):
         """Show a visible, in-chat diagnostic when a proposal/edit tag was
         emitted but no card could be drawn.  Without this the failure is
-        silent and Kali looks like it's lying about a card that isn't there."""
+        silent and Basilisk looks like it's lying about a card that isn't there."""
         if self._blocks_container is None:
             return
         try:
@@ -2355,10 +2369,10 @@ def confirm_command_dialog(parent: Gtk.Window, command: str, reason: str,
                     f"{reason}")
     else:
         title = "Run shell command?"
-        subtitle = (f"{reason}\n\nRuns as your user.  Output goes back to Kali."
+        subtitle = (f"{reason}\n\nRuns as your user.  Output goes back to Basilisk."
                     if not needs_sudo else
                     f"{reason}\n\nThis needs root.  Enter your sudo password to "
-                    f"let it through — Kali never stores or sees it.")
+                    f"let it through — Basilisk never stores or sees it.")
     dlg = Adw.AlertDialog.new(title, subtitle)
     body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
     cmd_lbl = Gtk.Label(label=command, xalign=0.0)
@@ -2410,7 +2424,7 @@ def confirm_sensitive_read_dialog(parent: Gtk.Window, path: str,
                                    on_decision: Callable[[bool], None]):
     dlg = Adw.AlertDialog.new(
         "Read sensitive file?",
-        f"Kali wants to read:\n\n{path}\n\nThis path is on the "
+        f"Basilisk wants to read:\n\n{path}\n\nThis path is on the "
         f"sensitive list (keys, secrets, system auth).",
     )
     dlg.add_response("cancel", "Deny")
@@ -2446,7 +2460,7 @@ class SettingsDialog(Adw.PreferencesDialog):
         rg = Adw.PreferencesGroup()
         rg.set_title("Provider routing")
         rg.set_description(
-            "Pick which cloud provider Kali uses.  Set that provider's "
+            "Pick which cloud provider Basilisk uses.  Set that provider's "
             "API key and model in its section below.")
 
         self.active_provider_row = Adw.ComboRow()
@@ -2525,7 +2539,7 @@ class SettingsDialog(Adw.PreferencesDialog):
         self.grouped_tools_row = Adw.SwitchRow()
         self.grouped_tools_row.set_title("Lazy tool groups (experimental)")
         self.grouped_tools_row.set_subtitle(
-            "Ship a lean tool core plus a group index; Kali loads a specialist "
+            "Ship a lean tool core plus a group index; Basilisk loads a specialist "
             "group (offensive, engagement, code…) only when she needs it — "
             "biggest per-request save, at the cost of an occasional load step. "
             "Test it against your model before relying on it.")
@@ -2565,7 +2579,7 @@ class SettingsDialog(Adw.PreferencesDialog):
         ext_g = Adw.PreferencesGroup()
         ext_g.set_title("Extensions")
         ext_g.set_description(
-            "Kali's sidecar capabilities. Memory, skills and foresight are on "
+            "Basilisk's sidecar capabilities. Memory, skills and foresight are on "
             "by default. MCP stays off until you start it here.")
 
         self.memory_row = Adw.SwitchRow()
@@ -2582,7 +2596,7 @@ class SettingsDialog(Adw.PreferencesDialog):
         self.skills_row = Adw.SwitchRow()
         self.skills_row.set_title("Skills")
         self.skills_row.set_subtitle(
-            "Let Kali write and sandbox-test small reusable skills.")
+            "Let Basilisk write and sandbox-test small reusable skills.")
         self.skills_row.set_active(
             bool(parent.settings.get("skills_enabled", True)))
         self.skills_row.connect(
@@ -2670,7 +2684,7 @@ class SettingsDialog(Adw.PreferencesDialog):
         iv_g = Adw.PreferencesGroup()
         iv_g.set_title("Images &amp; vision")
         iv_g.set_description(
-            "Show pictures in chat, and choose the model Kali uses to SEE "
+            "Show pictures in chat, and choose the model Basilisk uses to SEE "
             "images (analyze_image).")
 
         self.render_images_row = Adw.SwitchRow()
@@ -2730,7 +2744,7 @@ class SettingsDialog(Adw.PreferencesDialog):
         self.confirm_all_row = Adw.SwitchRow()
         self.confirm_all_row.set_title("Confirm every command")
         self.confirm_all_row.set_subtitle(
-            "Off (default): Kali runs commands without a click. "
+            "Off (default): Basilisk runs commands without a click. "
             "System-destroying commands always prompt regardless.")
         self.confirm_all_row.set_active(parent.settings["confirm_all_commands"])
         self.confirm_all_row.connect("notify::active", self._on_confirm_all)
@@ -2980,7 +2994,7 @@ class SettingsDialog(Adw.PreferencesDialog):
         sp_g = Adw.PreferencesGroup()
         sp_g.set_title("Custom addendum to system prompt")
         sp_g.set_description(
-            "Appended to Kali's built-in persona.  "
+            "Appended to Basilisk's built-in persona.  "
             "Edit kali_persona.py for deeper changes.")
 
         sp_card = Gtk.Frame()
@@ -3289,7 +3303,7 @@ class SettingsDialog(Adw.PreferencesDialog):
             self.win._show_toast("No voice engine available.")
             return
         tts.stop()
-        tts.speak_all("Voice check. Kali is online and ready.")
+        tts.speak_all("Voice check. Basilisk is online and ready.")
 
     def _on_stt_test(self, _btn):
         stt = getattr(self.win, "stt", None)
@@ -3339,6 +3353,11 @@ class MainWindow(Adw.ApplicationWindow):
         self.set_default_size(w, h)
         self.app = app
         self.settings = load_settings()
+        # In-app notification inbox — things Basilisk flags for the operator.
+        # Persisted so they survive a restart; capped so it can't grow forever.
+        self._notif_path = os.path.expanduser(
+            "~/.local/share/kali/notifications.json")
+        self._notifications = self._load_notifications()
         # Apply the inline-image toggle to the module global the renderer reads.
         global _RENDER_IMAGES
         try:
@@ -3365,7 +3384,7 @@ class MainWindow(Adw.ApplicationWindow):
         # Imports nothing from this app; depends only on stdlib + the two
         # callables handed to init().  If the package is missing or init
         # raises, self._ext stays None and every hook below no-ops, leaving
-        # Kali identical to a stock build.  Nothing here starts a background
+        # Basilisk identical to a stock build.  Nothing here starts a background
         # thread unless the matching setting is on.
         self._ext = None
         try:
@@ -3540,7 +3559,7 @@ class MainWindow(Adw.ApplicationWindow):
         sb_header.set_show_end_title_buttons(False)
         sb_header.set_show_start_title_buttons(False)
 
-        # Header — KALI (with a live online dot) on the left, new-chat on the
+        # Header — BASILISK (with a live online dot) on the left, new-chat on the
         # right.  The dot is green when online, red when offline.
         title_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=7)
         t = Gtk.Label(label=APP_NAME.upper(), xalign=0.0)
@@ -3608,7 +3627,7 @@ class MainWindow(Adw.ApplicationWindow):
 
         # (Provider + online status used to live here as pills; the operator
         # knows their provider, so that's gone — connectivity is now just the
-        # green/red dot next to KALI in the sidebar header.)
+        # green/red dot next to BASILISK in the sidebar header.)
 
         menu_btn = Gtk.MenuButton()
         menu_btn.set_icon_name("open-menu-symbolic")
@@ -3621,6 +3640,54 @@ class MainWindow(Adw.ApplicationWindow):
         menu.append("About", "win.about")
         menu_btn.set_menu_model(menu)
         hb.pack_end(menu_btn)
+
+        # Notification bell — opens the in-app inbox of things Basilisk flagged.
+        # An overlaid badge shows the unread count.
+        self.notif_btn = Gtk.MenuButton()
+        self.notif_btn.set_icon_name("preferences-system-notifications-symbolic")
+        self.notif_btn.add_css_class("icon-button")
+        self.notif_btn.set_tooltip_text("Notifications from Basilisk")
+        notif_pop = Gtk.Popover()
+        notif_pop.set_size_request(340, 420)
+        _pop_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        _pop_box.set_margin_top(8)
+        _pop_box.set_margin_bottom(8)
+        _pop_box.set_margin_start(6)
+        _pop_box.set_margin_end(6)
+        _pop_head = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        _pop_title = Gtk.Label(label="Notifications", xalign=0.0)
+        _pop_title.add_css_class("title-4")
+        _pop_title.set_hexpand(True)
+        _clear_btn = Gtk.Button(label="Clear")
+        _clear_btn.add_css_class("flat")
+        _clear_btn.connect("clicked", self._clear_notifications)
+        _pop_head.append(_pop_title)
+        _pop_head.append(_clear_btn)
+        _pop_box.append(_pop_head)
+        _scroll = Gtk.ScrolledWindow()
+        _scroll.set_vexpand(True)
+        _scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        self.notif_list_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL,
+                                      spacing=2)
+        _scroll.set_child(self.notif_list_box)
+        _pop_box.append(_scroll)
+        notif_pop.set_child(_pop_box)
+        self.notif_btn.set_popover(notif_pop)
+        # opening the inbox marks everything read (clears the badge)
+        notif_pop.connect("show", lambda *_: self._mark_notifications_read())
+
+        # unread badge overlaid on the bell
+        _bell_overlay = Gtk.Overlay()
+        _bell_overlay.set_child(self.notif_btn)
+        self.notif_badge_lbl = Gtk.Label(label="")
+        self.notif_badge_lbl.add_css_class("notif-badge")
+        self.notif_badge_lbl.set_halign(Gtk.Align.END)
+        self.notif_badge_lbl.set_valign(Gtk.Align.START)
+        self.notif_badge_lbl.set_visible(False)
+        _bell_overlay.add_overlay(self.notif_badge_lbl)
+        hb.pack_end(_bell_overlay)
+        # initial paint of badge/list
+        GLib.idle_add(self._refresh_notifications)
 
         main.append(hb)
 
@@ -3923,7 +3990,7 @@ class MainWindow(Adw.ApplicationWindow):
              self._user_action_sysinfo),
             ("mail-attachment-symbolic", "Attach file",
              self._pick_attachment),
-            ("camera-photo-symbolic", "Take a photo (Kali can see it)",
+            ("camera-photo-symbolic", "Take a photo (Basilisk can see it)",
              self._user_action_camera),
         ]:
             btn = Gtk.Button.new_from_icon_name(icon)
@@ -4007,7 +4074,7 @@ class MainWindow(Adw.ApplicationWindow):
         # single big Send button instead.)
         self.mic_btn = None
 
-        # Big Send button wearing the dragon logo.  It glows while Kali is
+        # Big Send button wearing the dragon logo.  It glows while Basilisk is
         # working (a tap then stops her) rather than turning into a stop icon.
         self.send_btn = Gtk.Button()
         self.send_btn.add_css_class("send-button")
@@ -4049,7 +4116,7 @@ class MainWindow(Adw.ApplicationWindow):
         return True
 
     def update_status_pills(self, online: Optional[bool] = None):
-        # Connectivity is now a single green/red dot next to KALI in the
+        # Connectivity is now a single green/red dot next to BASILISK in the
         # sidebar header (the old provider/online pills were removed).
         if online is None:
             online = is_online(max_age=15)
@@ -4258,21 +4325,21 @@ class MainWindow(Adw.ApplicationWindow):
             if not shift:
                 self._send_user_message()
                 return True
-        # Escape stops Kali mid-reply.
+        # Escape stops Basilisk mid-reply.
         if keyval == Gdk.KEY_Escape and self._is_busy():
             self._request_stop()
             return True
         return False
 
     def _on_send_or_stop(self):
-        """The primary button is Send when idle, Stop when Kali is working."""
+        """The primary button is Send when idle, Stop when Basilisk is working."""
         if self._is_busy():
             self._request_stop()
         else:
             self._send_user_message()
 
     def _set_send_mode(self, working: bool):
-        """Keep the dragon logo at all times.  While Kali is working the button
+        """Keep the dragon logo at all times.  While Basilisk is working the button
         GLOWS (and a tap stops her); idle, it's the normal Send button."""
         if working:
             self.send_btn.set_tooltip_text("Working… tap to stop")
@@ -4467,7 +4534,7 @@ class MainWindow(Adw.ApplicationWindow):
         if reason:
             self._show_toast(reason, timeout=5)
             return
-        # Don't let Kali talk over the operator.
+        # Don't let Basilisk talk over the operator.
         if self.tts:
             self.tts.stop()
         if self.stt.start():
@@ -5355,8 +5422,10 @@ class MainWindow(Adw.ApplicationWindow):
             "media_control":     lambda a: self._tool_simple(
                 lambda: tool_media_control(a.get("action", "status"))),
             "notify":            lambda a: self._tool_simple(
-                lambda: tool_notify(a.get("message", ""),
-                                    a.get("title", "Kali"))),
+                lambda: (self._add_notification(a.get("title", "Basilisk"),
+                                                a.get("message", "")),
+                         tool_notify(a.get("message", ""),
+                                     a.get("title", "Basilisk")))[1]),
 
             # ── Desktop control (actions: confirm-gated) ──
             "launch_app":        lambda a: self._action_tool(
@@ -5619,9 +5688,9 @@ class MainWindow(Adw.ApplicationWindow):
                     a.get("group", a.get("name", a.get("groups", ""))))),
         }
         # Merge sidecar tools (memory_*, skill_list, skill_run).  Returns an
-        # empty dict unless the matching feature is enabled, so stock Kali is
+        # empty dict unless the matching feature is enabled, so stock Basilisk is
         # unchanged.  skill_write is registered here (not in the sidecar) so
-        # the save goes through Kali's own confirm dialog.
+        # the save goes through Basilisk's own confirm dialog.
         if getattr(self, "_ext", None):
             try:
                 for _tname, _tfn in self._ext.extra_tools(self).items():
@@ -5678,6 +5747,97 @@ class MainWindow(Adw.ApplicationWindow):
             GLib.idle_add(self._feed_tool_result, text)
         threading.Thread(target=_bg, daemon=True).start()
 
+    def _load_notifications(self):
+        try:
+            with open(self._notif_path, encoding="utf-8") as f:
+                data = json.load(f)
+            return data if isinstance(data, list) else []
+        except Exception:
+            return []
+
+    def _save_notifications(self):
+        try:
+            os.makedirs(os.path.dirname(self._notif_path), exist_ok=True)
+            with open(self._notif_path, "w", encoding="utf-8") as f:
+                json.dump(self._notifications[-200:], f)
+        except Exception:
+            pass
+
+    def _add_notification(self, title: str, message: str):
+        """Record a notification into the in-app inbox and refresh the bell."""
+        import time as _t
+        self._notifications.append({
+            "title": (title or "Basilisk").strip(),
+            "message": (message or "").strip(),
+            "ts": _t.strftime("%Y-%m-%d %H:%M"),
+            "read": False,
+        })
+        self._notifications = self._notifications[-200:]
+        self._save_notifications()
+        try:
+            GLib.idle_add(self._refresh_notifications)
+        except Exception:
+            pass
+
+    def _unread_count(self) -> int:
+        return sum(1 for n in self._notifications if not n.get("read"))
+
+    def _refresh_notifications(self):
+        """Rebuild the bell badge + the popover list from the store."""
+        try:
+            n = self._unread_count()
+            if hasattr(self, "notif_badge_lbl"):
+                self.notif_badge_lbl.set_label(str(n) if n else "")
+                self.notif_badge_lbl.set_visible(n > 0)
+            if hasattr(self, "notif_list_box"):
+                child = self.notif_list_box.get_first_child()
+                while child:
+                    nxt = child.get_next_sibling()
+                    self.notif_list_box.remove(child)
+                    child = nxt
+                if not self._notifications:
+                    empty = Gtk.Label(label="No notifications yet.")
+                    empty.add_css_class("dim-label")
+                    empty.set_margin_top(18)
+                    empty.set_margin_bottom(18)
+                    self.notif_list_box.append(empty)
+                else:
+                    for item in reversed(self._notifications[-50:]):
+                        row = Gtk.Box(orientation=Gtk.Orientation.VERTICAL,
+                                      spacing=2)
+                        row.set_margin_top(8)
+                        row.set_margin_bottom(8)
+                        row.set_margin_start(10)
+                        row.set_margin_end(10)
+                        t = Gtk.Label(xalign=0.0,
+                                      label=item.get("title", "Basilisk"))
+                        t.add_css_class("notif-title")
+                        t.set_wrap(True)
+                        m = Gtk.Label(xalign=0.0, label=item.get("message", ""))
+                        m.add_css_class("notif-body")
+                        m.set_wrap(True)
+                        ts = Gtk.Label(xalign=0.0, label=item.get("ts", ""))
+                        ts.add_css_class("notif-time")
+                        ts.add_css_class("dim-label")
+                        row.append(t)
+                        row.append(m)
+                        row.append(ts)
+                        self.notif_list_box.append(row)
+        except Exception:
+            pass
+        return False
+
+    def _mark_notifications_read(self):
+        for n in self._notifications:
+            n["read"] = True
+        self._save_notifications()
+        self._refresh_notifications()
+
+    def _clear_notifications(self, *_a):
+        self._notifications = []
+        self._save_notifications()
+        self._refresh_notifications()
+
     def _vision_key(self) -> str:
         prov = self.settings.get("vision_provider", "siliconflow")
         return (self.settings.get(f"{prov}_api_key", "") or "").strip()
@@ -5719,7 +5879,7 @@ class MainWindow(Adw.ApplicationWindow):
 
         if self.settings.get("confirm_all_commands", True):
             confirm_command_dialog(self, description,
-                                   f"Kali wants to: {description}", _go)
+                                   f"Basilisk wants to: {description}", _go)
         else:
             _go(True)
 
@@ -5728,7 +5888,7 @@ class MainWindow(Adw.ApplicationWindow):
         capabilities.  Saving is gated by the same confirm dialog the operator
         uses for commands: on approval the sidecar ast-checks the code, runs
         its test IN THE SANDBOX, and keeps it only if the test passes.  Nothing
-        executes in Kali's own process."""
+        executes in Basilisk's own process."""
         name = str(a.get("name", "")).strip()
         code = str(a.get("code", ""))
         test = str(a.get("test", ""))
@@ -5771,7 +5931,7 @@ class MainWindow(Adw.ApplicationWindow):
             preview_txt = "\n".join(preview[:18])
             if len(preview) > 18:
                 preview_txt += f"\n… (+{len(preview) - 18} more lines)"
-            msg = (f"Kali wrote a skill '{name}' and wants to save it. It is "
+            msg = (f"Basilisk wrote a skill '{name}' and wants to save it. It is "
                    f"tested in a sandbox before being kept.\n\n"
                    f"capabilities: {', '.join(caps) if caps else 'none'}\n"
                    + (f"flagged: {', '.join(flags)}\n" if flags else "")
@@ -5855,7 +6015,7 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _reload_persona(self) -> bool:
         """Hot-reload kali_persona after a self-edit and rebind the names this
-        module imported from it, so a change to Kali's persona applies on the
+        module imported from it, so a change to Basilisk's persona applies on the
         next reply without a relaunch.  kali.py / kali_core.py changes still
         need a relaunch (you can't safely swap a running app's own modules)."""
         try:
@@ -5876,12 +6036,12 @@ class MainWindow(Adw.ApplicationWindow):
         """Called when the operator clicks Apply on a proposed-edit card.
         The click IS the approval.  Mirrors _run_proposed_command: set up
         a turn context, write the file (with the parse-check + backup net
-        in tool_write_file), then feed the result back so Kali confirms.
+        in tool_write_file), then feed the result back so Basilisk confirms.
 
         A file write is the same kind of action as a command — it goes
         through the same confirm-by-clicking gate.  We surface a sudo
         prompt only if the write lands somewhere the user can't write,
-        in which case we tell Kali to retry via `sudo tee` rather than
+        in which case we tell Basilisk to retry via `sudo tee` rather than
         silently failing."""
         if not path:
             if card is not None:
@@ -5932,7 +6092,7 @@ class MainWindow(Adw.ApplicationWindow):
     def _run_proposed_command(self, command, explanation="", card=None):
         """Called when the operator clicks Run on a proposed-command card.
         The click IS the approval — we set up a turn context and execute,
-        then Kali interprets the output."""
+        then Basilisk interprets the output."""
         if not command:
             if card is not None:
                 card.reset_run_button()
@@ -5972,7 +6132,7 @@ class MainWindow(Adw.ApplicationWindow):
         # fork bomb, recursive delete of root/system dirs, …) is REFUSED
         # outright, before any confirm dialog, before foresight, before the
         # shell.  There is no "Run anyway" button and no setting that turns
-        # this off: Kali, as an AI, will never be the thing that runs a
+        # this off: Basilisk, as an AI, will never be the thing that runs a
         # system-destroying command.  A human who truly needs such an op does
         # it themselves in a real terminal.
         if is_catastrophic_command(command):
@@ -5980,7 +6140,7 @@ class MainWindow(Adw.ApplicationWindow):
                               "(no override)", "error")
             self._feed_tool_result(
                 "REFUSED. This command is in the catastrophic class — it would "
-                "irreversibly destroy the system or its data — so Kali will not "
+                "irreversibly destroy the system or its data — so Basilisk will not "
                 "run it under any circumstances. There is no override; this is "
                 "a hard safety floor. If a human genuinely needs this, they "
                 "must do it themselves in a real terminal.\n\n  " + command)
@@ -6128,7 +6288,7 @@ class MainWindow(Adw.ApplicationWindow):
         # in auto-run mode, even from a card.  This is the one gate a setting
         # can't switch off, because it's the one mistake that can't be undone.
         catastrophic = is_catastrophic_command(command)
-        # Same treatment for a raw shell write to Kali's own source files: it
+        # Same treatment for a raw shell write to Basilisk's own source files: it
         # would bypass the guarded edit path (parse-check + immutable
         # guardrail), so it never auto-runs silently.
         tampers = command_tampers_self(command)
@@ -6136,9 +6296,9 @@ class MainWindow(Adw.ApplicationWindow):
         if catastrophic:
             self.terminal_log("⚠ destructive command — forcing confirm", "error")
         elif tampers:
-            self.terminal_log("• command writes to Kali's own source — "
+            self.terminal_log("• command writes to Basilisk's own source — "
                               "forcing confirm", "dim")
-            reason_txt = ("This command writes to one of Kali's own source "
+            reason_txt = ("This command writes to one of Basilisk's own source "
                           "files, which sidesteps the guarded edit path "
                           "(parse-check + immutable guardrail). Confirm to "
                           "allow.\n\n" + reason_txt)
@@ -6264,7 +6424,7 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _user_action_camera(self):
         """Capture a photo off-thread, then drop it into the composer as an
-        image so it renders and Kali can see it with analyze_image."""
+        image so it renders and Basilisk can see it with analyze_image."""
         self._show_toast("Taking a photo…")
 
         def _bg():
@@ -6325,7 +6485,7 @@ class MainWindow(Adw.ApplicationWindow):
         except Exception as e:
             self._show_toast(f"Could not open file picker: {e}")
 
-    # image types Kali can SHOW inline (rendered by ImageWidget)
+    # image types Basilisk can SHOW inline (rendered by ImageWidget)
     _ATTACH_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp",
                           ".bmp", ".svg"}
 
@@ -6673,7 +6833,7 @@ class KaliApp(Adw.Application):
         self.win: Optional[MainWindow] = None
         # Hold the CSS provider so we can rebuild it live when the
         # user moves the UI-scale slider in Settings.  Without this
-        # the user has to restart Kali to see scale changes.
+        # the user has to restart Basilisk to see scale changes.
         self.css_provider: Optional[Gtk.CssProvider] = None
 
     def do_startup(self):

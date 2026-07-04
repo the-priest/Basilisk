@@ -1,9 +1,9 @@
 """
-mcp.py — a minimal Model Context Protocol (MCP) client for Kali.
+mcp.py — a minimal Model Context Protocol (MCP) client for Basilisk.
 
 MCP is the open standard (Anthropic, Nov 2024; now a Linux Foundation project)
 that lets an LLM host discover and call tools exposed by external "servers" over
-a JSON-RPC 2.0 channel.  For Kali this is force-multiplying: an enormous
+a JSON-RPC 2.0 channel.  For Basilisk this is force-multiplying: an enormous
 ecosystem of security MCP servers already exists (nmap, sqlmap, ffuf, nuclei,
 ZAP, …), and wiring them in once gives the model all of them without a bespoke
 wrapper per tool.
@@ -27,7 +27,7 @@ deliberately conservative:
     delete, …) is REFUSED before it ever reaches the server.
   • Every call is recorded to the evidence ledger, same as a local command.
   • Server tool names are namespaced ``mcp__<server>__<tool>`` so they can never
-    shadow or be confused with Kali's own built-in tools.
+    shadow or be confused with Basilisk's own built-in tools.
 
 It is pure stdlib (subprocess, json, threading, time) and imports kali_safety
 for the screen; it does not import the GTK layer.
@@ -227,7 +227,7 @@ class MCPServer:
 # ── safety screen ─────────────────────────────────────────────────────
 def _arguments_are_catastrophic(arguments: Dict[str, Any]) -> Optional[str]:
     """If any string argument resolves to a catastrophic command, return it so
-    the caller can refuse.  This is the same hard floor Kali applies to its own
+    the caller can refuse.  This is the same hard floor Basilisk applies to its own
     `run` — an MCP server is untrusted, so a tool argument that says
     `rm -rf /` (however obfuscated) is blocked before it leaves the process."""
     if _safety is None:
@@ -274,8 +274,8 @@ def _flatten_content(result: Dict[str, Any]) -> str:
 
 
 class MCPManager:
-    """Owns the configured servers and exposes their tools to Kali, namespaced
-    and safety-screened.  ``ledger`` (optional) is Kali's EvidenceLedger; if
+    """Owns the configured servers and exposes their tools to Basilisk, namespaced
+    and safety-screened.  ``ledger`` (optional) is Basilisk's EvidenceLedger; if
     provided, every MCP call is recorded like a local command."""
 
     def __init__(self, servers_config: List[Dict[str, Any]],
@@ -333,7 +333,7 @@ class MCPManager:
         if bad is not None:
             return (f"refused: MCP tool '{tool}' was called with an argument "
                     f"that resolves to a system-destroying command "
-                    f"({bad!r}); blocked by Kali's safety floor.")
+                    f"({bad!r}); blocked by Basilisk's safety floor.")
 
         t0 = time.time()
         try:

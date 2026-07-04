@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-kali_voice — speech in / speech out for Kali.
+kali_voice — speech in / speech out for Basilisk.
 
 Two halves, both self-contained (stdlib only, no GTK, no third-party
 Python packages required at import time):

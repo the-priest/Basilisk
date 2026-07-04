@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-test_kali.py — offline regression tests for Kali's load-bearing logic.
+test_kali.py — offline regression tests for Basilisk's load-bearing logic.
 
 These lock down the paths the v2.3.1 audit flagged as under-verified (plus the v3.1.0 structural safety floor), so a
 future edit that quietly breaks one of them fails here instead of on a user's
-machine (where Kali runs with root):
+machine (where Basilisk runs with root):
 
   • settings load/save round-trip + the *documented* provider migration
   • the self-edit write path: the ast syntax gate, the immutable GUARDRAIL
@@ -600,7 +600,7 @@ class TestSafetyFloor(unittest.TestCase):
         "rm -rf /mnt/usb/old", "rm -rf /media/me/stick/tmp",
     ]
 
-    # Self-source tamper: writing to Kali's own files bypasses the guarded edit
+    # Self-source tamper: writing to Basilisk's own files bypasses the guarded edit
     # path, so it must force a confirm — reading them must not.
     TAMPER = [
         "echo x > kali_persona.py", "sed -i 's/a/b/' kali_core.py",

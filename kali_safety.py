@@ -2,16 +2,16 @@
 kali_safety.py — the hard, setting-independent safety floor for the auto-run
 gate.
 
-Kali runs with root on the operator's own box and, in its default low-friction
+Basilisk runs with root on the operator's own box and, in its default low-friction
 mode, executes a model-issued `run` command without a card click.  That speed
 is the product — but it means exactly one class of mistake (a wiped disk, a
-nuked filesystem, the immutable guardrail shell-stripped out of Kali's own
+nuked filesystem, the immutable guardrail shell-stripped out of Basilisk's own
 source) must be caught *before* it executes, no matter what the "confirm every
 command" setting says.  These two predicates are that floor:
 
   • is_catastrophic_command — would this irreversibly destroy the system or its
     storage?
-  • command_tampers_self    — would this write to Kali's own source, bypassing
+  • command_tampers_self    — would this write to Basilisk's own source, bypassing
     the guarded edit path (ast gate + immutable GUARDRAIL block)?
 
 A True from either forces an explicit confirm dialog in kali.py's gate; it is
@@ -37,7 +37,7 @@ regression) and stays deliberately narrow: ordinary offensive-security work
 (nmap, nuclei, sqlmap, hydra) and file ops in your own dirs (rm -rf ~/loot,
 rm -rf ./build) do not trip it, so it adds no friction to real work.
 
-Pure stdlib (shlex, re, os).  GTK-free and import-free of the rest of Kali, so
+Pure stdlib (shlex, re, os).  GTK-free and import-free of the rest of Basilisk, so
 it is trivially unit-testable offline — see tests/test_kali.py.
 """
 
@@ -438,7 +438,7 @@ def is_catastrophic_command(command: str) -> bool:
 
 
 # ── Self-source tamper backstop ──────────────────────────────────────
-# Edits to Kali's own source are supposed to go through the guarded file-edit
+# Edits to Basilisk's own source are supposed to go through the guarded file-edit
 # path (ast parse-check + the immutable GUARDRAIL block protection).  A raw
 # shell write to one of those files — `sed -i` over the guardrail, `> kali.py`,
 # `tee`, `dd of=`, etc. — would sidestep that entirely.  The auto-run gate
@@ -465,7 +465,7 @@ _SELF_WRITE_RE = re.compile(
 def _copy_move_targets_self(args: List[str]) -> bool:
     """For cp / mv / ln / rsync: True only if a protected source file is the
     DESTINATION (the last non-flag operand) — i.e. the command overwrites
-    Kali's own source.  `cp kali_core.py backup.py` (source) does NOT trip it;
+    Basilisk's own source.  `cp kali_core.py backup.py` (source) does NOT trip it;
     `cp evil.py kali_core.py` (dest) does."""
     if not args or _base(args[0]) not in ("cp", "mv", "ln", "rsync"):
         return False
@@ -476,7 +476,7 @@ def _copy_move_targets_self(args: List[str]) -> bool:
 
 
 def command_tampers_self(command: str) -> bool:
-    """True if a shell command appears to WRITE to / modify one of Kali's own
+    """True if a shell command appears to WRITE to / modify one of Basilisk's own
     source files, bypassing the guarded edit path.  Normalises $IFS and recurses
     into sh -c / eval payloads so the check can't be dodged the same way the
     catastrophic check could.  Reading the files (cat, grep) does NOT trip it."""

@@ -335,10 +335,20 @@ if [ $SKIP_HELPERS -eq 0 ] && command -v apt-get >/dev/null; then
     say "browser automation (Playwright + Chromium, ~150MB) — optional"
     if python3 -m pip install --user --break-system-packages --quiet playwright 2>/dev/null \
        && python3 -m playwright install chromium 2>/dev/null; then
+      # Install the system libraries chromium needs to actually LAUNCH (not just
+      # download). Without these, chromium is present but fails to start. Needs
+      # root; best-effort so the install doesn't hard-fail without sudo.
+      if command -v sudo >/dev/null 2>&1; then
+        sudo python3 -m playwright install-deps chromium 2>/dev/null \
+          && ok "chromium system libraries installed" \
+          || warn "could not install chromium system libs (run: sudo python3 -m playwright install-deps chromium)"
+      else
+        python3 -m playwright install-deps chromium 2>/dev/null || true
+      fi
       ok "Playwright + Chromium installed"
     else
       warn "Playwright not installed — the browser tool will tell you how"
-      warn "to enable it later:  pip install playwright && playwright install chromium"
+      warn "to enable it later:  pip install playwright && playwright install chromium && sudo playwright install-deps chromium"
     fi
 
     # Brave: Basilisk's browser tool drives Brave when present (its Shields block

@@ -2886,7 +2886,12 @@ class _BrowserWorker:
 
         def _new_browser():
             brave = _find_brave()
-            args = ["--no-first-run", "--no-default-browser-check",
+            # --no-sandbox is required for chromium to launch as root (common on
+            # Kali) and in many restricted/container environments; without it the
+            # browser silently fails to start. --disable-dev-shm-usage avoids
+            # crashes when /dev/shm is small. These are standard automation flags.
+            args = ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu",
+                    "--no-first-run", "--no-default-browser-check",
                     "--disable-blink-features=AutomationControlled",
                     "--disable-features=Translate"]
             kw = {"args": args}
@@ -2928,7 +2933,14 @@ class _BrowserWorker:
             browser = _new_browser()
             page = _new_page(browser)
         except Exception as e:
-            self._launch_err = f"browser launch failed: {type(e).__name__}: {e}"
+            self._launch_err = (
+                f"browser launch failed: {type(e).__name__}: {e}. "
+                "Fix on this machine: (1) install the system libs chromium "
+                "needs:  sudo $(command -v playwright || echo python3 -m "
+                "playwright) install-deps chromium   (2) install the browser:  "
+                "playwright install chromium . If you're running as root and it "
+                "still fails, that's the sandbox — this build already passes "
+                "--no-sandbox, so it's almost certainly the system libs in (1).")
             while True:
                 cmd = self._cmds.get()
                 if cmd is None:

@@ -2885,27 +2885,34 @@ class _BrowserWorker:
                "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
 
         def _new_browser():
+            base_args = ["--no-sandbox", "--disable-dev-shm-usage",
+                         "--disable-gpu", "--no-first-run",
+                         "--no-default-browser-check",
+                         "--disable-blink-features=AutomationControlled",
+                         "--disable-features=Translate"]
             brave = _find_brave()
-            # --no-sandbox is required for chromium to launch as root (common on
-            # Kali) and in many restricted/container environments; without it the
-            # browser silently fails to start. --disable-dev-shm-usage avoids
-            # crashes when /dev/shm is small. These are standard automation flags.
-            args = ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu",
-                    "--no-first-run", "--no-default-browser-check",
-                    "--disable-blink-features=AutomationControlled",
-                    "--disable-features=Translate"]
-            kw = {"args": args}
+            # Reliability order. Plain BUNDLED chromium, HEADLESS, with
+            # --no-sandbox is the config proven to launch even as root — try it
+            # FIRST so the browser always comes up. (Ad/tracker hosts are still
+            # blocked via request routing below, so we don't need Brave's shields;
+            # and headless avoids the fragility of opening a visible window from
+            # a worker thread, which was the actual failure.) Brave is only a
+            # fallback for environments where bundled chromium is somehow missing.
+            # Every attempt's error is captured so a real break is diagnosable.
+            strategies = [("chromium-headless",
+                           {"headless": True, "args": base_args})]
             if brave:
-                kw["executable_path"] = brave
-            # Visible first (so the operator can watch), then headless, then —
-            # if a Brave binary turned out unusable — fall back to bundled
-            # Chromium so browsing still works.
-            for attempt in ({"headless": False}, {"headless": True}):
+                strategies.append(("brave-headless",
+                                   {"headless": True, "args": base_args,
+                                    "executable_path": brave}))
+            errs = []
+            for name, kw in strategies:
                 try:
-                    return pw.chromium.launch(**kw, **attempt)
-                except Exception:
-                    continue
-            return pw.chromium.launch(headless=True, args=args)
+                    return pw.chromium.launch(**kw)
+                except Exception as e:
+                    errs.append(f"{name}: {type(e).__name__}: {e}")
+            raise RuntimeError(
+                "all browser launch strategies failed: " + " | ".join(errs))
 
         def _route(route):
             try:

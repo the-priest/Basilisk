@@ -88,7 +88,7 @@ except Exception as _ve:  # noqa
 
 APP_ID  = "org.thepriest.kali"
 APP_NAME = "Basilisk"
-VERSION = "4.7.3"
+VERSION = "4.7.4"
 
 # ── Tool-chain efficiency knobs ──
 # How many model round-trips a single user turn may chain through.  With
@@ -282,12 +282,12 @@ headerbar {
 }
 .chat-row .title-line {
     color: #e8ebef;
-    font-weight: 600;
-    font-size: 15px;
+    font-weight: 650;
+    font-size: 16px;
 }
 .chat-row .meta-line {
     color: #6d7680;
-    font-size: 11.5px;
+    font-size: 10.5px;
     letter-spacing: 0.3px;
     margin-top: 3px;
 }
@@ -970,7 +970,7 @@ link, button.link, *:link { color: #2ee65f; }
     border-radius: 10px;
     color: #9aa3ad;
     padding: 5px 12px;
-    font-size: 12px;
+    font-size: 10.5px;
     font-weight: 600;
 }
 .model-switch-btn:hover {
@@ -3648,6 +3648,7 @@ class MainWindow(Adw.ApplicationWindow):
         self.notif_btn = Gtk.MenuButton()
         self.notif_btn.set_icon_name("preferences-system-notifications-symbolic")
         self.notif_btn.add_css_class("icon-button")
+        self.notif_btn.set_valign(Gtk.Align.CENTER)
         self.notif_btn.set_tooltip_text("Notifications from Basilisk")
         notif_pop = Gtk.Popover()
         notif_pop.set_size_request(340, 420)
@@ -3680,11 +3681,13 @@ class MainWindow(Adw.ApplicationWindow):
 
         # unread badge overlaid on the bell
         _bell_overlay = Gtk.Overlay()
+        _bell_overlay.set_valign(Gtk.Align.CENTER)
         _bell_overlay.set_child(self.notif_btn)
         self.notif_badge_lbl = Gtk.Label(label="")
         self.notif_badge_lbl.add_css_class("notif-badge")
         self.notif_badge_lbl.set_halign(Gtk.Align.END)
         self.notif_badge_lbl.set_valign(Gtk.Align.START)
+        self.notif_badge_lbl.set_can_target(False)  # clicks pass through to the bell
         self.notif_badge_lbl.set_visible(False)
         _bell_overlay.add_overlay(self.notif_badge_lbl)
         hb.pack_end(_bell_overlay)

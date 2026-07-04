@@ -88,7 +88,7 @@ except Exception as _ve:  # noqa
 
 APP_ID  = "org.thepriest.kali"
 APP_NAME = "Basilisk"
-VERSION = "4.7.6"
+VERSION = "4.7.8"
 
 # ── Tool-chain efficiency knobs ──
 # How many model round-trips a single user turn may chain through.  With
@@ -1723,6 +1723,22 @@ def _find_avatar_png() -> Optional[str]:
 
 
 _AVATAR_PNG_PATH = _find_avatar_png()
+
+
+def _find_logo_png() -> Optional[str]:
+    """Locate the BASILISK wordmark logo (death-metal art) for the header."""
+    candidates = [
+        os.path.expanduser("~/.local/share/kali/basilisk-logo.png"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                     "basilisk-logo.png"),
+    ]
+    for p in candidates:
+        if os.path.isfile(p):
+            return p
+    return None
+
+
+_LOGO_PNG_PATH = _find_logo_png()
 
 
 def _find_watermark_svg() -> Optional[str]:
@@ -3562,9 +3578,30 @@ class MainWindow(Adw.ApplicationWindow):
         # Header — BASILISK (with a live online dot) on the left, new-chat on the
         # right.  The dot is green when online, red when offline.
         title_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=7)
-        t = Gtk.Label(label=APP_NAME.upper(), xalign=0.0)
-        t.add_css_class("app-title")
-        t.set_valign(Gtk.Align.CENTER)
+        # Death-metal wordmark: the carved logo art (CSS can't draw those
+        # thorned letters). Scaled to header height, width follows aspect. Falls
+        # back to the styled text label if the image isn't present.
+        if _LOGO_PNG_PATH:
+            try:
+                _logo_tex = Gdk.Texture.new_from_filename(_LOGO_PNG_PATH)
+                _lh = 40
+                _lw = max(1, int(_lh * _logo_tex.get_intrinsic_width()
+                                 / _logo_tex.get_intrinsic_height()))
+                t = Gtk.Picture.new_for_paintable(_logo_tex)
+                t.set_content_fit(Gtk.ContentFit.CONTAIN)
+                t.set_can_shrink(True)
+                t.set_size_request(_lw, _lh)
+                t.set_valign(Gtk.Align.CENTER)
+                t.set_halign(Gtk.Align.START)
+                t.set_tooltip_text(APP_NAME)
+            except Exception:
+                t = Gtk.Label(label=APP_NAME.upper(), xalign=0.0)
+                t.add_css_class("app-title")
+                t.set_valign(Gtk.Align.CENTER)
+        else:
+            t = Gtk.Label(label=APP_NAME.upper(), xalign=0.0)
+            t.add_css_class("app-title")
+            t.set_valign(Gtk.Align.CENTER)
         title_box.append(t)
         self.online_dot = Gtk.Label(label="●")
         self.online_dot.add_css_class("online-dot")
@@ -3572,6 +3609,13 @@ class MainWindow(Adw.ApplicationWindow):
         self.online_dot.set_tooltip_text("Connectivity")
         title_box.append(self.online_dot)
         sb_header.pack_start(title_box)
+        # Suppress the default centered window-title ("Basilisk") — the red
+        # BASILISK wordmark packed on the left is the only brand mark we want.
+        # Without this, Adw.HeaderBar renders the window title in the center,
+        # showing "Basilisk" a second time (in white) next to the wordmark.
+        _empty_title = Gtk.Label()
+        _empty_title.set_visible(False)
+        sb_header.set_title_widget(_empty_title)
 
         new_btn = Gtk.Button.new_from_icon_name("document-new-symbolic")
         new_btn.set_tooltip_text("New chat")

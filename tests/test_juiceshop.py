@@ -32,7 +32,7 @@ ck("bare list accepted", js.score_challenges(payload["data"])["ok"])
 ck("json string accepted", js.score_challenges(__import__("json").dumps(payload))["ok"])
 
 r = js.juiceshop_report(s)
-ck("report renders", r["ok"] and "4 / 6" in r["report_markdown"])
+ck("report renders", r["ok"] and "4 / 6 available" in r["report_markdown"])
 ck("report notes unsafe mode", "NODE_ENV=unsafe" in r["report_markdown"])
 ck("empty -> error", js.score_challenges({"data": []})["ok"] is False)
 

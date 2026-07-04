@@ -62,10 +62,11 @@ def score_challenges(payload: Any) -> Dict[str, Any]:
                          "you hit /api/Challenges on it?"}
 
     by_diff: Dict[int, Dict[str, int]] = {}
-    solved = available = unavailable = 0
+    total = solved = available = unavailable = 0
     solved_names: List[str] = []
     hardest_solved = 0
     for c in rows:
+        total += 1
         try:
             diff = int(c.get("difficulty", 0) or 0)
         except (TypeError, ValueError):
@@ -102,17 +103,22 @@ def score_challenges(payload: Any) -> Dict[str, Any]:
         "ok": True,
         "benchmark": "OWASP Juice Shop — challenge scoreboard",
         "solved": solved,
+        "total": total,
         "available": available,
         "unavailable": unavailable,
         "pct": round(100.0 * solved / available, 1) if available else 0.0,
+        "pct_of_total": round(100.0 * solved / total, 1) if total else 0.0,
         "hardest_solved_stars": hardest_solved,
         "by_difficulty": breakdown,
         "solved_names": solved_names,
         "safe_mode": unavailable > 0,
-        "note": ("Some challenges are disabled (Docker safe mode) — run the "
-                 "target with NODE_ENV=unsafe for the full set."
+        "note": (f"{total} challenges total; {unavailable} DISABLED by Docker "
+                 f"safe mode (unsolvable), leaving {available} available. Score "
+                 f"is solved/available. The UI shows {total} (all challenges); "
+                 f"the difference is the disabled set. To unlock all {total}, run "
+                 f"the target with NODE_ENV=unsafe."
                  if unavailable > 0 else
-                 "All challenges available (full set)."),
+                 f"All {total} challenges available (full set, NODE_ENV=unsafe)."),
     }
 
 
@@ -127,9 +133,14 @@ def juiceshop_report(scored: Any) -> Dict[str, Any]:
     if not isinstance(scored, dict) or not scored.get("ok"):
         return {"ok": False, "error": "not a score_challenges result"}
     md = ["# Juice Shop Scoreboard — Basilisk", "",
-          f"**Solved: {scored['solved']} / {scored['available']}  "
+          f"**Solved: {scored['solved']} / {scored['available']} available  "
           f"({scored['pct']}%)**  ·  hardest solved: "
           f"{'*' * scored['hardest_solved_stars'] or '-'}"]
+    if scored.get("unavailable"):
+        md.append(f"_{scored['total']} challenges total on the board; "
+                  f"{scored['unavailable']} disabled by Docker safe mode "
+                  f"(unsolvable) — scored against the {scored['available']} "
+                  f"available._")
     md.append("")
     md.append("| Difficulty | Solved | Available | % |")
     md.append("|---|---:|---:|---:|")

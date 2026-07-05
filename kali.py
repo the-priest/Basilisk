@@ -88,7 +88,7 @@ except Exception as _ve:  # noqa
 
 APP_ID  = "org.thepriest.kali"
 APP_NAME = "Basilisk"
-VERSION = "4.8.3"
+VERSION = "4.9.0"
 
 # ── Tool-chain efficiency knobs ──
 # How many model round-trips a single user turn may chain through.  With
@@ -1194,9 +1194,9 @@ window, .background {
         radial-gradient(circle at 15% 12%, rgba(46,42,40,0.55), rgba(46,42,40,0.0) 40%),
         radial-gradient(circle at 82% 20%, rgba(34,30,29,0.55), rgba(34,30,29,0.0) 42%),
         radial-gradient(circle at 42% 66%, rgba(26,23,23,0.60), rgba(26,23,23,0.0) 46%),
-        radial-gradient(circle at 90% 84%, rgba(150,45,18,0.12), rgba(150,45,18,0.0) 40%),
-        radial-gradient(circle at 8% 88%, rgba(180,60,20,0.10), rgba(180,60,20,0.0) 38%),
-        linear-gradient(0deg, rgba(120,30,12,0.14) 0%, rgba(10,7,6,0.0) 28%),
+        radial-gradient(circle at 90% 84%, rgba(150,45,18,0.06), rgba(150,45,18,0.0) 40%),
+        radial-gradient(circle at 8% 88%, rgba(180,60,20,0.05), rgba(180,60,20,0.0) 38%),
+        linear-gradient(0deg, rgba(120,30,12,0.07) 0%, rgba(10,7,6,0.0) 28%),
         linear-gradient(180deg, #0b0807, #070506 55%, #050303);
 }
 
@@ -5059,18 +5059,41 @@ class MainWindow(Adw.ApplicationWindow):
         # escalates the model + reasoning budget, and the directive below
         # tells the model to slow down and think).  Standard otherwise.
         # All of it collapses to flat behaviour if adaptive_effort is off.
+        # A genuinely complex request should think hard from step 1, not only
+        # after several tool-steps. Conservative security-engagement markers so
+        # ordinary chat never trips it; still gated behind adaptive_effort.
+        _hard_now = False
+        if (self.settings.get("adaptive_effort", True)
+                and self.current_agent_mode and not self._tools_locked
+                and not _lean):
+            try:
+                _hu = next(
+                    (m.get("content", "") for m in reversed(history)
+                     if m.get("role") == "user"
+                     and "<tool_result>" not in m.get("content", "")),
+                    "").lower()
+                _hard_now = any(mk in _hu for mk in (
+                    "pentest", "penetration test", "exploit",
+                    "privilege escalation", "priv esc", "full scan",
+                    "full audit", "vulnerability scan", "vuln scan",
+                    "enumerate", "attack surface", "brute force", "brute-force",
+                    "reverse engineer", "map the network", "recon on ",
+                    "recon of ", "analyse the codebase", "analyze the codebase"))
+            except Exception:
+                _hard_now = False
+
         if _lean:
             _effort = "light"
         elif (self.current_agent_mode and not self._tools_locked
-              and self._tool_chain_depth
-              >= self.settings.get("hard_effort_step", 3)):
+              and (_hard_now or self._tool_chain_depth
+                   >= self.settings.get("hard_effort_step", 3))):
             _effort = "heavy"
-            addendum = (addendum + "\n\n[DEEP ENGAGEMENT: you are several "
-                        "tool-steps into a live operation. Think harder - "
-                        "reason through the current state methodically, plan "
-                        "the next moves before acting, and scrutinise each "
-                        "tool result instead of skimming. Precision beats "
-                        "speed here.]").strip()
+            addendum = (addendum + "\n\n[HARD ENGAGEMENT: this is a complex, "
+                        "high-stakes operation. Think harder - reason through "
+                        "the current state methodically, plan your moves "
+                        "before acting, and scrutinise each tool result "
+                        "instead of skimming. Precision beats speed here.]"
+                        ).strip()
         else:
             _effort = "standard"
 

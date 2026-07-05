@@ -217,6 +217,11 @@ DEFAULT_SETTINGS = {
     "hard_effort_step": 3,               # escalate at this tool-chain depth
     "hard_engagement_model": "deepseek-ai/DeepSeek-V4-Pro",  # heavier sibling
 
+    # Native internet reach (kali_ext/reach.py): semantic search + GitHub.
+    # Keyless, so on by default; a github_token just lifts the API rate limit.
+    "reach_enabled": True,
+    "github_token": "",
+
     # Behaviour
     "system_prompt": "",
     "agent_mode_default": True,        # Basilisk defaults to agent on

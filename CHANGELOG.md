@@ -1,5 +1,27 @@
 # Changelog
 
+## v4.9.0 — hellfire, adaptive effort, and native reach
+
+Three things landed together.
+
+- **Adaptive effort ladder.** Turns now right-size the model to the work: plain
+  chat stays on fast Flash with a tight token budget; a genuinely complex
+  request (pentest, full audit, exploit work) *or* a turn several tool-steps
+  deep in a live engagement escalates to DeepSeek-V4-Pro with a bigger reasoning
+  budget and a "slow down and think" directive. Complex requests now escalate
+  from step 1, not only after the chain gets long. One `adaptive_effort` setting
+  turns it all off and restores flat behaviour; knobs: `hard_effort_step`,
+  `effort_light_max_tokens`, `effort_heavy_max_tokens`, `hard_engagement_model`.
+- **Native internet reach (no third-party package).** New stdlib `reach.py`
+  adds semantic full-web search via Exa's public MCP endpoint, plus GitHub repo
+  and issue search and repo/README reading via the public API — all keyless.
+  Wired through the extman seam, gated on `reach_enabled`. A `github_token`
+  lifts the API rate limit; search falls back to keyword search on error.
+- **Hellfire theme.** Charcoal-burned surfaces, a breathing ember glow on chat
+  bubbles, and the working status line rebuilt as a burning bar with real
+  scrolling fire, moved directly above the Send button. The background ember
+  glow is dialled down in this release for a subtler burn.
+
 ## v4.4.1 — "keep going" actually keeps going
 
 Fixes the bug where, after a long run hit the tool-step budget, Basilisk would

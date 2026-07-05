@@ -1174,6 +1174,143 @@ list.boxed-list {
     font-family: 'JetBrains Mono', monospace;
     margin: 2px 0 6px 0;
 }
+
+/* =====================================================================
+   HELLFIRE THEME OVERLAY  (v1 - pure CSS, no Cairo)
+   Appended last so these rules win the cascade over the base theme.
+   Burns the flat-dark surfaces down to charcoal, wraps the chat bubbles
+   in a breathing ember glow, and rebuilds the "working" status line as a
+   burning bar with real upward-scrolling fire that sits just above the
+   Send button.  ASCII-only (the CSS is an ASCII bytes literal).
+   ===================================================================== */
+
+/* ---- App-wide burned charcoal: char lumps + ember cracks + heat rising
+        from the bottom edge.  If a radial-gradient is skipped by the CSS
+        engine the base color still lands, so panels never fall back to a
+        flat slab. ---- */
+window, .background {
+    background-color: #070506;
+    background-image:
+        radial-gradient(circle at 15% 12%, rgba(46,42,40,0.55), rgba(46,42,40,0.0) 40%),
+        radial-gradient(circle at 82% 20%, rgba(34,30,29,0.55), rgba(34,30,29,0.0) 42%),
+        radial-gradient(circle at 42% 66%, rgba(26,23,23,0.60), rgba(26,23,23,0.0) 46%),
+        radial-gradient(circle at 90% 84%, rgba(150,45,18,0.12), rgba(150,45,18,0.0) 40%),
+        radial-gradient(circle at 8% 88%, rgba(180,60,20,0.10), rgba(180,60,20,0.0) 38%),
+        linear-gradient(0deg, rgba(120,30,12,0.14) 0%, rgba(10,7,6,0.0) 28%),
+        linear-gradient(180deg, #0b0807, #070506 55%, #050303);
+}
+
+/* ---- Structural panels: same charred base, a hair lighter than the
+        window so depth still reads, with a low ember bloom baked in. ---- */
+headerbar {
+    background-color: #0a0807;
+    background-image:
+        radial-gradient(circle at 20% 40%, rgba(60,26,16,0.30), rgba(60,26,16,0.0) 55%),
+        radial-gradient(circle at 85% 60%, rgba(40,20,16,0.35), rgba(40,20,16,0.0) 55%),
+        linear-gradient(180deg, #100b09, #0a0706);
+    border-bottom: 1px solid #2a1712;
+    box-shadow: inset 0 -6px 14px rgba(120,35,12,0.10);
+}
+.sidebar {
+    background-color: #080605;
+    background-image:
+        radial-gradient(circle at 30% 20%, rgba(44,38,36,0.40), rgba(44,38,36,0.0) 45%),
+        radial-gradient(circle at 60% 80%, rgba(90,28,12,0.10), rgba(90,28,12,0.0) 45%),
+        linear-gradient(180deg, #0b0908, #070505);
+    border-right: 1px solid #241410;
+}
+.input-frame {
+    background-color: #0c0908;
+    background-image: linear-gradient(180deg, rgba(60,26,16,0.16), rgba(12,9,8,0.0) 60%);
+    border: 1px solid #3a2016;
+    box-shadow: inset 0 -5px 14px rgba(140,45,16,0.10);
+}
+.input-frame:focus-within {
+    border-color: #c8501a;
+    background-color: #140d0a;
+    box-shadow: inset 0 -6px 16px rgba(200,70,20,0.22), 0 0 14px rgba(200,70,20,0.18);
+}
+
+/* ---- Chat bubbles: charred body plus a breathing ember halo.  User and
+        assistant flicker on different clocks so they never pulse in sync. ---- */
+.msg-user {
+    background-color: rgba(30,12,8,0.55);
+    background-image: linear-gradient(0deg, rgba(150,50,16,0.12), rgba(60,18,8,0.05) 40%, rgba(0,0,0,0.0) 72%);
+    color: #f3e7de;
+    border: 1px solid rgba(180,70,26,0.45);
+    animation: emberGlowA 3.4s ease-in-out infinite;
+}
+.msg-assistant {
+    background-color: rgba(22,9,7,0.55);
+    background-image: linear-gradient(0deg, rgba(170,55,16,0.11), rgba(70,20,8,0.05) 40%, rgba(0,0,0,0.0) 72%);
+    color: #f1e6de;
+    border: 1px solid rgba(160,50,20,0.42);
+    animation: emberGlowB 4.1s ease-in-out infinite;
+}
+@keyframes emberGlowA {
+    0%   { box-shadow: 0 0 8px rgba(180,55,18,0.22), inset 0 -6px 16px rgba(140,40,12,0.12); border-color: rgba(170,60,22,0.40); }
+    50%  { box-shadow: 0 0 20px rgba(230,80,24,0.50), inset 0 -9px 22px rgba(200,70,20,0.26); border-color: rgba(230,90,30,0.62); }
+    100% { box-shadow: 0 0 8px rgba(180,55,18,0.22), inset 0 -6px 16px rgba(140,40,12,0.12); border-color: rgba(170,60,22,0.40); }
+}
+@keyframes emberGlowB {
+    0%   { box-shadow: 0 0 8px rgba(170,50,18,0.20), inset 0 -6px 16px rgba(130,38,12,0.12); border-color: rgba(150,50,20,0.38); }
+    50%  { box-shadow: 0 0 22px rgba(220,75,22,0.48), inset 0 -9px 22px rgba(190,66,18,0.24); border-color: rgba(220,84,28,0.58); }
+    100% { box-shadow: 0 0 8px rgba(170,50,18,0.20), inset 0 -6px 16px rgba(130,38,12,0.12); border-color: rgba(150,50,20,0.38); }
+}
+
+/* ---- The status line, reborn as a burning bar.  A flame gradient taller
+        than the row is scrolled upward every frame (real fire motion) while
+        the same keyframes flicker the glow.  Placed just above the Send
+        button by the layout change in _build_input_area. ---- */
+.working-row {
+    background-color: #0a0605;
+    background-image: linear-gradient(0deg,
+        rgba(255,190,60,0.0) 0%,
+        rgba(255,140,30,0.34) 18%,
+        rgba(214,60,14,0.46) 44%,
+        rgba(120,26,10,0.32) 68%,
+        rgba(20,7,5,0.0) 100%);
+    background-size: 100% 280%;
+    background-position: 0% 100%;
+    border: 1px solid rgba(210,80,26,0.50);
+    border-radius: 10px;
+    padding: 10px 22px;
+    animation: fireScroll 1.15s linear infinite;
+}
+@keyframes fireScroll {
+    0%   { background-position: 0% 100%; box-shadow: 0 0 12px rgba(220,72,20,0.30), inset 0 -6px 16px rgba(255,120,30,0.20); }
+    50%  { background-position: 0% 40%;  box-shadow: 0 0 24px rgba(255,110,30,0.58), inset 0 -9px 22px rgba(255,150,44,0.36); }
+    100% { background-position: 0% 0%;   box-shadow: 0 0 12px rgba(220,72,20,0.30), inset 0 -6px 16px rgba(255,120,30,0.20); }
+}
+.working-label {
+    color: #ffd27a;
+    font-size: 18px;
+    font-style: normal;
+    font-weight: 800;
+    letter-spacing: 0.6px;
+    text-shadow: 0 0 8px rgba(255,150,44,0.9), 0 0 16px rgba(255,90,22,0.6);
+    animation: emberText 0.85s ease-in-out infinite;
+}
+@keyframes emberText {
+    0%   { color: #ffcf6e; text-shadow: 0 0 6px rgba(255,150,44,0.8), 0 0 14px rgba(255,90,22,0.5); }
+    50%  { color: #fff1c6; text-shadow: 0 0 13px rgba(255,182,64,1.0), 0 0 24px rgba(255,110,30,0.8); }
+    100% { color: #ffcf6e; text-shadow: 0 0 6px rgba(255,150,44,0.8), 0 0 14px rgba(255,90,22,0.5); }
+}
+.working-spinner {
+    color: #ff9030;
+    min-width: 24px;
+    min-height: 24px;
+}
+
+/* ---- Send button: match the fire while working instead of the silver glow ---- */
+.send-button.working {
+    animation: sendFire 1.2s ease-in-out infinite;
+}
+@keyframes sendFire {
+    0%   { box-shadow: 0 0 6px rgba(255,120,30,0.30); border-color: #3a2016; }
+    50%  { box-shadow: 0 0 22px rgba(255,120,30,0.82); border-color: #ff7a2a; }
+    100% { box-shadow: 0 0 6px rgba(255,120,30,0.30); border-color: #3a2016; }
+}
 """
 
 
@@ -3800,7 +3937,9 @@ class MainWindow(Adw.ApplicationWindow):
         self.working_row.append(self.working_spinner)
         self.working_row.append(self.working_label)
         self.working_row.set_visible(False)
-        main.append(self.working_row)
+        # NOTE: working_row is appended just above the composer input (see the
+        # tail of _build_input_area) so the burning status bar sits directly
+        # over the Send button instead of up under the banner.
 
         # Messages
         self.msg_scroll = Gtk.ScrolledWindow()
@@ -4179,6 +4318,8 @@ class MainWindow(Adw.ApplicationWindow):
         self.send_btn.connect("clicked", lambda *_: self._on_send_or_stop())
         ibox.append(self.send_btn)
 
+        # Burning status bar sits directly above the composer / Send button.
+        area.append(self.working_row)
         area.append(ibox)
         return area
 

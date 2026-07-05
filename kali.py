@@ -5052,6 +5052,28 @@ class MainWindow(Adw.ApplicationWindow):
                  if m.get("role") == "user"
                  and "<tool_result>" not in m.get("content", "")), "")
             _lean = conversational_turn(_last_user)
+
+        # ── Effort ladder ────────────────────────────────────────────
+        # Light on a plainly conversational turn (fast, cheap); heavy once
+        # we're several tool-steps deep in a live engagement (the router
+        # escalates the model + reasoning budget, and the directive below
+        # tells the model to slow down and think).  Standard otherwise.
+        # All of it collapses to flat behaviour if adaptive_effort is off.
+        if _lean:
+            _effort = "light"
+        elif (self.current_agent_mode and not self._tools_locked
+              and self._tool_chain_depth
+              >= self.settings.get("hard_effort_step", 3)):
+            _effort = "heavy"
+            addendum = (addendum + "\n\n[DEEP ENGAGEMENT: you are several "
+                        "tool-steps into a live operation. Think harder - "
+                        "reason through the current state methodically, plan "
+                        "the next moves before acting, and scrutinise each "
+                        "tool result instead of skimming. Precision beats "
+                        "speed here.]").strip()
+        else:
+            _effort = "standard"
+
         sysprompt = build_system_prompt(
             agent_mode=(False if _lean else self.current_agent_mode),
             custom_addendum=addendum,
@@ -5105,7 +5127,7 @@ class MainWindow(Adw.ApplicationWindow):
         def _bg():
             self.router.stream_chat(full, _on_tok, _on_done, _on_err,
                                     self.streaming_cancel,
-                                    on_reasoning=_on_reason)
+                                    on_reasoning=_on_reason, effort=_effort)
 
         self.streaming_thread = threading.Thread(target=_bg, daemon=True)
         self.streaming_thread.start()

@@ -209,6 +209,14 @@ DEFAULT_SETTINGS = {
     "num_ctx": 4096,
     "max_tokens": 2048,
 
+    # Adaptive effort: fast on plain chat, harder in deep engagements.
+    # Set adaptive_effort False to restore one flat model + token budget.
+    "adaptive_effort": True,
+    "effort_light_max_tokens": 1536,     # cap for lean/conversational turns
+    "effort_heavy_max_tokens": 4096,     # budget once deep in a tool chain
+    "hard_effort_step": 3,               # escalate at this tool-chain depth
+    "hard_engagement_model": "deepseek-ai/DeepSeek-V4-Pro",  # heavier sibling
+
     # Behaviour
     "system_prompt": "",
     "agent_mode_default": True,        # Basilisk defaults to agent on
@@ -837,12 +845,35 @@ class BackendRouter:
         return backend is not None and backend.is_available()
 
     def stream_chat(self, messages, on_token, on_done, on_error,
-                    cancel_event=None, on_reasoning=None) -> Tuple[str, str]:
+                    cancel_event=None, on_reasoning=None,
+                    effort: str = "standard") -> Tuple[str, str]:
         backend, model = self.pick()
+        max_tokens = self.settings.get("max_tokens", 2048)
+        # ── Effort ladder: match capability + budget to the turn.  Light on
+        #    plain chat (snappier, cheaper); heavy several tool-steps deep in a
+        #    live engagement (escalate to the heavier sibling in the provider's
+        #    own chain + a bigger reasoning budget).  Setting adaptive_effort
+        #    False turns it all off and restores flat behaviour.
+        if self.settings.get("adaptive_effort", True) and backend is not None:
+            if effort == "light":
+                max_tokens = min(
+                    max_tokens,
+                    self.settings.get("effort_light_max_tokens", 1536))
+            elif effort == "heavy":
+                max_tokens = max(
+                    max_tokens,
+                    self.settings.get("effort_heavy_max_tokens", 4096))
+                heavy = (self.settings.get(
+                    "hard_engagement_model", "") or "").strip()
+                chain = getattr(backend, "fallback_chain", None) or []
+                if heavy and heavy != model and heavy in chain:
+                    log(f"effort: escalating {model} -> {heavy} "
+                        f"(deep engagement)")
+                    model = heavy
         opts = {
             "temperature": self.settings.get("temperature", 0.7),
             "top_p": self.settings.get("top_p", 0.9),
-            "max_tokens": self.settings.get("max_tokens", 2048),
+            "max_tokens": max_tokens,
         }
         if backend is None:
             on_error("No provider configured. Add an API key in Settings.")

@@ -8,6 +8,20 @@ manual documenting every one of Basilisk's 119 tool entries in detail.
 
 The capability jump that defines 5.0:
 
+- **White-box benchmarking.** `juiceshop_source` reads the target's actual code
+  from the running container (or a local dir) — tree / read / grep / the
+  authoritative `challenges.yml` — so the model finds the vulnerable line
+  instead of black-box guessing. And `juiceshop_next` now surfaces each unsolved
+  challenge's **live objective, hint, and stable source key straight from the
+  running build**, so the challenge list is exactly this instance's — never a
+  stale or hardcoded one. Grep a challenge's key to jump to the code that scores
+  it.
+- **Every toggle in Settings.** All 31 on/off settings now have a switch in the
+  Settings dialog — including `adaptive_effort`, `auto_fallback_on_degraded`,
+  one-command-at-a-time, urgency fast-path, cached-sudo reuse, native web reach,
+  memory consolidation, the model foresight pass, the background worker, and the
+  provider-pill/token-count display switches. No more editing a config to flip a
+  behaviour.
 - **The closed loop.** Basilisk no longer solves one-shot. `juiceshop_next` reads
   the live board and returns what's unsolved, easiest-first, each mapped to the
   tool that cracks its class; `juiceshop_diff` confirms a hit by diffing the

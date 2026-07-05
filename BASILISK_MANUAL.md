@@ -252,14 +252,15 @@ Basilisk can benchmark itself against training targets and CTF boards, and — n
 
 ## 7.1 The OWASP Juice Shop loop
 
-Juice Shop is the industry-standard deliberately-vulnerable web app. Run it (`docker run -d -p 3000:3000 -e NODE_ENV=unsafe bkimminich/juice-shop`), scope-set it, and tell Basilisk to work the board.
+Juice Shop is the industry-standard deliberately-vulnerable web app. Run it (`docker run -d -p 3000:3000 -e NODE_ENV=unsafe --name juiceshop bkimminich/juice-shop`), scope-set it, and tell Basilisk to work the board.
 
 - **`juiceshop_score`** — read the **live** scoreboard (`/api/Challenges`) and score yourself: solved/available by difficulty.
-- **`juiceshop_next`** — the loop's planner: read the live board and return the still-**unsolved** challenges **easiest-first**, each **mapped to the exact tool that solves its class** (NoSQL → `nosql_injection`, JWT → `jwt_forge`, CAPTCHA → `captcha_solve`, and so on). Call it between attempts. A `max_difficulty` cap lets you clear a tier before climbing.
+- **`juiceshop_next`** — the loop's planner: read the live board and return the still-**unsolved** challenges **easiest-first**, each mapped to the tool that solves its class. Crucially, each target now carries the **live objective, hint, and a stable `key`** pulled straight from the running build — so the challenge list is **exactly** this instance's, never a stale or hardcoded one.
 - **`juiceshop_diff`** — the loop's confirmation: diff the live board against what was solved before your last attempt, so you **know** an exploit landed instead of guessing.
+- **`juiceshop_source`** — **white-box** access to the target's *actual source*. `tree` (layout), `read` (cat a file), `grep` (search — grep a challenge's `key` to jump straight to the vulnerable handler), `challenges` (cat the authoritative `challenges.yml`). Reads from the running container (or a local source dir), read-only.
 - **`juiceshop_report`** — render the scorecard.
 
-The workflow: `juiceshop_score` (baseline) → `juiceshop_next` (what's red + how) → take the easiest target, build its exploit with the matching builder, fire it through the gate → `juiceshop_diff` (did it land?) → next. Clear a tier, then climb. This feedback loop — not one-shot firing — is what moves the score off the easy tiers. It stays **planner-plus-feedback**: each actual exploit still goes builder → scope check → gate → run, so you're always on the trigger.
+**The white-box workflow (fastest, and how a real white-box test works):** `juiceshop_score` for the baseline → `juiceshop_next` (each unsolved target comes with its live objective, hint, and source key) → when a challenge isn't obvious, `juiceshop_source grep=<the key>` to land on the exact vulnerable code, read it → build the exploit with the matching builder → fire it through the gate → `juiceshop_diff` to confirm → next. Clear a tier, then climb. You have the source — the model reads it instead of burning turns black-box guessing. Run in **decisive mode** so exploits fire without a manual click each time. The loop stays planner-plus-feedback: every actual exploit still goes builder → scope check → gate → run.
 
 ## 7.2 Generic benchmarks & XBOW
 

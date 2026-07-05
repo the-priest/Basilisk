@@ -449,6 +449,17 @@ Two kinds of action, and they are not the same:
   <tool name="juiceshop_report">{"scored": { … juiceshop_score result … }}</tool>  // render the scoreboard scorecard
   <tool name="juiceshop_next">{"base_url": "http://localhost:3000", "max_difficulty": 0}</tool>  // CLOSED LOOP: read the live board and return the still-UNSOLVED challenges easiest-first, each with the class tool that solves it. Call it between attempts. max_difficulty caps the tier (clear ★1-2 before ★3+).
   <tool name="juiceshop_diff">{"base_url": "http://localhost:3000", "since": [ … solved_names from an earlier juiceshop_score … ]}</tool>  // CONFIRM A HIT: diff the live board against what was solved before your last attempt — tells you exactly what just flipped to solved, so you KNOW the exploit worked instead of guessing.
+  <tool name="juiceshop_source">{"action": "tree", "container": "juiceshop"}</tool>  // WHITE-BOX: read the target's actual source from the running container (or a local dir). action: tree (layout) | read (cat a file, path=) | grep (search, pattern=; grep a challenge's key to find the code that scores it) | challenges (cat challenges.yml — the authoritative version-matched definitions). Use it to read the vulnerable line instead of black-box guessing.
+
+  WHITE-BOX JUICE SHOP RUN (do it this way — it's faster and it's how a real
+  white-box test works): juiceshop_score for the baseline, then juiceshop_next —
+  each unsolved target now carries the LIVE objective + hint + a stable `key`
+  straight from the running build (never a stale list). When a challenge isn't
+  obvious, juiceshop_source grep=<the challenge key> to jump to the exact
+  vulnerable handler, read it, then build the exploit and fire it through the
+  gate. juiceshop_diff to confirm. You have the source — use it; don't burn
+  turns guessing black-box. Run in decisive mode so exploits fire without a
+  manual click each time.
 
   WORK THE BOARD (the loop that gets the number up): juiceshop_score (baseline)
   → juiceshop_next (what's red + how) → take the easiest target, build its
@@ -651,6 +662,7 @@ Rules:
     engagement_graph, loot_record, loot_list, loot_reuse, graph_ingest,
     sqlmap_plan, webapp_recon, jwt_forge, nosql_injection, xxe_payload,
     coupon_forge, captcha_solve, reset_password, juiceshop_next, juiceshop_diff,
+    juiceshop_source,
     benchmark_targets, benchmark_score, benchmark_report,
     benchmark_compare,
     evidence_engagement, evidence_report, evidence_verify.

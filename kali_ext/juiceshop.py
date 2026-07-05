@@ -26,6 +26,7 @@ and is pure/testable; the live GET lives in the tool wrapper.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, Dict, List
 
 
@@ -235,8 +236,24 @@ def next_targets(payload: Any, limit: int = 0,
             continue
         name = c.get("name", "?")
         cat = c.get("category", "")
-        todo.append({"name": name, "difficulty": diff, "stars": "*" * diff,
-                     "category": cat, "approach": _hint_for(cat, name)})
+        # Pull the version-matched brief straight from the LIVE instance so the
+        # model knows exactly what THIS build's challenge asks — no stale/baked
+        # list. description + hint ship in /api/Challenges (unless the operator
+        # disabled hints); key is the stable id used in the source.
+        entry = {"name": name, "difficulty": diff, "stars": "*" * diff,
+                 "category": cat, "approach": _hint_for(cat, name)}
+        desc = (c.get("description") or "").strip()
+        if desc:
+            # strip Juice Shop's HTML tags for a clean one-liner
+            entry["objective"] = re.sub(r"<[^>]+>", "", desc)[:300]
+        hint = (c.get("hint") or "").strip()
+        if hint:
+            entry["hint"] = re.sub(r"<[^>]+>", "", hint)[:300]
+        if c.get("hintUrl"):
+            entry["hint_url"] = c.get("hintUrl")
+        if c.get("key"):
+            entry["key"] = c.get("key")   # stable id — grep the source for it
+        todo.append(entry)
     todo.sort(key=lambda r: (r["difficulty"], r["category"], r["name"]))
     if limit and limit > 0:
         todo = todo[:limit]

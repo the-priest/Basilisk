@@ -60,7 +60,7 @@ from kali_core import (
     tool_juiceshop_next, tool_juiceshop_diff,
     tool_jwt_forge, tool_nosql_injection, tool_xxe_payload,
     tool_coupon_forge, tool_captcha_solve, tool_reset_password,
-    tool_webapp_recon,
+    tool_webapp_recon, tool_juiceshop_source,
     tool_benchmark_targets, tool_benchmark_score, tool_benchmark_report,
     tool_benchmark_compare,
     tool_osint_username, tool_osint_lookup, tool_social_read,
@@ -2668,6 +2668,32 @@ class SettingsDialog(Adw.PreferencesDialog):
         self.active_provider_row.connect("notify::selected",
                                          self._on_active_provider)
         rg.add(self.active_provider_row)
+
+        self.adaptive_effort_row = Adw.SwitchRow()
+        self.adaptive_effort_row.set_title("Adaptive effort")
+        self.adaptive_effort_row.set_subtitle(
+            "Match model + token budget to the task: fast model for chat, the "
+            "heavier reasoning sibling once several tool-steps deep. Turn OFF to "
+            "keep every turn on the fast model — snappier for a benchmark grind.")
+        self.adaptive_effort_row.set_active(
+            bool(parent.settings.get("adaptive_effort", True)))
+        self.adaptive_effort_row.connect(
+            "notify::active",
+            lambda r, _ps: self._set("adaptive_effort", r.get_active()))
+        rg.add(self.adaptive_effort_row)
+
+        self.auto_fallback_row = Adw.SwitchRow()
+        self.auto_fallback_row.set_title("Auto-fallback on a bad reply")
+        self.auto_fallback_row.set_subtitle(
+            "If a reply comes back empty or repetitive, automatically retry on "
+            "the fallback provider for the next turn instead of just warning.")
+        self.auto_fallback_row.set_active(
+            bool(parent.settings.get("auto_fallback_on_degraded", False)))
+        self.auto_fallback_row.connect(
+            "notify::active",
+            lambda r, _ps: self._set("auto_fallback_on_degraded", r.get_active()))
+        rg.add(self.auto_fallback_row)
+
         page.add(rg)
 
         # ── One group per cloud provider: key + model picker ──
@@ -2810,6 +2836,41 @@ class SettingsDialog(Adw.PreferencesDialog):
             lambda r, _ps: self._set("foresight_enabled", r.get_active()))
         ext_g.add(self.foresight_row)
 
+        self.reach_row = Adw.SwitchRow()
+        self.reach_row.set_title("Native web reach")
+        self.reach_row.set_subtitle(
+            "Semantic full-web search plus GitHub repo/issue search and README "
+            "reading — keyless. Powers deep research.")
+        self.reach_row.set_active(bool(parent.settings.get("reach_enabled", True)))
+        self.reach_row.connect(
+            "notify::active",
+            lambda r, _ps: self._set("reach_enabled", r.get_active()))
+        ext_g.add(self.reach_row)
+
+        self.mem_consolidate_row = Adw.SwitchRow()
+        self.mem_consolidate_row.set_title("Consolidate memory")
+        self.mem_consolidate_row.set_subtitle(
+            "Let the model distil durable facts from a conversation into memory "
+            "(costs an extra call). Needs memory on.")
+        self.mem_consolidate_row.set_active(
+            bool(parent.settings.get("memory_consolidate", True)))
+        self.mem_consolidate_row.connect(
+            "notify::active",
+            lambda r, _ps: self._set("memory_consolidate", r.get_active()))
+        ext_g.add(self.mem_consolidate_row)
+
+        self.foresight_model_row = Adw.SwitchRow()
+        self.foresight_model_row.set_title("Foresight: add a model pass")
+        self.foresight_model_row.set_subtitle(
+            "Add a model-based consequence check on top of the rule-based "
+            "foresight before acting. Needs foresight on.")
+        self.foresight_model_row.set_active(
+            bool(parent.settings.get("foresight_model", False)))
+        self.foresight_model_row.connect(
+            "notify::active",
+            lambda r, _ps: self._set("foresight_model", r.get_active()))
+        ext_g.add(self.foresight_model_row)
+
         self.mcp_row = Adw.SwitchRow()
         self.mcp_row.set_title("MCP (external tool servers)")
         self.mcp_row.set_subtitle(
@@ -2873,6 +2934,34 @@ class SettingsDialog(Adw.PreferencesDialog):
         dg.add(reset_row)
 
         d_page.add(dg)
+
+        # Interface
+        ui_g = Adw.PreferencesGroup()
+        ui_g.set_title("Interface")
+
+        self.provider_pill_row = Adw.SwitchRow()
+        self.provider_pill_row.set_title("Show provider pill")
+        self.provider_pill_row.set_subtitle(
+            "Show the active provider and model in the composer bar.")
+        self.provider_pill_row.set_active(
+            bool(parent.settings.get("show_provider_pill", True)))
+        self.provider_pill_row.connect(
+            "notify::active",
+            lambda r, _ps: self._set("show_provider_pill", r.get_active()))
+        ui_g.add(self.provider_pill_row)
+
+        self.token_count_row = Adw.SwitchRow()
+        self.token_count_row.set_title("Show token count")
+        self.token_count_row.set_subtitle(
+            "Show an approximate token count for the conversation.")
+        self.token_count_row.set_active(
+            bool(parent.settings.get("show_token_count", False)))
+        self.token_count_row.connect(
+            "notify::active",
+            lambda r, _ps: self._set("show_token_count", r.get_active()))
+        ui_g.add(self.token_count_row)
+
+        d_page.add(ui_g)
 
         # Images & vision
         iv_g = Adw.PreferencesGroup()
@@ -2943,6 +3032,54 @@ class SettingsDialog(Adw.PreferencesDialog):
         self.confirm_all_row.set_active(parent.settings["confirm_all_commands"])
         self.confirm_all_row.connect("notify::active", self._on_confirm_all)
         bg.add(self.confirm_all_row)
+
+        self.one_cmd_row = Adw.SwitchRow()
+        self.one_cmd_row.set_title("One command at a time")
+        self.one_cmd_row.set_subtitle(
+            "Never propose or run more than one shell command per message. "
+            "Safer; leave on unless you want batched commands.")
+        self.one_cmd_row.set_active(
+            bool(parent.settings.get("one_command_at_a_time", True)))
+        self.one_cmd_row.connect(
+            "notify::active",
+            lambda r, _ps: self._set("one_command_at_a_time", r.get_active()))
+        bg.add(self.one_cmd_row)
+
+        self.urgency_row = Adw.SwitchRow()
+        self.urgency_row.set_title("Urgency fast-path")
+        self.urgency_row.set_subtitle(
+            "When your message reads as urgent, skip the preamble and act "
+            "immediately.")
+        self.urgency_row.set_active(
+            bool(parent.settings.get("urgency_fast_path", True)))
+        self.urgency_row.connect(
+            "notify::active",
+            lambda r, _ps: self._set("urgency_fast_path", r.get_active()))
+        bg.add(self.urgency_row)
+
+        self.auto_sudo_row = Adw.SwitchRow()
+        self.auto_sudo_row.set_title("Reuse cached sudo")
+        self.auto_sudo_row.set_subtitle(
+            "If you've already authenticated this session, use sudo silently "
+            "instead of prompting again. Your password is never stored or shown.")
+        self.auto_sudo_row.set_active(
+            bool(parent.settings.get("auto_sudo_when_cached", True)))
+        self.auto_sudo_row.connect(
+            "notify::active",
+            lambda r, _ps: self._set("auto_sudo_when_cached", r.get_active()))
+        bg.add(self.auto_sudo_row)
+
+        self.warn_dup_row = Adw.SwitchRow()
+        self.warn_dup_row.set_title("Warn on duplicate commands")
+        self.warn_dup_row.set_subtitle(
+            "Flag when the same command is about to run again within ~10 minutes.")
+        self.warn_dup_row.set_active(
+            bool(parent.settings.get("warn_duplicate_commands", False)))
+        self.warn_dup_row.connect(
+            "notify::active",
+            lambda r, _ps: self._set("warn_duplicate_commands", r.get_active()))
+        bg.add(self.warn_dup_row)
+
         b_page.add(bg)
 
         # Watcher
@@ -2989,6 +3126,20 @@ class SettingsDialog(Adw.PreferencesDialog):
                           lambda r, *_: self._set("watcher_interval_minutes",
                                                   int(r.get_value())))
         wg.add(interval)
+
+        self.worker_row = Adw.SwitchRow()
+        self.worker_row.set_title("Background worker")
+        self.worker_row.set_subtitle(
+            "The headless systemd --user companion (installed by the installer) "
+            "polls on a cadence and posts notable events to the inbox even when "
+            "the app is closed. Off by default.")
+        self.worker_row.set_active(
+            bool(parent.settings.get("worker_enabled", False)))
+        self.worker_row.connect(
+            "notify::active",
+            lambda r, _ps: self._set("worker_enabled", r.get_active()))
+        wg.add(self.worker_row)
+
         b_page.add(wg)
 
         # History / retention
@@ -4885,6 +5036,7 @@ class MainWindow(Adw.ApplicationWindow):
         "juiceshop_report":   "building the scorecard",
         "juiceshop_next":     "picking the next targets",
         "juiceshop_diff":     "confirming what solved",
+        "juiceshop_source":   "reading the source",
         "jwt_forge":          "forging a JWT",
         "nosql_injection":    "building a NoSQL payload",
         "xxe_payload":        "building an XXE payload",
@@ -5532,6 +5684,12 @@ class MainWindow(Adw.ApplicationWindow):
             return lambda: tool_juiceshop_diff(
                 a.get("base_url", a.get("url", "http://localhost:3000")),
                 a.get("since", a.get("solved_names", a.get("previous"))))
+        if n == "juiceshop_source":
+            return lambda: tool_juiceshop_source(
+                a.get("action", "tree"), a.get("path", ""),
+                a.get("pattern", a.get("query", "")),
+                a.get("container", "juiceshop"),
+                a.get("base", a.get("base_path", "/juice-shop")))
         if n == "jwt_forge":
             return lambda: tool_jwt_forge(
                 a.get("token", ""), a.get("mode", "none"),
@@ -6053,6 +6211,12 @@ class MainWindow(Adw.ApplicationWindow):
                 lambda: tool_juiceshop_diff(
                     a.get("base_url", a.get("url", "http://localhost:3000")),
                     a.get("since", a.get("solved_names", a.get("previous"))))),
+            "juiceshop_source":   lambda a: self._tool_simple(
+                lambda: tool_juiceshop_source(
+                    a.get("action", "tree"), a.get("path", ""),
+                    a.get("pattern", a.get("query", "")),
+                    a.get("container", "juiceshop"),
+                    a.get("base", a.get("base_path", "/juice-shop")))),
             "jwt_forge":          lambda a: self._tool_simple(
                 lambda: tool_jwt_forge(
                     a.get("token", ""), a.get("mode", "none"),

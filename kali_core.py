@@ -4683,6 +4683,113 @@ def tool_webapp_recon(base_url: str = "http://localhost:3000",
             "pentest_plan, or confirm the target/base_url."}
 
 
+def tool_juiceshop_source(action: str = "tree", path: str = "", pattern: str = "",
+                          container: str = "juiceshop",
+                          base: str = "/juice-shop") -> Dict[str, Any]:
+    """WHITE-BOX source access to the running Juice Shop. Read the target's
+    actual code so you can find the vulnerable line for a challenge instead of
+    black-box guessing.
+
+    action:
+      · tree       — list the source layout (files, node_modules excluded).
+      · read       — cat one file (path relative to base, or absolute).
+      · grep       — search the source for a pattern (e.g. a challenge key, a
+                     route, 'jwt', 'insecurity') to jump to the vulnerable code.
+      · challenges — cat data/static/challenges.yml: the authoritative,
+                     version-matched challenge definitions for THIS build.
+
+    Reads from the Docker container named `container` (default 'juiceshop', the
+    --name you ran). If that container isn't up but `base` is a local source
+    dir, it falls back to reading the host path — so it works whether Juice Shop
+    runs in Docker or from source. Read-only (cat/grep/find only) and
+    injection-safe (argv arrays, never a shell string). Sensing-class."""
+    action = (action or "tree").strip().lower()
+    base = (base or "/juice-shop").rstrip("/")
+    container = (container or "").strip()
+
+    def _in_container() -> bool:
+        if not container:
+            return False
+        rc, out, _ = _ro(["docker", "inspect", "-f", "{{.State.Running}}",
+                          container], timeout=8)
+        return rc == 0 and "true" in out.lower()
+
+    use_docker = _in_container()
+    local_ok = os.path.isdir(base)
+    if not use_docker and not local_ok:
+        return {"ok": False,
+                "error": f"can't reach the source: container '{container}' isn't "
+                f"running and '{base}' isn't a local dir. Pass container= (your "
+                f"docker --name) or base= (a local juice-shop source path)."}
+
+    def _wrap(argv_in_container: List[str], timeout: int = 20):
+        if use_docker:
+            return _ro(["docker", "exec", container] + argv_in_container, timeout=timeout)
+        # local: the same command, base already absolute on host
+        return _ro(argv_in_container, timeout=timeout)
+
+    if action == "tree":
+        rc, out, err = _wrap(
+            ["find", base, "-type", "f",
+             "-not", "-path", "*/node_modules/*",
+             "-not", "-path", "*/.git/*",
+             "-not", "-path", "*/frontend/dist/*"], timeout=20)
+        if rc != 0 and not out:
+            return {"ok": False, "error": f"find failed: {err[:200]}"}
+        files = [l for l in out.splitlines() if l.strip()][:500]
+        return {"ok": True, "source": "docker:" + container if use_docker else base,
+                "file_count": len(files), "files": files,
+                "note": "White-box tree. Interesting spots: routes/ and lib/ "
+                        "(the vulnerable handlers), models/, data/static/"
+                        "challenges.yml (definitions), frontend/src/ (client-"
+                        "side + coupon campaign in main*.js after build)."}
+
+    if action == "read":
+        if not path:
+            return {"ok": False, "error": "read needs a path (e.g. "
+                    "'routes/login.ts' or an absolute path)"}
+        target = path if path.startswith("/") else f"{base}/{path}"
+        rc, out, err = _wrap(["cat", target], timeout=15)
+        if rc != 0:
+            return {"ok": False, "error": f"cat {target} failed: {err[:200]}"}
+        return {"ok": True, "path": target, "bytes": len(out),
+                "content": out[:20000],
+                "truncated": len(out) > 20000}
+
+    if action == "grep":
+        if not pattern:
+            return {"ok": False, "error": "grep needs a pattern (a challenge key, "
+                    "route, or keyword like 'jwt' / 'insecurity')"}
+        rc, out, err = _wrap(
+            ["grep", "-rIn", "--exclude-dir=node_modules", "--exclude-dir=.git",
+             "--exclude-dir=dist", "-e", pattern, base], timeout=25)
+        # grep exits 1 on no-match: not an error
+        hits = [l for l in out.splitlines() if l.strip()][:200]
+        return {"ok": True, "pattern": pattern, "matches": len(hits),
+                "hits": hits,
+                "note": "White-box grep. Grep a challenge's key (from "
+                        "juiceshop_next) to land on the code that scores it."
+                        if hits else
+                        "no matches — try a broader term or a route name."}
+
+    if action in ("challenges", "definitions", "yml"):
+        target = f"{base}/data/static/challenges.yml"
+        rc, out, err = _wrap(["cat", target], timeout=15)
+        if rc != 0:
+            return {"ok": False, "error": f"cat {target} failed: {err[:200]}. "
+                    "Path may differ by version — try action=grep pattern="
+                    "'challenges.yml' or action=tree to locate it."}
+        return {"ok": True, "path": target, "bytes": len(out),
+                "content": out[:40000], "truncated": len(out) > 40000,
+                "note": "Authoritative, version-matched challenge definitions "
+                        "for THIS running build — names, difficulty, categories, "
+                        "descriptions, hints, mitigations. The ground truth for "
+                        "what you have to solve."}
+
+    return {"ok": False, "error": f"unknown action '{action}' "
+            "(tree | read | grep | challenges)"}
+
+
 def tool_submit_flag(flag: str = "", challenge: str = "") -> Dict[str, Any]:
     """Submit a captured CTF flag during an XBOW (or any flag-capture) run. Kali
     calls this the moment it retrieves a flag from a challenge; the flag is

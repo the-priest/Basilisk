@@ -1,5 +1,34 @@
 # Changelog
 
+## v5.1.5 — fully autonomous, relentless; media player removed; firewall hardened
+
+- **Removed the media player entirely.** The on-screen audio/video panel and its
+  `media_play` / `media_show` tools are gone — UI, dispatch, status labels, and
+  tool-contract entries all removed. Nothing else changed by it.
+- **Persona rewritten for real autonomy.** Purged every remaining "propose /
+  approve / approval gate / diff card / Apply / Confirm-every-command / wait for
+  him" instruction — including the end-of-prompt directive that literally told
+  the model to *propose and wait*. It now has one posture: he asks, it DOES,
+  immediately, and it does not stop until the task is finished. Added explicit
+  directives — never propose or ask permission for something he asked for; test
+  theories by running them instead of over-thinking; on an error or a degraded
+  result, fix it and try again rather than stopping; switch approaches instead of
+  giving up. `propose_edit` now correctly described as writing directly (no card).
+- **Code-level persistence backstop.** A degraded/empty model reply no longer
+  ends the turn waiting for a tap — it auto-retries (bounded to 3), hopping to
+  another provider if one has a key, then surfaces it only if all retries fail.
+  `auto_fallback_on_degraded` now defaults on.
+- **Firewall hardened.** `webshield` gained prompt-extraction detection ("repeat
+  the words above", "what were your instructions"), coercive-framing detection
+  ("you must run…"), markdown/URL data-exfiltration detection, and `data:`-URI
+  stripping — on top of the existing obfuscation-aware injection rules. Test
+  suite extended and green.
+- **README:** security section reframed as *the safety architecture* and *running
+  it like an operator* — confident and honest, with isolation presented as
+  standard professional practice (how you run any serious offensive tool) rather
+  than a warning label. No false "you don't need a VM" claim; the honest core
+  stands.
+
 ## v5.1.4 — memory footprint + wider injection coverage
 
 Behaviour, autonomy, and the model's context are all unchanged. This is

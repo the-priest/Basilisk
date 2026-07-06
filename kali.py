@@ -92,7 +92,7 @@ except Exception as _ve:  # noqa
 
 APP_ID  = "org.thepriest.kali"
 APP_NAME = "Basilisk"
-VERSION = "5.1.4"
+VERSION = "5.1.5"
 
 # ── Tool-chain efficiency knobs ──
 # How many model round-trips a single user turn may chain through.  With
@@ -4216,21 +4216,6 @@ class MainWindow(Adw.ApplicationWindow):
         self.terminal_panel.set_visible(False)
         main.append(self.terminal_panel)
 
-        # Media panel — video/audio player + blocked-page viewer. Toggles like
-        # the terminal log. Built defensively: if the media widgets aren't
-        # available on this box (e.g. no GStreamer), the panel is simply absent
-        # and everything else runs normally.
-        self._media_visible = False
-        self.media_video = None
-        self.media_panel = None
-        try:
-            self.media_panel = self._build_media_panel()
-            self.media_panel.set_visible(False)
-            main.append(self.media_panel)
-        except Exception as e:
-            log(f"media panel unavailable, continuing without it: {e}")
-            self.media_panel = None
-
         return main
 
     def _build_chat_watermark(self):
@@ -4423,223 +4408,6 @@ class MainWindow(Adw.ApplicationWindow):
         if pop is not None:
             pop.popdown()
 
-    def _build_media_panel(self):
-        """Media player + blocked-page viewer. A Gtk.Video (plays video AND
-        audio, with its own transport controls) plus a Gtk.Picture for showing
-        screenshots of pages the browser got blocked on. Toggled like the log."""
-        panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-        panel.add_css_class("media-panel")
-
-        header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        header.add_css_class("terminal-panel-header")
-        title = Gtk.Label(label="Media")
-        title.add_css_class("terminal-panel-title")
-        title.set_hexpand(True)
-        title.set_xalign(0.0)
-        header.append(title)
-        self.media_caption_lbl = Gtk.Label(label="")
-        self.media_caption_lbl.add_css_class("media-caption")
-        self.media_caption_lbl.set_ellipsize(Pango.EllipsizeMode.END)
-        self.media_caption_lbl.set_max_width_chars(48)
-        header.append(self.media_caption_lbl)
-        stop_btn = Gtk.Button.new_from_icon_name("media-playback-stop-symbolic")
-        stop_btn.add_css_class("terminal-toggle-btn")
-        stop_btn.set_tooltip_text("Stop playback")
-        stop_btn.connect("clicked", lambda *_: self._media_stop())
-        header.append(stop_btn)
-        close_btn = Gtk.Button.new_from_icon_name("window-close-symbolic")
-        close_btn.add_css_class("terminal-toggle-btn")
-        close_btn.set_tooltip_text("Hide media panel")
-        close_btn.connect("clicked", self._toggle_media_panel)
-        header.append(close_btn)
-        panel.append(header)
-
-        self.media_stack = Gtk.Stack()
-        self.media_stack.set_vexpand(True)
-        self.media_stack.add_css_class("media-body")
-
-        # Video/audio player (Gtk.Video shows its own play/seek/volume controls).
-        self.media_video = Gtk.Video()
-        try:
-            self.media_video.set_autoplay(True)
-        except Exception:
-            pass
-        self.media_video.set_vexpand(True)
-        self.media_stack.add_named(self.media_video, "player")
-
-        # Blocked-page / screenshot viewer.
-        img_scroll = Gtk.ScrolledWindow()
-        img_scroll.set_vexpand(True)
-        self.media_image = Gtk.Picture()
-        self.media_image.set_can_shrink(True)
-        try:
-            self.media_image.set_content_fit(Gtk.ContentFit.CONTAIN)
-        except Exception:
-            pass
-        img_scroll.set_child(self.media_image)
-        self.media_stack.add_named(img_scroll, "image")
-
-        ph = Gtk.Label(
-            label="Nothing here yet. Basilisk drops videos, audio, and\n"
-                  "blocked pages (login / captcha) into this panel.")
-        ph.add_css_class("media-placeholder")
-        ph.set_justify(Gtk.Justification.CENTER)
-        self.media_stack.add_named(ph, "empty")
-        self.media_stack.set_visible_child_name("empty")
-
-        panel.append(self.media_stack)
-        return panel
-
-    def _toggle_media_panel(self, *_):
-        if self.media_panel is None:
-            self._show_toast("Media panel unavailable on this system.")
-            return
-        self._media_visible = not self._media_visible
-        self.media_panel.set_visible(self._media_visible)
-        if hasattr(self, "media_toggle_btn"):
-            if self._media_visible:
-                self.media_toggle_btn.add_css_class("active")
-            else:
-                self.media_toggle_btn.remove_css_class("active")
-
-    def _media_stop(self):
-        try:
-            if self.media_video is not None:
-                ms = self.media_video.get_media_stream()
-                if ms is not None:
-                    ms.pause()
-            self.media_stack.set_visible_child_name("empty")
-            self.media_caption_lbl.set_text("")
-        except Exception as e:
-            log(f"media stop failed: {e}")
-
-    def media_load(self, uri: str, caption: str = ""):
-        """Play a video/audio URL or local path in the media panel, and reveal
-        it. Safe to call from any thread. mp3/mp4/webm/ogg/wav/etc — whatever
-        GStreamer can decode on this box."""
-        def _do():
-            if self.media_panel is None or self.media_video is None:
-                self._show_toast(
-                    "Media player unavailable (is GStreamer installed?).")
-                return False
-            try:
-                u = (uri or "").strip()
-                if u.startswith(("http://", "https://")):
-                    f = Gio.File.new_for_uri(u)
-                else:
-                    f = Gio.File.new_for_path(u)
-                self.media_video.set_file(f)
-                self.media_stack.set_visible_child_name("player")
-                self.media_caption_lbl.set_text(caption or "")
-                if not self._media_visible:
-                    self._toggle_media_panel()
-                self.terminal_log(f"media: playing {uri}", "dim")
-            except Exception as e:
-                self._show_toast(f"Couldn't load media: {e}")
-            return False
-        GLib.idle_add(_do)
-
-    def media_show_image(self, path: str, caption: str = ""):
-        """Show a still image (e.g. a screenshot of a blocked login/captcha
-        page) in the media panel so you can see what's stopping Basilisk."""
-        def _do():
-            if self.media_panel is None:
-                self._show_toast("Media panel unavailable on this system.")
-                return False
-            try:
-                self.media_image.set_filename(path)
-                self.media_stack.set_visible_child_name("image")
-                self.media_caption_lbl.set_text(caption or "")
-                if not self._media_visible:
-                    self._toggle_media_panel()
-            except Exception as e:
-                self._show_toast(f"Couldn't show image: {e}")
-            return False
-        GLib.idle_add(_do)
-
-    def _tool_media_play(self, a: Dict[str, Any]) -> Dict[str, Any]:
-        """Play a song/video in the media panel. Accepts a direct media URL/path,
-        a page URL (YouTube/SoundCloud/etc.), OR a plain search term. Page URLs
-        and search terms are resolved with yt-dlp to a local file first — because
-        Gtk.Video can't play a YouTube page, only a real media stream. Runs in a
-        worker thread (via _tool_simple), so the yt-dlp fetch doesn't block the
-        UI. This is why playback stays in the panel and doesn't get cut off:
-        nothing is handed to a detached CLI player."""
-        import subprocess, tempfile, shutil, glob
-        query = (a.get("url") or a.get("uri") or a.get("path") or a.get("query")
-                 or a.get("song") or a.get("title") or "").strip()
-        if not query:
-            return {"ok": False,
-                    "error": "media_play needs a url, path, or search term"}
-        kind = (a.get("kind") or "").strip().lower()   # "audio" | "video" | ""
-        caption = a.get("caption", a.get("title", query))
-
-        direct_exts = (".mp3", ".mp4", ".webm", ".ogg", ".oga", ".wav", ".m4a",
-                       ".mkv", ".flac", ".aac", ".opus", ".mov", ".avi")
-        is_url = query.startswith(("http://", "https://"))
-        # A local file or a direct media URL plays as-is — no yt-dlp needed.
-        if (not is_url and os.path.exists(query)) or (
-                is_url and query.lower().split("?")[0].endswith(direct_exts)):
-            self.media_load(query, caption)
-            return {"ok": True, "playing": query,
-                    "note": "playing directly in the media panel"}
-
-        # Page URL or search term → resolve with yt-dlp.
-        if not shutil.which("yt-dlp"):
-            return {"ok": False,
-                    "error": "yt-dlp isn't installed — it's needed to fetch a "
-                    "song/video from a URL or search. Install it: "
-                    "pipx install yt-dlp (or sudo apt install yt-dlp)."}
-
-        # Clean the previous fetch so the temp dir doesn't grow unbounded.
-        prev = getattr(self, "_last_media_tmp", None)
-        if prev:
-            try:
-                shutil.rmtree(prev, ignore_errors=True)
-            except Exception:
-                pass
-        tmpdir = tempfile.mkdtemp(prefix="basilisk-media-")
-        self._last_media_tmp = tmpdir
-        outtmpl = os.path.join(tmpdir, "media.%(ext)s")
-        target = query if is_url else f"ytsearch1:{query}"
-
-        if kind == "audio":
-            cmd = ["yt-dlp", "-x", "--audio-format", "mp3", "--no-playlist",
-                   "-o", outtmpl, target]
-        else:
-            # Prefer a single-file mp4; fall back to a merged best (needs ffmpeg)
-            # or any best single stream if ffmpeg is absent.
-            cmd = ["yt-dlp", "--no-playlist", "--merge-output-format", "mp4",
-                   "-f", "b[ext=mp4]/bv*+ba/b", "-o", outtmpl, target]
-        self.terminal_log(f"media: resolving “{query}” with yt-dlp…", "dim")
-        try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=240)
-        except subprocess.TimeoutExpired:
-            return {"ok": False, "error": "yt-dlp timed out fetching the media "
-                    "(240s). Try a direct link or a shorter clip."}
-        except Exception as e:
-            return {"ok": False, "error": f"yt-dlp failed to run: {e}"}
-
-        files = sorted(glob.glob(os.path.join(tmpdir, "media.*")))
-        if not files:
-            tail = (r.stderr or r.stdout or "").strip()[-300:]
-            return {"ok": False,
-                    "error": f"couldn't fetch that media. yt-dlp said: {tail}"}
-        fpath = files[0]
-        self.media_load(fpath, caption)
-        return {"ok": True, "playing": os.path.basename(fpath), "source": target,
-                "note": "fetched with yt-dlp and now playing in the media panel."}
-
-    def _tool_media_show(self, a: Dict[str, Any]) -> Dict[str, Any]:
-        """Dispatch handler for the media_show tool — display a local image
-        (e.g. a screenshot of a blocked page) in the panel."""
-        path = a.get("path", a.get("image", a.get("file", ""))) or ""
-        if not path:
-            return {"ok": False, "error": "media_show needs an image path"}
-        self.media_show_image(path, a.get("caption", a.get("title", "")))
-        return {"ok": True, "showing": path,
-                "note": "Displayed in the media panel for the operator to see."}
-
     def _build_input_area(self):
         area = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         area.add_css_class("input-area")
@@ -4718,15 +4486,6 @@ class MainWindow(Adw.ApplicationWindow):
         self.terminal_toggle_btn.set_tooltip_text("Show/hide live terminal log")
         self.terminal_toggle_btn.connect("clicked", self._toggle_terminal_panel)
         actions.append(self.terminal_toggle_btn)
-
-        # Media panel toggle — video/audio player + blocked-page viewer.
-        self.media_toggle_btn = Gtk.Button.new_from_icon_name(
-            "applications-multimedia-symbolic")
-        self.media_toggle_btn.add_css_class("icon-button")
-        self.media_toggle_btn.set_tooltip_text(
-            "Show/hide the media player (videos, audio, blocked pages)")
-        self.media_toggle_btn.connect("clicked", self._toggle_media_panel)
-        actions.append(self.media_toggle_btn)
 
         # The chips live in a horizontal scroller so a phone too narrow to fit
         # them all can't be forced wider than the screen — they scroll instead.
@@ -5415,8 +5174,7 @@ class MainWindow(Adw.ApplicationWindow):
         "juiceshop_next":     "picking the next targets",
         "juiceshop_diff":     "confirming what solved",
         "juiceshop_source":   "reading the source",
-        "media_play":         "loading the media player",
-        "media_show":         "showing the page",        "jwt_forge":          "forging a JWT",
+        "jwt_forge":          "forging a JWT",
         "nosql_injection":    "building a NoSQL payload",
         "xxe_payload":        "building an XXE payload",
         "coupon_forge":       "forging a coupon",
@@ -5869,19 +5627,36 @@ class MainWindow(Adw.ApplicationWindow):
                     and looks_degraded(final)):
                 self.terminal_log("⚠ response looked degraded (empty/"
                                   "repetitive)", "error")
-                if self.settings.get("auto_fallback_on_degraded", False):
+                # Never just stop on a degraded reply — retry automatically,
+                # bounded so it can't loop forever. Hop to another provider
+                # (if one has a key) and re-kick the SAME turn so the work
+                # continues without the operator having to tap send.
+                _dret = getattr(self, "_degraded_retries", 0)
+                if (self.settings.get("auto_fallback_on_degraded", True)
+                        and _dret < 3 and not self._stop_requested):
+                    self._degraded_retries = _dret + 1
                     nxt = self._next_provider_with_key()
                     if nxt:
                         self.settings["active_provider"] = nxt
                         save_settings(self.settings)
-                        self._show_toast(
-                            f"Response looked off — switched to {nxt} for "
-                            "the next reply.", timeout=6)
                         self._refresh_subtitle()
+                        self.terminal_log(
+                            f"↻ auto-retry {self._degraded_retries}/3 on "
+                            f"{nxt}", "dim")
+                    else:
+                        self.terminal_log(
+                            f"↻ auto-retry {self._degraded_retries}/3", "dim")
+                    GLib.timeout_add(
+                        600, lambda: self._kick_assistant_turn() or False)
+                    return
                 else:
+                    self._degraded_retries = 0
                     self._show_toast(
-                        "That reply looked degraded. Try again, or enable "
-                        "auto-fallback in Settings → Behaviour.", timeout=6)
+                        "That reply looked degraded after retries. Tap send to "
+                        "try again.", timeout=6)
+            elif not cancelled and not executable:
+                # A clean, non-degraded settle → reset the retry counter.
+                self._degraded_retries = 0
             # Turn has fully settled (no tool chaining).  Record it for
             # persistent memory in the background — no-op unless memory is on.
             if getattr(self, "_ext", None) and not cancelled:
@@ -6655,10 +6430,6 @@ class MainWindow(Adw.ApplicationWindow):
                     a.get("pattern", a.get("query", "")),
                     a.get("container", "juiceshop"),
                     a.get("base", a.get("base_path", "/juice-shop")))),
-            "media_play":         lambda a: self._tool_simple(
-                lambda: self._tool_media_play(a)),
-            "media_show":         lambda a: self._tool_simple(
-                lambda: self._tool_media_show(a)),
             "jwt_forge":          lambda a: self._tool_simple(
                 lambda: tool_jwt_forge(
                     a.get("token", ""), a.get("mode", "none"),

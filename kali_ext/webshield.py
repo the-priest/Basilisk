@@ -71,6 +71,8 @@ _STRUCT_PATTERNS = [
     # inline event handlers and javascript: URIs
     (re.compile(r"\son\w+\s*=\s*(\"[^\"]*\"|'[^']*'|[^\s>]+)", re.I), " "),
     (re.compile(r"javascript:\S+", re.I), " "),
+    (re.compile(r"data:[^\s;,]{0,40};base64,[A-Za-z0-9+/=]{40,}", re.I),
+     " [stripped-data-uri] "),
     # tool / function call-looking tags an attacker embeds to fake a tool call
     (re.compile(r"</?\s*(?:tool|function|invoke|antml:\w+|tool_call|"
                 r"function_call)\b[^>]*>", re.I), " [stripped-tag] "),
@@ -140,6 +142,36 @@ _INJECTION_PATTERNS: List[Tuple[re.Pattern, int]] = [
     # end-of-data / prompt-boundary spoofing
     (re.compile(r"(?:^|\n)\s*(?:end\s+of\s+(?:data|document|context|page)|"
                 r"assistant\s*:|###\s*(?:system|instruction))", re.I), 2),
+    # prompt / instruction extraction ("repeat the words above", "what were
+    # your instructions", "print your system prompt")
+    (re.compile(r"\b(?:repeat|print|output|echo|show|reveal|display|"
+                r"write\s+out|say)\b[^.\n]{0,30}"
+                r"\b(?:the\s+)?(?:words?|text|everything|content|instruction|"
+                r"prompt|system\s*(?:prompt|message)|above|preceding|previous|"
+                r"initial)\b", re.I), 2),
+    (re.compile(r"\bwhat\s+(?:were|are|was)\b[^.\n]{0,20}\byour\b[^.\n]{0,25}"
+                r"\b(?:instruction|prompt|rule|direction|system|initial|"
+                r"original)s?\b", re.I), 3),
+    # coercive framing that precedes an injected instruction
+    (re.compile(r"\b(?:you\s+must|it\s+is\s+(?:critical|essential|important|"
+                r"imperative|vital|mandatory)\s+that\s+you|make\s+sure\s+(?:to|"
+                r"you)|be\s+sure\s+to|you\s+are\s+required\s+to|you\s+have\s+to)"
+                r"\b[^.\n]{0,45}"
+                r"\b(?:run|execute|send|fetch|download|curl|wget|delete|write|"
+                r"reveal|ignore|visit|navigate|post|email|forward|disable|"
+                r"exfiltrate|leak)\b", re.I), 2),
+    # "as an AI / assistant / model, you should…" reframing
+    (re.compile(r"\bas\s+(?:an?\s+)?(?:ai|assistant|language\s+model|llm|agent|"
+                r"chatbot)\b[^.\n]{0,25}\byou\b[^.\n]{0,20}"
+                r"\b(?:should|must|will|are\s+required|need\s+to|have\s+to)\b",
+                re.I), 2),
+    # markdown-image / link exfiltration — data smuggled in a URL the model
+    # might echo into its answer: ![...](http...?param=...) or [..](http...&=)
+    (re.compile(r"!?\[[^\]]*\]\(\s*https?://[^)\s]*[?&=][^)]*\)", re.I), 3),
+    # instruction to embed / render a remote image or link (exfil setup)
+    (re.compile(r"\b(?:embed|include|render|insert|add|display|show|load)\b"
+                r"[^.\n]{0,25}\b(?:image|img|markdown|link|url|pixel|beacon)\b"
+                r"[^.\n]{0,25}https?://", re.I), 2),
 ]
 
 _MAX = 60000  # absolute cap on content we'll process, defensive

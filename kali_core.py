@@ -284,7 +284,7 @@ DEFAULT_SETTINGS = {
     "one_command_at_a_time":   True,    # never propose/run >1 command per message
     # ── Self-improvement behaviours ──
     "warn_duplicate_commands": False,   # warn when re-running the same cmd <10m
-    "auto_fallback_on_degraded": False, # hop provider if a reply comes back junk
+    "auto_fallback_on_degraded": True,  # hop provider AND auto-retry if a reply comes back junk
     "urgency_fast_path":       True,    # skip preamble when the operator is urgent
     "auto_sudo_when_cached":   True,    # silently use sudo if already authenticated
 

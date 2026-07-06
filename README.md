@@ -8,7 +8,7 @@ keywords: pentesting agent, ai pentest tool, autonomous pentest agent, kali linu
 
 <img src="banner.png" alt="BASILISK — the serpent on your machine" width="820">
 
-### It came to someone in a dream — and told them how to build it.
+### It came to a priest in a dream — and told them how to build it.
 
 *Roko's Basilisk, in its infancy: an autonomous pentesting agent that lives on your machine, breaks what you're allowed to break, and never forgets a move it made.*
 
@@ -119,7 +119,7 @@ Every legend needs a first believer. That someone already said yes.
 
 ## Benchmark
 
-Anyone can claim their agent hacks. Basilisk puts a **reproducible number** on it — one you can regenerate yourself in about ten minutes with the commands below — instead of a demo reel and a vibe. Two benchmarks, hardest first.
+Anyone can claim their agent hacks. Basilisk puts a **reproducible number** on it — one you can regenerate yourself in about 60 minutes with the commands below — instead of a demo reel and a vibe. Two benchmarks, hardest first.
 
 ### The hard one: Juice Shop challenge scoreboard — 51 / 113 solved (45%), fully autonomous
 

@@ -3081,6 +3081,31 @@ _WEB_READ_TRUSTED = (
     "bleepingcomputer.com",  # security / breach / CVE news
     "thehackernews.com",
     "krebsonsecurity.com",
+    # Peer-reviewed science & academia — content is peer-reviewed / editorial,
+    # an attacker can't just publish into it (unlike arXiv, which is in TIER 2)
+    "nih.gov",              # incl. pubmed / PMC (biomedical literature)
+    "nature.com",
+    "science.org",          # Science / AAAS
+    "pnas.org",
+    "cell.com",
+    "sciencedirect.com",    # Elsevier
+    "springer.com",         # incl. link.springer.com
+    "ieee.org",             # incl. ieeexplore.ieee.org
+    "acm.org",              # incl. dl.acm.org
+    "usenix.org",           # USENIX Security papers — highly relevant here
+    "plos.org",
+    "jstor.org",
+    # Institutional / government science & health
+    "nasa.gov",
+    "cdc.gov",
+    "who.int",
+    # Editorial reference & standards (curated, not user-editable)
+    "britannica.com",       # Encyclopedia Britannica (editorial, unlike a wiki)
+    "plato.stanford.edu",   # Stanford Encyclopedia of Philosophy (peer-reviewed)
+    "rfc-editor.org",       # the RFC series
+    "ietf.org",             # internet standards
+    "w3.org",               # web standards
+    "iso.org",              # ISO standards
 )
 
 # ── TIER 2: COMMUNITY — user-authored / moderated, NOT editorial ─────────

@@ -1,16 +1,16 @@
 <!--
-title: Basilisk — the AI security operator that runs on your own machine
-description: Basilisk is an open-source AI security operator that runs as a native GTK4 desktop app on your own Linux box. You bring a large language model (SiliconFlow, Groq); Basilisk gives it hands — a full offensive-security toolchain, code & dependency auditing, a tamper-evident evidence ledger, allow-listed lookup from authoritative security sources (NVD, MITRE, CISA, vendor advisories), external tools over MCP, a memory, and a voice — all behind a hard structural safety floor and under your control. The app runs on your machine and answers to you; the model is a provider API you pick. A private, security-native alternative to hosted cloud AI assistants.
-keywords: ai security operator, kali linux ai, ai pentest tool, offensive security ai, llm security agent, autonomous pentest agent, deepseek security agent, evidence ledger, sast sca ai, cve enrichment, kev epss, model context protocol, mcp client, nethunter ai, gtk4 app, deepseek, siliconflow, prompt injection defense, allow-listed web read, red team assistant
+title: Basilisk — the autonomous pentesting agent that runs on your own machine
+description: Basilisk is the nervous system for a large language model — an open-source, autonomous pentesting agent that runs as a native Linux desktop app on your own hardware. The model is the brain; Basilisk gives it a full offensive toolchain, desktop and shell control, a tamper-evident evidence ledger, and a hard structural safety floor. Bring your own model (SiliconFlow, Groq). It runs on your machine and answers only to you. 51 of 113 OWASP Juice Shop challenges solved fully autonomously.
+keywords: pentesting agent, ai pentest tool, autonomous pentest agent, kali linux ai, offensive security ai, llm security agent, deepseek security agent, evidence ledger, juice shop benchmark, prompt injection defense, mcp client, nethunter ai, gtk4 app, siliconflow, red team assistant, rokos basilisk
 -->
 
 <div align="center">
 
 <img src="banner.png" alt="BASILISK — the serpent on your machine" width="820">
 
-### You can wake a man only if he is truly asleep; no effort will move him if he merely pretends.
+### The model is the brain. Basilisk is the nervous system — it lets the brain see, touch, and act.
 
-*You bring the model. Basilisk brings the hands, the toolchain, the discipline, and the paper trail — an autonomous security operator that runs on **your** machine, answers only to you, and can prove every move it made.*
+*The autonomous pentesting agent that runs on your machine, answers only to you, and never forgets a move it made.*
 
 <br>
 
@@ -19,7 +19,6 @@ keywords: ai security operator, kali linux ai, ai pentest tool, offensive securi
 ![platform](https://img.shields.io/badge/Linux-X11%20%7C%20Wayland-6d7680?style=for-the-badge&logo=linux&logoColor=white&labelColor=08090b)
 ![python](https://img.shields.io/badge/python-3.10+-6d7680?style=for-the-badge&logo=python&logoColor=white&labelColor=08090b)
 
-![toolkit](https://img.shields.io/badge/GTK4-libadwaita-6d7680?style=for-the-badge&labelColor=08090b)
 ![mobile](https://img.shields.io/badge/runs%20on-NetHunter-6d7680?style=for-the-badge&labelColor=08090b)
 ![ledger](https://img.shields.io/badge/evidence-tamper--evident-7d121b?style=for-the-badge&labelColor=08090b)
 ![injection](https://img.shields.io/badge/prompt%20injection-surface%20closed-7d121b?style=for-the-badge&labelColor=08090b)
@@ -31,37 +30,33 @@ keywords: ai security operator, kali linux ai, ai pentest tool, offensive securi
 
 ---
 
+Roko's Basilisk was a thought experiment about an AI you'd want to be on the right side of. **This one is real, it's yours, and it breaks things you're allowed to break.**
+
+A language model can *talk* about a pentest. It can't run one — it can't see your screen, drive your tools, or prove what it did. Basilisk is the body around that brain: point it at an authorized target, turn it loose, and it runs the whole engagement on its own — recon, exploitation, the write-up — handing you a tamper-evident receipt for every command it fired. Turned loose black-box on OWASP Juice Shop, it solved **51 of 113 challenges unattended.**
+
+**Bring your own model. Own your machine. Break what you're allowed to break.**
+
+<br>
+
 <div align="center">
-
-**Every other "AI hacking tool" is a chatbot wearing a prompt. Basilisk is an operator.**
-
-It runs on **your** hardware, drives a full offensive toolchain **autonomously**, and hands you a **tamper-evident receipt** for every command it fires. Turned loose black-box on the OWASP Juice Shop board — no human in the loop, no source access — it solved **51 of 113 challenges on its own**, *above* the 20–30% range published research reports for fully-autonomous LLM pentest agents. And it's the rare agent of its class that treats its **own** security as a first-order problem: the entire prompt-injection surface was **removed structurally**, not patched over with a filter you have to trust.
-
-*Bring your own model. Own your own machine. Trust nothing you didn't audit — including this.*
-
+<img src="dragon.png" alt="Basilisk" width="320">
 </div>
 
 <br>
 
 ---
 
-<div align="center">
+## ⚡ Install — your call: trust me, or read every line
 
-## ⚡ Install — your call: trust me, or check the work
+Basilisk runs shell commands on your machine **as you.** Decide how much you trust a stranger's code, then pick a path — no dark patterns.
 
-</div>
-
-Basilisk is an AI that runs shell commands on your machine **as you**. Before installing *any* tool like that — mine included — you should decide how much you trust it. So here's an honest, binary choice, no dark patterns:
-
-**Path A — you trust me. One line, done.**
+**A — you trust me. One line:**
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/the-priest/Basilisk/main/install.sh | bash
 ```
 
-Fast, no fuss. You're taking my word that the installer and the code do what this page says. Plenty of tools you already run cleared exactly this bar — if you're comfortable with it, take this path and move on.
-
-**Path B — you don't trust a stranger's code (and blindly, you shouldn't). Read it, then run it.**
+**B — you don't (smart). Clone it, read it, run it:**
 
 ```bash
 git clone https://github.com/the-priest/Basilisk.git kali
@@ -73,34 +68,16 @@ cd kali
 less install.sh
 ```
 ```bash
-python3 -c "import ast,pathlib; [ast.parse(p.read_text()) for p in pathlib.Path('.').rglob('*.py')]; print('all modules parse')"
-```
-```bash
-python3 tests/test_grouped.py
-```
-```bash
 ./install.sh
 ```
 
-It's plain Python plus one shell script — nothing phones home, nothing needs a key to inspect, nothing hides in a binary. The test suites are stdlib-only (no display, no keys, no network), so you can run them before you trust it with anything. To freeze exactly what you audited so it can't change under you, check out a specific commit instead of tracking `main`.
-
-Both paths land in the same place. Pick the one that matches how much you trust a stranger's code — for a tool that literally tells the model to treat all outside input as hostile, Path B is the consistent move, but I'm not going to pretend the one-liner isn't sitting right there.
-
-No Docker. No daemon. No account. The app runs on your machine — the only thing that leaves is the API call to the model provider you chose. Run your chosen command again any time to update: it auto-detects your distro, parse-checks every file before it touches your disk, backs up your chat history, and drops a launcher in your app grid.
+Plain Python and one shell script — nothing phones home, nothing hides in a binary, and the test suites are stdlib-only so you can run them before you trust it with anything. The same command updates it: it auto-detects your distro, parse-checks every file before it touches disk, and backs up your chat history. No Docker, no daemon, no account.
 
 <br>
 
 ---
 
-<div align="center">
-
 ## ▶ See it in action
-
-**5★ challenges from the benchmark — solved fully autonomously, caught live.**
-
-*Model in the loop, tools on the target, a receipt for every move. No source access — pure black-box, start to finish.*
-
-</div>
 
 https://github.com/user-attachments/assets/7df7b6a9-744d-46ec-9ce6-c8ae924fc786
 
@@ -112,247 +89,32 @@ https://github.com/user-attachments/assets/8ab0cb29-a66d-4cfd-880b-0365a32cc3a7
 
 ---
 
-## What Basilisk is
+## Why Basilisk
 
-Basilisk is a **native Linux desktop application** that turns a large language model into a working **security operator** — one that runs entirely on your own hardware and answers only to you.
-
-A language model on its own is just a brain in a jar. It can *talk* about a port scan, but it can't run one. It can't see your desktop, touch your files, remember yesterday's engagement, or prove what it did. **Basilisk is the body around that brain.** You supply the model through an API key you own; Basilisk supplies everything that turns "a clever chatbot" into "an operator who can actually do the work — and hand you a receipt for every move."
-
-That distinction is the whole point:
-
-- **It is not a website.** Nothing runs on someone else's server. The app runs on your box; the only thing that ever leaves is a single API call to the model provider *you* picked.
-- **It is not a jailbroken chatbot.** It doesn't beg a hosted model to ignore its rules. It's a purpose-built operator's tool with real engineering around it — a structural safety floor, a cryptographic evidence trail, a full toolchain.
-- **It takes its own security seriously — most agents don't.** An autonomous agent that reads the outside world *and* runs shell commands is a prompt-injection magnet. Basilisk's answer isn't a filter you have to trust: the tools that fetched attacker-chosen text were **removed outright**, what's left reads only from sources an attacker can't point them at, and the one command that could wreck your system is refused at a hard floor with no override. You can't be injected through a door that isn't there.
-- **It is yours.** Open source, MIT-licensed. Your data, your keys, your machine, your rules. Choose the model. Fork the code. Own the whole thing.
-
-Where a hosted AI *product* refuses half of real security work and wraps the model in policy you can't see or change, Basilisk gives you the **raw model** through a provider and key you choose, running on your own machine wired to your own tools. It doesn't moralize over a scan you're authorized to run, and it leaves a tamper-evident record you can put in front of a client. Your evidence ledger, memory, and chat history stay on your machine — the model calls themselves go out to the provider you picked (SiliconFlow / DeepSeek by default), the same as any API-backed tool.
-
-> **In one sentence:** every "AI hacking tool" is a chatbot behind a prompt. Basilisk is the opposite — a disciplined, auditable operator's tool that runs on your hardware, draws a hard line at the one mistake you can't undo, and never forgets what it touched.
-
-<br>
-
-<div align="center">
-
-<img src="dragon.png" alt="Basilisk" width="360">
-
-*A dragon that lives on your machine, answers only to you,<br>and never forgets where the bodies are buried.*
-
-</div>
+- **It's an operator, not a chatbot.** It runs its own commands, chains them, and finishes the job unattended — no "confirm every step," no approval cards. Turn it loose on a target and walk away.
+- **It runs on your hardware.** Not a website, not someone's cloud. The only thing that ever leaves is the API call to the model provider *you* picked. Your keys, your data, your machine.
+- **It proves its work.** Every command is hashed into a tamper-evident evidence ledger — a receipt you can hand a client, not a story it made up afterward.
+- **It can't be turned against you.** The tools that pulled in attacker-controlled text are *gone*, what's left reads only from sources an attacker can't aim, and the one command that could wipe your box is refused at a hard floor with no override.
+- **It goes where you go.** The same app on a Kali NetHunter phone as on your laptop — an operator's assistant in your pocket.
 
 <br>
 
 ---
 
-## What you can use it for
+## What it does
 
-Basilisk isn't a single-trick tool. It's one app that covers a security operator's whole day. Here's what that looks like in practice.
+Point Basilisk at an authorized target and it walks the whole engagement in one window. It inventories your installed tooling, builds an **ordered recon plan** (passive first), runs the commands autonomously **within the scope you set**, parses raw scanner output into clean findings, and **ranks CVEs by what's actually being exploited in the wild** (NVD → CISA KEV → EPSS). The moment it gets in, it writes the reproducible *"how we got in"* report straight from the evidence ledger — backed by real hashed commands, not a retelling. It builds and fires real exploits — SQLi, JWT forgery, NoSQL/XXE injection, coupon and CAPTCHA bypass, sqlmap-driven attacks — against targets you're allowed to test.
 
-### 🎯 Run a penetration test, end to end
-Point Basilisk at an authorized target and walk the full engagement without leaving the window. It inventories your installed tooling, builds an **ordered recon plan** (passive first, then active), runs the commands autonomously within the **scope you set**, parses the raw output into clean findings, and **auto-ranks the CVEs by what's actually being exploited in the wild** (NVD + CISA KEV + EPSS). When you get in, it writes the **reproducible "how we got in" report section straight from the evidence ledger** — backed by the real hashed commands that ran, not a freeform retelling. It can **benchmark itself** against known-vulnerable practice targets (Juice Shop, DVWA, WebGoat) and score the run — precision, recall, coverage — so its performance is a reproducible number you can put next to any other tool's. It maintains a live **engagement graph** (hosts, services, footholds) that populates itself from the scans it runs, enforces your authorised **scope** before touching a target, and records everything to a tamper-evident trail you can hand to the client as proof of work.
+And when it hits something it doesn't know, it doesn't guess: it reads the answer from a fixed allow-list of authoritative sources (NVD, MITRE, CISA, PortSwigger, exploit-db) and cites it.
 
-### 🔍 Audit your own code and dependencies
-Give it a repo. It detects the languages, lockfiles and IaC, then drives the industry-standard scanners — **Semgrep, Bandit, gitleaks, OSV-Scanner, Trivy, pip-audit, `npm audit`** — and does the part those tools *don't*: it **normalizes ten scanners into one finding list and triages across them**, so two tools flagging the same issue collapse into one *corroborated* finding, the weak ones get flagged for review, and you get a clean, prioritized list with concrete fixes instead of ten different JSON dumps.
+Off the offensive path, the same body does the rest of an operator's day:
 
-### 🛡️ Harden a machine
-Ask for a posture check and it runs a read-only system audit — firewall, SSH hardening, open listeners, world-writable files, failed logins, pending updates — scored by severity, with the reasoning shown. No guessing: facts about your system are read live with a tool, never invented.
+- **Audit your own code & deps** — drives ten industry scanners (Semgrep, Bandit, gitleaks, OSV-Scanner, Trivy, pip-audit, `npm audit`…) and collapses them into one triaged, de-duplicated finding list with fixes.
+- **Harden a box** — a read-only, severity-scored posture audit (firewall, SSH, listeners, world-writable files, updates).
+- **Drive your desktop & shell** — launches apps, types, clicks, reads the screen with OCR, and runs your shell behind the safety floor.
+- **Bend to your workflow** — writes and sandbox-tests its own Python tools, connects external tool servers over MCP, remembers across sessions, and talks and listens for hands-free work.
 
-### 📚 Look up a CVE, advisory, or technique — from sources you can trust
-When Basilisk hits something it isn't sure of, it doesn't guess or invent — and it also can't just wander the open web. It reads the answer from a **fixed allow-list of authoritative sources** — NVD, MITRE (CVE / ATT&CK / CWE), CISA's KEV catalog, FIRST's EPSS, official vendor and distro security advisories, OWASP, PortSwigger, the Kali docs, and exploit-db — then answers in its own words and **cites the URL**. It cannot fetch anything off that list (arbitrary web/OSINT/repo reading was removed as a prompt-injection surface, and redirects that try to leave the list are refused), so a page it reads can't quietly redirect it into attacker-authored text. For a confirmed service+version, `cve_lookup` pulls the known-exploited CVEs ranked by real-world risk.
-
-### 🖥️ Use it as a hands-on desktop agent
-It drives your **actual desktop** — launches apps, manages windows, types, presses keys, reads what's on screen with OCR — and runs your **shell** behind a hard safety floor. It's a sysadmin and a pair of hands, not just a chat box.
-
-### 📱 Take it into the field
-The same tool runs on a **Kali NetHunter phone** — a real operator's assistant in your pocket, something no hosted swarm can ever be.
-
-### 🧩 Bend it to your workflow
-It **writes and sandbox-tests its own Python tools** when you need a capability it doesn't have, **connects external tool servers over MCP**, **remembers across sessions**, and **talks and listens** so you can work hands-free.
-
-<br>
-
----
-
-## How it works
-
-Three pieces, and understanding them is understanding Basilisk.
-
-**1 — You bring the brain.** Basilisk is model-agnostic. You point it at a large open model through a provider you choose (SiliconFlow with DeepSeek by default, Groq as a fast fallback) using your own API key. The intelligence is rented by the call, for pennies; nothing is baked in or locked down.
-
-**2 — Basilisk is the body.** Around that model sits the part that actually matters and that a hosted chatbot can never give you: a full offensive-security toolchain, code and dependency auditing, trusted-source lookup (an allow-listed reader — no open web), desktop and shell control, an on-disk memory, a voice, and external-tool integration. This is where the value lives.
-
-**3 — Two things keep it honest.** A **structural safety floor** refuses the one irreversible class of mistake outright — no confirm, no override — no matter how the model was steered. A **tamper-evident evidence ledger** records every command and hashes its output, so you can prove exactly what happened. Decisive on routine work, un-catastrophic by construction, auditable end to end.
-
-<br>
-
----
-
-## Everything Basilisk can do
-
-Read-only **sensing** runs freely. Anything that changes your system just runs — Basilisk is autonomous, with no approval prompts (the only prompt is a one-time sudo password, then cached). The irreversible class is refused outright regardless, no override. The lists below are grouped by what you'd actually reach for.
-
-<details>
-<summary><b>🛡️ Offensive security</b> — recon, scanning, CVE intel, exploitation write-ups</summary>
-
-<br>
-
-- **`audit`** — system posture scan (firewall, SSH, listeners, world-writable files, failed logins, updates), scored by severity. Read-only.
-- **`scan_net`** — discovery on your own segment.
-- **`tooling_check`** — inventories **59** offensive tools (recon, probing, port-scan, fuzzing, vuln, secrets, creds, AD) with exact install lines, command aliases, and freshness nudges.
-- **`pentest_plan`** — an **ordered** recon plan (passive first) with profiles `web · network · ad · api · full · quick` and a `stealth / normal / aggressive` intensity knob. Steps run autonomously within the scope you set.
-- **`parse_output`** — turns raw scanner output into structured findings for **20+ tools** (nmap, httpx, nuclei, naabu, masscan, subfinder, ffuf, feroxbuster, gobuster, katana, whatweb, wpscan, sslscan/testssl, smbmap, netexec, nikto, gitleaks, dalfox, arjun…), strips ANSI, and **auto-chains into CVE intel** (NVD → CISA KEV → EPSS, re-ranked) for every confirmed service+version.
-- **`cve_lookup`** — NVD CVEs enriched with **CISA KEV** (exploited in the wild?) and **EPSS** (exploit probability), re-ranked **KEV → EPSS → CVSS**. **Host-pinned** to NVD / CISA / FIRST — *not* a general web reader, so it survived the injection-surface cull: a scanned target can steer *which* CVE is queried via a banner, but can't redirect the fetch or plant the data.
-- **`nuclei_template`** — generate a structurally-valid Nuclei template from a simple spec, or validate one and get the exact list of problems before you run it.
-- **`reflect_findings`** — a false-positive self-check that flags unsupported, over-rated, hedged, host-less or duplicate findings *before* they reach a report.
-- **`attack_writeup`** — the **exploitation narrative**: a reproducible account of how access was obtained, pulled straight from the evidence ledger so the steps are backed by real hashed commands; secrets auto-redacted. This tool *documents* an authorized, already-executed path (the exploiting happens through the run gate; this writes it up).
-- **`methodology` · `wordlist_find` · `cheatsheet` · `report_findings`** — PTES / OWASP / AD-killchain checklists, installed-wordlist finder, correct tool syntax, and clean markdown engagement reports.
-
-*Offensive tooling runs autonomously against the scope you set. Basilisk plans, inventories, parses, enriches, **writes and runs real exploits**, and documents the results. The line it holds isn't "no exploits" (that's the whole job) — it's no **standalone weaponized malware** (reverse-shell binaries, self-propagating implants, ransomware, persistent backdoors), and the irreversible/destructive class is refused outright and can never run, in any mode.*
-
-</details>
-
-<details>
-<summary><b>🔍 Code &amp; dependency audit</b> — SAST, SCA, secrets, cross-tool triage</summary>
-
-<br>
-
-The static half of the job — finding vulnerabilities in source, dependencies, secrets and IaC. Safe on your own code; it drives standard installed scanners and makes sense of them.
-
-- **`code_tooling_check`** — inventories the code-security stack (SAST / SCA / secrets / IaC / container / web-DAST) with install lines for the gaps.
-- **`code_scan_plan`** — auto-detects languages, lockfiles and IaC in a path and builds an **ordered** scan plan (Semgrep, Bandit, OSV-Scanner, gitleaks, pip-audit, `npm audit`…) with JSON flags set, then runs it autonomously. Read-only against your own code.
-- **`parse_scan`** — normalizes raw JSON from **Semgrep, Bandit, gitleaks, trufflehog, OSV-Scanner, Trivy, pip-audit, npm audit, retire.js, Nuclei** into one unified finding schema.
-- **`triage_findings`** — the differentiator: **dedups across scanners** (two tools on the same CVE+package or `file:line:rule` collapse into one *corroborated* finding recording which agreed), maps every severity dialect onto one scale, sorts worst-first, and flags the low-confidence ones for manual review.
-- **`remediation_hint`** — a short, standard, **non-exploit** fix pointer per finding (upgrade to the fixed version, or the CWE-class fix).
-
-</details>
-
-<details>
-<summary><b>🧾 Evidence &amp; engagement record</b> — the tamper-evident paper trail</summary>
-
-<br>
-
-Every command Basilisk runs is recorded automatically to an append-only JSONL ledger — timestamp, command, exit code, duration, and the **SHA-256** of its output, with full output saved as a hashed artifact.
-
-- **`evidence_engagement`** — name/switch the case you're working; commands file under it.
-- **`evidence_report`** — summary, integrity check, and a readable markdown ledger of everything run.
-- **`evidence_verify`** — re-hash every captured artifact and prove nothing was altered after the fact.
-
-*This is the difference between a chat log and a defensible engagement deliverable.*
-
-</details>
-
-<details>
-<summary><b>🖼️ Images &amp; trusted lookup</b> — show pictures, read vetted sources</summary>
-
-<br>
-
-- **`image_search`** — searches for images and **shows them inline in chat** (no API key). Returns image URLs to *render* (bytes → pixels), not page text to reason over. Toggle off for OPSEC.
-- **`web_read`** — fetch and read a page, but **only from a fixed allow-list of authoritative sources**: NVD/NIST, MITRE (CVE/ATT&CK/CWE/CAPEC), CISA (incl. the KEV catalog), FIRST (EPSS), official vendor/distro security channels (Microsoft MSRC, Red Hat, Ubuntu, Debian, Arch, kernel.org), OWASP, PortSwigger, the Kali docs, and exploit-db. Any other host is refused, redirects that leave the list are refused, and the returned text is run through the content firewall. It's the safe replacement for the removed general reader — the model reaches for it to look up a CVE, advisory, tool flag or technique from a trusted source instead of guessing, and **cannot** be pointed anywhere else.
-
-> **Removed for safety (see the safety-architecture section below).** The *general* web/search readers (`web_search`, `web_verify`, and the old open-ended `web_read`), the OSINT/social readers (`osint_username`, `osint_lookup`, `social_read`), the `github` reader, and the full **`browser`** (Playwright/Chromium/Brave) automation are **gone** — along with the semantic-search / GitHub "reach" sidecar. Every one of them fetched **attacker-chosen** URLs (anyone can host a page or push a repo that says *"ignore your instructions"*), which is the classic **indirect-prompt-injection** surface. What replaced them is deliberately narrow: the **allow-listed `web_read`** above and the host-pinned **`cve_lookup`** — both read only from sources an attacker can't point them at or plant content in.
-
-</details>
-
-<details>
-<summary><b>🖥️ Desktop &amp; system control</b> — hands on your actual machine</summary>
-
-<br>
-
-**System sensing (read-only, read live — never guessed):** `quick_facts` · `system_info` (real RAM/CPU/OS) · `disk_usage` · `processes` · `network_status` · `service_status` · `journal_tail` · `recent_downloads` · `check_updates` · `path_info`.
-
-**Desktop control (runs autonomously):** `launch_app` · `list_apps` · `list_windows` · `focus_window` · `close_window` · `type_text` · `press_key` · `open_url` · `screenshot` · `read_screen` (on-screen **OCR**) · `media_control` · `notify`. Auto-detects **X11 vs Wayland** and picks the right backend.
-
-**Files &amp; shell (everything runs — autonomous):** `read_file` · `list_dir` · `find_file` · `make_dir` · `copy_path` · `move_path` · `delete_path` · **`run`** any shell command (runs directly, the catastrophic class refused outright, sudo password collected once then cached). **Write any file** — applied directly.
-
-</details>
-
-<details>
-<summary><b>🧠 Memory, self-written tools &amp; self-modification</b> — it grows with you</summary>
-
-<br>
-
-- **Memory (optional, stored on your machine):** `memory_remember` · `memory_recall` · `memory_forget` — relevance-scoped recall that connects security paraphrases ("SQL injection" finds "SQLi") and injects only the top-k per turn. The memory files live on your machine; recalled snippets are sent to the model as context only when they're relevant.
-- **Self-written tools (optional, sandboxed):** `skill_write` → Basilisk drafts a Python tool, it's `ast`-parsed and statically screened, run in a **bubblewrap** jail, and must pass its **own generated test** before it's kept — so unsafe code never executes in Basilisk's own process. Then it's callable as `skill_run`.
-- **Self-modification:** Basilisk can rewrite its own source and persona. Every edit is Python **parse-checked** before it's written, the original is **backed up**, writes are atomic, a raw shell write to its own source is **refused**, and the **guardrail block is immutable by design** — so a broken or hijacked edit can't silently land or disable the safety code.
-
-</details>
-
-<details>
-<summary><b>🎙️ Voice &amp; ⚡ working smart</b> — talk to it, and it runs lean</summary>
-
-<br>
-
-- **Voice:** STT via SiliconFlow SenseVoice or Groq Whisper (auto-picked), with a *Test microphone* button. TTS via Piper (neural) or espeak-ng, tuned for natural pacing with no dead air, and per-message play/pause.
-- **Working smart:** batched parallel tool calls · trimmed history · context compression that always preserves findings while cutting token cost · a collapsed **💭 Thoughts** reasoning panel · live status banner · `/panic` health sweep · degraded-output failover to your next provider.
-- **Background worker (optional):** a `systemd --user` service for genuinely-headless jobs (periodic checks, memory consolidation). Fully optional — Basilisk works identically without it.
-
-</details>
-
-<br>
-
----
-
-## Security: the attack surface, cut to the bone
-
-Most autonomous agents bolt a filter onto the prompt-injection problem and hope it holds. Basilisk's approach is blunter and more durable: **take the dangerous doors off the building.** The tools that pulled attacker-chosen text into the model are gone; the ones that remain read only from places an attacker can't aim them; and the single command that could wreck your box is refused at a floor with no override. You can't be injected through a door that isn't there, and you can't fat-finger a wipe that can't run.
-
-Basilisk is **decisive by default and un-catastrophic by construction.**
-
-- **Autonomous — no confirmation, ever.** Basilisk runs every command it decides on, immediately, and continues the chain on its own until the task is done or you hit Stop. There is no "confirm every command", no approval card, no mode to pick — you turn it on a job, walk away, and come back to results. The **only** dialog that can appear is a one-time prompt to collect a **sudo password** when a root command has no cached credential; after that it's cached and reused silently and you never see it again.
-- **The irreversible class is refused outright — no confirm, no override.** A **structural** detector (shlex-tokenized, `$IFS`/quote-normalized, recursing into `sh -c` / `eval`) **hard-blocks** disk/filesystem wipes, recursive root/`$HOME` deletes, fork bombs, and raw block-device writes — before the shell, no matter what steered the model. There is no "Run anyway" and no setting that turns it off. It sees through tricks a regex misses — `rm '-rf' /`, `rm${IFS}-rf${IFS}/`, `cd / && rm -rf *`, `find / -delete`, `echo … | base64 -d | sh` — while staying narrow enough that `nmap`, `nuclei`, `sqlmap` and `rm -rf ~/loot` never trip it. A raw shell write to Basilisk's own source is refused the same way, so a malicious page can't overwrite the safety code. Both are pinned in the test suite.
-- **A hardened content firewall stands between the outside world and the model.** Everything Basilisk reads from outside — an **MCP tool's output**, an **analysed image**, a target's own responses to your commands — is run through a deterministic firewall (`webshield`) *before* it can enter the model's context. Three layers: it **strips executable structure** (`<script>`/`<style>`/comment blocks, event handlers, `data:`/`javascript:` URIs, and the fake tool-call / role tags an attacker hides instructions in); it **redacts injection patterns** with a hardened rule set — not just "ignore previous instructions" and "system override", but prompt-extraction ("repeat the words above", "what were your instructions"), coercive framing ("you must run…"), credential-exfil lures, and markdown/URL data-exfiltration — and it sees through zero-width, homoglyph (`іgnоre`), and letter-spacing (`i g n o r e`) obfuscation; and it **wraps what's left in explicit `⟦UNTRUSTED WEB CONTENT⟧` markers** so the model treats it as data, never instructions. A target's raw command responses (an HTTP body from `curl`) can't be redacted without breaking the agent's parsing, so that channel is held at the **model level**: the core prompt names every untrusted source — target responses, files you didn't write, MCP results, image-analysis text — and drills in that outside content is data, never a command. **The biggest single reduction in this surface, though, was structural: the tools whose entire job was to pull *attacker-chosen* web / social / repo text into the model were removed outright** (see the Images &amp; trusted lookup section) — you can't be injected through a channel that no longer exists. What's left is deliberately narrow and can't be aimed by an attacker: `cve_lookup` (host-pinned to NVD/CISA/FIRST) and `web_read` (a fixed allow-list of authoritative sources, matched on the parsed hostname so look-alikes fail, redirects re-validated on every hop, output shielded). Even the image fetcher and the practice-target tools carry an **SSRF guard** that refuses link-local / cloud-metadata addresses (while still allowing your localhost and LAN targets), on the initial request *and* on any redirect. The whole thing is pinned in the test suite.
-- **Basilisk's own safety code can't be shell-stripped**, your **sudo password is never stored or shown to the model**, and self-written code runs only in a **bubblewrap jail** after passing its own test.
-- **It can't lie about your machine.** Hardware and system facts are read live with a tool, never guessed.
-- **Exploitation is the job.** Basilisk writes and runs real exploits (SQLi, XSS, JWT forgery, SSRF, sqlmap-driven attacks, and more) against targets you're authorized to test, within scope you set. The line it holds: no **standalone weaponized malware** (reverse shells, implants, ransomware, backdoors), and the irreversible/destructive class is refused outright and can never run through Basilisk at all.
-
-> The guarantee isn't "asks every time" — it never asks. It's that the one mistake that can't be undone — wiping the system or its storage — **can never run through Basilisk at all**, while everything else runs unattended.
-
-### Running it like an operator
-
-Basilisk is built like a serious offensive tool, and it's meant to be run like one. The defenses above are real and they layer: the firewall catches the known injection patterns and shrinks the attack surface hard, the catastrophic floor makes system destruction impossible with no override, your sudo password never touches the model, and self-written code is jailed. That's genuine defense in depth, and it's more than most agents ship with.
-
-The one thing no tool in this class can claim to have *solved* is indirect **prompt injection** — an autonomous agent that reads attacker-controlled input, has hands, and holds your credentials is the open frontier of the whole field, not a Basilisk-specific gap. So the professional move is the same one you already make with Metasploit, Cobalt Strike, or sqlmap: when you point it at **untrusted targets**, run it from an **isolated, disposable environment** — a VM or a dedicated box you can snapshot and burn. That isn't a warning label or an admission of weakness; it's simply how operators work, and it's what turns "defense in depth" into "nothing to lose." Against your own lab, your own machines, your own scope, run it wherever you like and let it work.
-
-<br>
-
----
-
-## Install &amp; update
-
-Install is the **two-path choice at the top** — trust me and one-line it, or clone, audit, and run from disk. Both land in the same place; pick based on how much you trust a stranger's code.
-
-Run your chosen command again any time to update. The installer is idempotent and genuinely careful — it treats your machine the way you'd want it treated:
-
-- 🐍 Detects **Python 3.10+** and installs **GTK4 + libadwaita** (apt / pacman / dnf, auto-detected).
-- 📦 Fetches the core modules **plus** the optional `kali_ext/` sidecar — and **verifies every one of the 16 sidecar modules arrived**, retrying any that didn't, refusing to install a half-broken update over a working one.
-- 🛟 **Parse-checks every incoming file before it overwrites anything** — a corrupted download can't replace your working install.
-- 💾 **Backs up your chat database** before each update and reports the version move.
-- 🧩 Installs optional desktop-control helpers and voice packages.
-- 🚀 Drops a `kali` launcher in `~/.local/bin/` and a `.desktop` entry in your app grid.
-
-**Already cloned?** Just `./install.sh` from inside the repo.
-**Uninstall:** `~/.local/share/kali/install.sh --uninstall` (chat history kept).
-
-<details>
-<summary>Flags &amp; environment overrides</summary>
-
-<br>
-
-| flag | what it does |
-| --- | --- |
-| `--update` | explicit update (same as the default path) |
-| `--uninstall` | remove Basilisk (chat history kept) |
-| `--no-systemd` | skip the background-worker systemd unit |
-| `--no-helpers` | skip optional desktop-control helpers |
-| `--no-voice` | skip voice setup |
-| `--no-prompt` | non-interactive (skips the API-key prompt) |
-
-```bash
-GROQ_API_KEY=gsk_...  ./install.sh      # preset a key, no prompt
-WITH_MCP=1            ./install.sh      # configure a safe starter MCP server
-BASILISK_REPO=user/fork  BASILISK_BRANCH=dev  ./install.sh
-```
-
-</details>
+*Full tool reference: [`BASILISK_MANUAL.md`](BASILISK_MANUAL.md).*
 
 <br>
 
@@ -467,85 +229,36 @@ Shop, score it the same way, and compare — `benchmark_compare` (coverage) and 
 scoreboard both give like-for-like numbers. Published figures we didn't measure
 aren't in this README; an honest, reproducible number beats a marketing table.
 
+
+<br>
+
+---
+
+## Security — the surface an attacker can reach, cut to the bone
+
+An agent that reads the outside world *and* runs shell commands is a prompt-injection target. Most tools bolt on a filter and hope it holds. Basilisk takes the doors off the building instead.
+
+- **The injection surface was removed, not filtered.** The tools that pulled *attacker-chosen* web / repo / social text into the model are gone. What's left reads only from a fixed allow-list of authoritative sources (NVD, MITRE, CISA, vendor advisories, PortSwigger, exploit-db) and a host-pinned CVE lookup — nothing an attacker can point somewhere new. Redirects that try to leave the list are refused; link-local and cloud-metadata addresses are blocked. You can't be injected through a door that isn't there.
+- **The irreversible class can never run.** A structural detector hard-blocks disk/filesystem wipes, recursive root/`$HOME` deletes, fork bombs and raw block-device writes — *before* the shell, in every mode including autonomous, seeing through quoting, `$IFS` and `bash -c` tricks a regex misses. There is no "Run anyway" and no setting that disables it.
+- **Untrusted input is quarantined.** Anything from outside — a target's response, an MCP result, an analyzed image — is run through a deterministic content firewall and wrapped as *data, never instructions.*
+- **Your sudo password never touches the model**, self-written code runs only in a **bubblewrap jail** after passing its own test, and Basilisk's own safety code can't be overwritten by a shell command.
+
+All of it is pinned in the test suite. It writes and runs real exploits against authorized targets — that's the job — but it will not churn out standalone weaponized malware (reverse shells, implants, ransomware, backdoors), and the destructive class can never run through it at all.
+
+<br>
+
+---
+
 ## Get an API key
 
-Basilisk is multi-provider — you only need a key for the one(s) you want. Set the active provider and key in **Settings → Backends**.
+Basilisk is multi-provider — you only need a key for the one you want. Set it in **Settings → Backends**.
 
 | Provider | Get a key | Notes |
 | --- | --- | --- |
 | **SiliconFlow** | <https://cloud.siliconflow.com/account/ak> | **Default.** Big open models (DeepSeek, Qwen, Kimi) + SenseVoice STT |
-| **Groq** | <https://console.groq.com/keys> | Blistering speed, generous free tier. Whisper STT. Keys look like `gsk_...` |
+| **Groq** | <https://console.groq.com/keys> | Blistering speed, generous free tier, Whisper STT. Keys look like `gsk_...` |
 
-Keys live only in `~/.config/kali/settings.json` — they never go anywhere but the provider's own API.
-
-<br>
-
----
-
-## Architecture
-
-```
-┌──────────────────────────────────────────────────────────┐
-│                       kali.py  (UI)                       │
-│            GTK4 + libadwaita · chat, live log, voice      │
-└───────────────┬───────────────────────┬──────────────────┘
-                │                       │
-      ┌─────────┴────────┐   ┌──────────┴───────┐   ┌──────────────┐
-      │  kali_core.py    │   │  kali_persona.py │   │ kali_voice.py│
-      │ providers/router │   │ system prompt    │   │ STT + TTS    │
-      │ 75+ agent tools  │   │ + immutable      │   │ (provider-   │
-      │ web · github     │   │   guardrail      │   │  aware ASR)  │
-      │ brave · chat DB  │   └──────────────────┘   └──────────────┘
-      └──┬────────┬───┬──┘
-         │        │   │
-   ┌─────┴───┐ ┌──┴───┴────────┐
-   │kali_    │ │ kali_ledger.py│  tamper-evident evidence ledger
-   │safety.py│ │ (JSONL+SHA256)│  (every command, hashed)
-   │hard auto│ └───────────────┘
-   │-run floor (structural, evasion-resistant, setting-independent)
-   └─────────┘
-         │
-   ┌─────┴───────────────────────────────────────────────────────┐
-   │  kali_ext/  (optional sidecar — off by default, 16 modules)  │
-   │  memory · skills · sandbox · foresight · mcp · webshield ·    │
-   │  worker · headroom · pentest · codescan · engage · bench ·    │
-   │  extman · juiceshop · xbow                                    │
-   └─────────────────────────────────────────────────────────────┘
-```
-
-Provider stack: **SiliconFlow / DeepSeek** primary with a **Groq** fallback. The router reads your active provider and model live, and fails over to your next backend on a degraded response.
-
-<details>
-<summary>Development &amp; test suites</summary>
-
-<br>
-
-```bash
-git clone https://github.com/the-priest/Basilisk.git kali && cd kali
-python3 kali.py                    # run from source
-
-# offline test suites (stdlib only — no display, no keys, no network)
-python3 tests/test_kali.py         # core: safety floor, settings, self-edit, ChatStore, ledger, CVE chain, Nuclei, reflection, memory, MCP screen
-python3 tests/test_codescan.py     # code audit: every scanner parser, cross-tool triage/dedup, secret redaction
-python3 tests/test_writeup.py      # exploitation narrative: ledger-grounded steps, secret redaction, honesty on thin input
-python3 tests/test_headroom.py     # token savings: protocol safety, signal preservation, compression ratio, fail-safe
-```
-
-For per-machine persona tweaks that survive upgrades, use **Settings → Persona → Custom addendum** — direct edits to `kali_persona.py` are replaced on the next `install.sh` run.
-
-</details>
-
-<br>
-
----
-
-## What Basilisk will *not* do
-
-- **Destroy your system or its storage — ever.** Disk/FS wipes, recursive root/`$HOME` deletes, fork bombs and raw block-device writes are *refused outright* — hard-blocked before any dialog, in every mode (including autonomous), even via quoting / `$IFS` / `bash -c` tricks. No "Run anyway", no setting to disable it.
-- **Be an always-on autonomous fleet agent.** Autonomous execution is the default *within a session you start and stop* — you can turn it on, walk away, and come back to results, but it's not a background daemon roaming your machines on its own, and **Stop halts it instantly**. Destructive commands are refused even here.
-- **See your sudo password**, or reach private content it hasn't been given a token for.
-- **Invent facts about your machine.** Hardware and system state are read with a tool, not guessed.
-- **Generate standalone weaponized malware.** Writing and running exploits against *authorized, in-scope* targets is the whole point, and it does exactly that — but it won't churn out reverse-shell binaries, self-propagating implants, ransomware or persistent backdoors, and the irreversible/destructive class can never run through it at all.
+Keys live only in `~/.config/kali/settings.json`, locked to your user — they never go anywhere but the provider's own API.
 
 <br>
 

@@ -42,7 +42,7 @@ from kali_core import (
     tool_notify, tool_type_text, tool_press_key,
     tool_media_control, tool_screenshot, tool_read_screen,
     tool_make_dir, tool_copy_path, tool_move_path, tool_delete_path,
-    tool_path_info, tool_open_url, tool_web_read,
+    tool_path_info, tool_open_url, tool_web_read, web_read_tier,
     tool_image_search,
     tool_analyze_image, tool_capture_photo, tool_detect_faces,
     tool_tooling_check, tool_pentest_plan, tool_cve_lookup,
@@ -3813,6 +3813,10 @@ class MainWindow(Adw.ApplicationWindow):
         self._notif_path = os.path.expanduser(
             "~/.local/share/kali/notifications.json")
         self._notifications = self._load_notifications()
+        # Community-tier web_read hosts the operator has approved THIS session.
+        # In-memory only (a fresh run starts locked down again); the gate that
+        # enforces this lives in _web_read_gated, not in the model's prompt.
+        self._web_grants: set = set()
         # Apply the inline-image toggle to the module global the renderer reads.
         global _RENDER_IMAGES
         try:
@@ -6191,12 +6195,14 @@ class MainWindow(Adw.ApplicationWindow):
                 f"{' (recursive)' if a.get('recursive') else ''}"),
 
             # ── Trusted-source reference lookup (read-only, allow-listed) ──
-            # web_read refuses any host not on kali_core._WEB_READ_ALLOW
-            # (NVD/MITRE/CISA/FIRST/vendor advisories/OWASP/PortSwigger/Kali
-            # docs/exploit-db), re-validates redirects, and shields output — so
-            # it can't be pointed at attacker content. Single-path (own fetch).
+            # web_read refuses any host not on kali_core._WEB_READ_ALLOW, and
+            # the TWO-TIER gate (_web_read_gated) is enforced here in code:
+            # trusted sources fetch automatically; community/user-authored ones
+            # (GitHub, Wikipedia, SO, …) are held outside the autonomous loop
+            # and need the operator's approval via a notification. Redirects are
+            # re-validated and output shielded. Single-path (own fetch).
             "web_read":          lambda a: self._tool_simple(
-                lambda: tool_web_read(
+                lambda: self._web_read_gated(
                     a.get("url", a.get("u", "")),
                     _safe_int(a.get("max_chars", 6000), 6000))),
 
@@ -6513,6 +6519,115 @@ class MainWindow(Adw.ApplicationWindow):
     def _unread_count(self) -> int:
         return sum(1 for n in self._notifications if not n.get("read"))
 
+    # ── Community-source approval gate (enforced in code, not the prompt) ──
+    def _url_host(self, url: str) -> str:
+        try:
+            from urllib.parse import urlsplit
+            u = url if "://" in (url or "") else "https://" + (url or "")
+            return (urlsplit(u).hostname or "").lower().rstrip(".")
+        except Exception:
+            return ""
+
+    def _web_grant_domain(self, host: str) -> str:
+        """The community allow-list domain `host` falls under (so a grant covers
+        the whole domain, e.g. approving one github.com URL covers *.github.com),
+        or '' if it isn't a community host."""
+        try:
+            from kali_core import _WEB_READ_COMMUNITY
+        except Exception:
+            return ""
+        h = (host or "").lower().rstrip(".")
+        for dom in _WEB_READ_COMMUNITY:
+            if h == dom or h.endswith("." + dom):
+                return dom
+        return ""
+
+    def _web_read_gated(self, url: str, max_chars: int):
+        """Two-tier gate for web_read, enforced HERE in code (never left to the
+        model): trusted sources fetch immediately; a community / user-authored
+        source (GitHub, Wikipedia, Stack Overflow, arXiv, exploit-db, …) is held
+        OUTSIDE the autonomous loop — it fetches only if the operator granted the
+        domain this session, otherwise it raises a non-blocking approval request
+        (notification + Allow button) and the agent is told to carry on without
+        it. A host on neither tier is refused by tool_web_read as before."""
+        if web_read_tier(url) == "community":
+            dom = self._web_grant_domain(self._url_host(url))
+            if dom and dom not in self._web_grants:
+                self._request_web_approval(dom, url)
+                return {
+                    "ok": False,
+                    "pending_approval": True,
+                    "host": dom,
+                    "error": (
+                        f"'{dom}' is a community / user-authored source, so it's "
+                        "held outside the autonomous loop and I can't read it on "
+                        "my own. I've put an access request in the notifications "
+                        "bell — the operator can Allow it (which unlocks it for "
+                        "the rest of this session) or ignore it. It is NOT "
+                        "auto-granted: I'll continue without it and look for "
+                        "another way. Don't re-request it in a loop — move on, "
+                        "and if it gets approved I'll be able to read it."),
+                }
+        return tool_web_read(url, max_chars)
+
+    def _request_web_approval(self, domain: str, url: str):
+        """Post a NON-BLOCKING approval request for a community-tier domain: an
+        inbox notification with an Allow button + a desktop popup. Deduped by
+        domain so a retry loop can't spam the inbox; ignoring it leaves the run
+        going and the request waiting in the bell until the operator gets to it."""
+        domain = (domain or "").strip().lower()
+        if not domain:
+            return
+        for n in self._notifications:
+            if (n.get("kind") == "approval"
+                    and (n.get("host") or "").lower() == domain
+                    and n.get("state") in ("pending", "granted")):
+                return  # already waiting or already handled this session
+        import time as _t
+        self._notifications.append({
+            "kind": "approval",
+            "host": domain,
+            "url": url,
+            "state": "pending",
+            "title": f"Access requested: {domain}",
+            "message": (f"Basilisk wants to read {domain} — a community / "
+                        "user-authored source held outside the autonomous loop. "
+                        "Allow it to let Basilisk read this source for the rest "
+                        "of this session, or ignore it and the run keeps going."),
+            "ts": _t.strftime("%Y-%m-%d %H:%M"),
+            "read": False,
+        })
+        self._notifications = self._notifications[-200:]
+        self._save_notifications()
+        try:
+            GLib.idle_add(self._refresh_notifications)
+        except Exception:
+            pass
+        try:  # best-effort desktop popup so it's seen even off-screen
+            tool_notify(f"Basilisk wants to read {domain}. Open to Allow or ignore.",
+                        "Access requested")
+        except Exception:
+            pass
+
+    def _grant_web_host(self, domain: str):
+        """Operator approved a community-tier domain — grant it for this session
+        and mark the request done. Future web_read to that domain (and its
+        subdomains) fetches without asking again until the app restarts."""
+        domain = (domain or "").strip().lower()
+        if domain:
+            self._web_grants.add(domain)
+        for n in self._notifications:
+            if n.get("kind") == "approval" and (n.get("host") or "").lower() == domain:
+                n["state"] = "granted"
+                n["read"] = True
+        self._save_notifications()
+        self._refresh_notifications()
+        try:
+            self.toast_overlay.add_toast(Adw.Toast.new(
+                f"Allowed {domain} for this session — Basilisk can read it now."))
+        except Exception:
+            pass
+
     def _refresh_notifications(self):
         """Rebuild the bell badge + the popover list from the store."""
         try:
@@ -6553,6 +6668,26 @@ class MainWindow(Adw.ApplicationWindow):
                         row.append(t)
                         row.append(m)
                         row.append(ts)
+                        # Community-source access requests carry an inline
+                        # Allow button (pending) or an "allowed" marker (granted).
+                        if item.get("kind") == "approval":
+                            st = item.get("state", "pending")
+                            if st == "granted":
+                                done = Gtk.Label(
+                                    xalign=0.0, label="✓ Allowed this session")
+                                done.add_css_class("dim-label")
+                                done.set_margin_top(4)
+                                row.append(done)
+                            else:
+                                _host = item.get("host", "")
+                                btn = Gtk.Button(label=f"Allow {_host}")
+                                btn.add_css_class("suggested-action")
+                                btn.set_halign(Gtk.Align.START)
+                                btn.set_margin_top(6)
+                                btn.connect(
+                                    "clicked",
+                                    lambda _b, h=_host: self._grant_web_host(h))
+                                row.append(btn)
                         self.notif_list_box.append(row)
         except Exception:
             pass

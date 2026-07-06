@@ -3045,7 +3045,11 @@ def _web_get(url: str, timeout: int = _WEB_TIMEOUT,
 # confirmed CVEs.  Keep the bar HIGH when editing: a single open, user-editable
 # host (a wiki anyone can PR) reopens the very injection channel this closes.
 # ═════════════════════════════════════════════════════════════════════
-_WEB_READ_ALLOW = (
+# ── TIER 1: TRUSTED — authoritative, editorially controlled ──────────────
+# An attacker cannot serve chosen content through these, so host-pinning them
+# is a STRUCTURAL defence, not a filter.  These stay INSIDE the autonomous loop:
+# web_read fetches them without asking.
+_WEB_READ_TRUSTED = (
     # Government / standards vulnerability & advisory sources
     "nist.gov",             # incl. nvd.nist.gov (the CVE database)
     "cisa.gov",             # incl. the KEV catalog + ICS/US-CERT advisories
@@ -3060,25 +3064,85 @@ _WEB_READ_ALLOW = (
     "debian.org",           # incl. security-tracker.debian.org
     "security.archlinux.org",
     "kernel.org",           # kernel release / CVE info
-    # Reputable, editorially-controlled reference & methodology
+    # Reputable, editorially-controlled reference, methodology & docs
     "owasp.org",            # incl. cheatsheetseries.owasp.org
     "portswigger.net",      # Web Security Academy + research
     "kali.org",             # incl. docs.kali.org (tool documentation)
-    # Public-exploit index — user-submitted but REVIEWED; shielded, least-trusted
-    "exploit-db.com",
+    "mozilla.org",          # incl. developer.mozilla.org (MDN web docs)
+    "python.org",           # incl. docs.python.org (language + stdlib docs)
+    "sans.org",             # SANS / Internet Storm Center
+    # Reputable news — editorial control, an attacker can't plant an article
+    "reuters.com",
+    "apnews.com",
+    "bbc.com", "bbc.co.uk",
+    "theguardian.com",
+    "arstechnica.com",
+    "wired.com",
+    "bleepingcomputer.com",  # security / breach / CVE news
+    "thehackernews.com",
+    "krebsonsecurity.com",
 )
 
+# ── TIER 2: COMMUNITY — user-authored / moderated, NOT editorial ─────────
+# An attacker CAN get text in front of the model here (a repo, a gist, an
+# answer, an edit), so these are NOT a structural defence.  They are held
+# OUTSIDE the autonomous loop: web_read will NOT fetch a community host on its
+# own — it raises an approval request (a notification + Allow button) and the
+# operator must grant it.  Enforced in code (see kali.py `_web_read_gated`),
+# not left to the model.  Keep this list short and think twice before extending.
+_WEB_READ_COMMUNITY = (
+    "exploit-db.com",       # public-exploit index — submitted, reviewed
+    "arxiv.org",            # research preprints — submitted, moderated
+    "wikipedia.org",        # community-edited, monitored / reverted
+    "wikimedia.org", "wikidata.org",
+    "stackoverflow.com",    # Q&A — surfaced by votes / moderation
+    "stackexchange.com",    # incl. security. / unix. / serverfault etc.
+    "pypi.org",             # package pages — user-published (supply-chain checks)
+    "npmjs.com",            # package pages — user-published
+    # HIGHEST RISK: fully user-authored, no moderation gate. Anyone can push a
+    # repo/gist/README, and an attacker only has to get Basilisk pointed at it.
+    "github.com",              # incl. gist. / api. / www.github.com
+    "githubusercontent.com",   # raw. / gist. / objects. (raw file content)
+    "gitlab.com",              # user repos, same shape as GitHub
+)
 
-def _web_read_host_ok(host: Optional[str]) -> bool:
-    """True iff host is exactly an allow-listed domain or a subdomain of one.
-    Matches on the PARSED hostname, never a substring — so none of
-    'evil.com/nvd.nist.gov', 'nvd.nist.gov.evil.com', or userinfo tricks like
-    'nvd.nist.gov@evil.com' can slip through (urlparse('...').hostname returns
-    the real host in each case)."""
+# Union — the host-ok gate accepts anything on either tier; the TIER decides
+# whether a fetch is automatic (trusted) or needs approval (community).
+_WEB_READ_ALLOW = _WEB_READ_TRUSTED + _WEB_READ_COMMUNITY
+
+
+def _host_matches(host: Optional[str], domains) -> bool:
     host = (host or "").strip().lower().rstrip(".")
     if not host:
         return False
-    return any(host == dom or host.endswith("." + dom) for dom in _WEB_READ_ALLOW)
+    return any(host == dom or host.endswith("." + dom) for dom in domains)
+
+
+def web_read_tier(url_or_host: str) -> Optional[str]:
+    """Classify a URL/host against the allow-list: 'trusted' (auto-fetchable),
+    'community' (needs operator approval), or None (refused outright).  Used by
+    the dispatch gate so the trusted/untrusted split is enforced in code."""
+    h = (url_or_host or "").strip()
+    if "://" in h or "/" in h:
+        try:
+            from urllib.parse import urlsplit
+            h2 = h if "://" in h else "https://" + h
+            h = urlsplit(h2).hostname or ""
+        except Exception:
+            h = ""
+    if _host_matches(h, _WEB_READ_TRUSTED):
+        return "trusted"
+    if _host_matches(h, _WEB_READ_COMMUNITY):
+        return "community"
+    return None
+
+
+def _web_read_host_ok(host: Optional[str]) -> bool:
+    """True iff host is exactly an allow-listed domain or a subdomain of one
+    (either tier).  Matches on the PARSED hostname, never a substring — so none
+    of 'evil.com/nvd.nist.gov', 'nvd.nist.gov.evil.com', or userinfo tricks like
+    'nvd.nist.gov@evil.com' can slip through."""
+    return _host_matches(host, _WEB_READ_ALLOW)
 
 
 class _AllowlistRedirect(urllib.request.HTTPRedirectHandler):

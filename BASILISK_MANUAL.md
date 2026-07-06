@@ -309,21 +309,36 @@ MCP is a remote-code-execution surface, so every server is treated as **untruste
 
 # Part 10 — Trusted-source lookup (`web_read`)
 
-Basilisk has **no general web access** and cannot open arbitrary pages. What it has is `web_read` against a fixed **allow-list** of authoritative sources.
+Basilisk has **no general web access** and cannot open arbitrary pages. What it has is `web_read` against a fixed **allow-list**, split into two tiers with very different handling.
 
 ## 10.1 `web_read` — read a page, but only from vetted sources
 
-`web_read` fetches and returns the readable text of a page **only if its host is on the allow-list** (`kali_core._WEB_READ_ALLOW`): NVD/NIST, MITRE (CVE / ATT&CK / CWE / CAPEC), CISA (incl. the KEV catalog), FIRST (EPSS), official vendor/distro security channels (Microsoft MSRC, Red Hat, Ubuntu, Debian, Arch, kernel.org), OWASP, PortSwigger, the Kali docs, and exploit-db. Any other host is refused.
+`web_read` fetches the readable text of a page **only if its host is on the allow-list** (`kali_core._WEB_READ_ALLOW`). The list is matched on the **parsed hostname**, never a substring, so `evil.com/nvd.nist.gov`, `nvd.nist.gov.evil.com` and userinfo tricks (`nvd.nist.gov@evil.com`) are all rejected. Redirects are followed **only while they stay on the list** (a trusted host with an open redirect can't bounce the fetch off-list or into the local network), the final host is re-checked, and everything returned is run through the content firewall (`webshield`) — because even a trusted source is still someone else's text.
 
-**Why this is safe** (the same reasoning that kept `cve_lookup`): the injection risk in a web reader comes from fetching **attacker-chosen** URLs. Here the model — or a target that fed it a URL — cannot point `web_read` at a host it controls. The allow-list is matched on the **parsed hostname**, never a substring, so `evil.com/nvd.nist.gov`, `nvd.nist.gov.evil.com` and userinfo tricks (`nvd.nist.gov@evil.com`) are all rejected. Redirects are followed **only while they stay on the list** — a trusted host with an open redirect can't bounce the fetch off-list or into the local network — and the final host is re-checked. Everything returned is run through the content firewall (`webshield`), because even a trusted source (an exploit-db PoC, an advisory quoting an exploit) is still someone else's text.
+## 10.2 Two tiers — trusted vs community
 
-**How the model uses it:** when it hits something it isn't sure of — a specific CVE, a tool flag, an advisory, an ATT&CK technique, a public PoC — it's told to `web_read` the authoritative source rather than guess or state it from memory, then answer in its own words citing the URL. If what's needed genuinely isn't on an allow-listed source, it says so and tells you where to look instead of reaching for a host it doesn't have.
+The allow-list is two sets in `kali_core.py`, and the split is enforced **in code** (`kali.py._web_read_gated`), not left to the model:
 
-**Editing the allow-list:** `_WEB_READ_ALLOW` is a plain tuple of domains in `kali_core.py` (subdomains included automatically). Keep the bar high — a single open, user-editable host (a wiki anyone can PR) reopens the injection channel this design closes.
+- **`_WEB_READ_TRUSTED` — authoritative, editorially controlled.** An attacker can't serve chosen content through these, so they're fetched **automatically, inside the autonomous loop**: NVD/NIST, MITRE (CVE / ATT&CK / CWE / CAPEC), CISA (incl. KEV), FIRST (EPSS), official vendor/distro security channels (MSRC, Red Hat, Ubuntu, Debian, Arch, kernel.org), OWASP, PortSwigger, Kali docs, MDN, python.org, SANS, and reputable news (Reuters, AP, BBC, the Guardian, Ars Technica, Wired, BleepingComputer, The Hacker News, Krebs).
+- **`_WEB_READ_COMMUNITY` — user-authored / moderated.** Someone else writes the content (a repo, a gist, an answer, an edit, a package page), so an attacker *can* get text in front of the model here. These are held **outside the autonomous loop**: exploit-db, arXiv, Wikipedia/Wikimedia/Wikidata, Stack Overflow / Stack Exchange, PyPI, npm, GitHub, GitHub raw content, and GitLab.
 
-## 10.2 What was removed, and why
+## 10.3 The community-source approval gate
 
-Removed as a security measure and **gone**: the general `web_search` / `web_verify` / open-ended `web_read`, the OSINT/social readers (`osint_username`, `osint_lookup`, `social_read`), the `github` reader, the full `browser` (Playwright/Chromium/Brave) automation, and the semantic-search / GitHub "reach" sidecar (`kali_ext/reach.py`, `kali_ext/verify.py` — both deleted). Each fetched attacker-chosen text from the open web, social platforms, or arbitrary repos and fed it into the model — indirect prompt injection. `cve_lookup` (§4.7) and the allow-listed `web_read` above are the deliberately-narrow replacements.
+When Basilisk tries to `web_read` a **community** host, the gate does **not** fetch it. Instead:
+
+1. It raises a **non-blocking approval request** — a notification in the bell (with an **Allow** button) *and* a desktop popup — keyed to the domain (so one request covers, e.g., all of `github.com`).
+2. The tool returns a "pending approval" result to the agent, which is told to **carry on without it** and not retry in a loop. **Ignoring the request never blocks the run** — the agent keeps working and finds another way, and the request waits in the bell until you get to it.
+3. If you press **Allow**, that domain is granted **for the rest of the session** (in-memory — a fresh run starts locked down again), and Basilisk can read it from then on. If you're away, nothing hangs; the request simply sits there.
+
+The point is that this is **structural, not advisory**: a compromised or injected model still cannot reach a user-authored source without your click, because the check lives in the dispatch path, not in the prompt.
+
+**How the model uses it:** when it hits something it isn't sure of — a CVE, a tool flag, an advisory, an ATT&CK technique, a public PoC, a library's docs, a current event — it's told to `web_read` the most authoritative source that covers it, then answer in its own words citing the URL. If what's needed genuinely isn't on an allow-listed source, it says so and tells you where to look.
+
+**Editing the list:** `_WEB_READ_TRUSTED` and `_WEB_READ_COMMUNITY` are plain tuples of domains in `kali_core.py` (subdomains included automatically). Put a source in the trusted tier only if an attacker genuinely can't plant content there; everything user-editable goes in the community tier so it stays behind the approval gate.
+
+## 10.4 What was removed, and why
+
+Removed as a security measure and **gone**: the general `web_search` / `web_verify` / open-ended `web_read`, the OSINT/social readers (`osint_username`, `osint_lookup`, `social_read`), the `github` reader, the full `browser` (Playwright/Chromium/Brave) automation, and the semantic-search / GitHub "reach" sidecar (`kali_ext/reach.py`, `kali_ext/verify.py` — both deleted). Each fetched attacker-chosen text from the open web, social platforms, or arbitrary repos and fed it into the model — indirect prompt injection. `cve_lookup` (§4.7) and the two-tier allow-listed `web_read` above are the deliberately-narrow replacements.
 
 ---
 

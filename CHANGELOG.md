@@ -40,7 +40,11 @@ paths.
 - **README:** audited end-to-end and corrected — removed the stale per-command
   "approval gate / you approve / proposed / Apply" language everywhere (the tool
   is autonomous now), dropped the misleading "No cloud" line (the model is a
-  provider API), and updated the benchmark to 51/113.
+  provider API), updated the benchmark to 51/113, and **reworked the install docs
+  to lead with the auditable read-first path** (clone/fetch → read `install.sh` →
+  run) instead of blind `curl | bash`, which contradicted the tool's own
+  audit-before-you-deploy discipline; the one-liner remains as an explicit
+  opt-in convenience.
 
 ## v5.1.3 — web content firewall (prompt-injection defence)
 

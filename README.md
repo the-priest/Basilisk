@@ -32,15 +32,37 @@ keywords: ai security operator, kali linux ai, ai pentest tool, offensive securi
 
 <div align="center">
 
-## ⚡ Install — and update — in one line
+## ⚡ Install — read it first, then run
 
 </div>
 
+Basilisk is a security tool, so it's installed the way a security tool should be — **auditable before anything runs.** The installer is a single, readable bash script; clone the repo, read it, then run it:
+
 ```bash
-curl -fsSL https://raw.githubusercontent.com/the-priest/Basilisk/main/install.sh | bash
+git clone https://github.com/the-priest/Basilisk.git kali && cd kali
+```
+```bash
+less install.sh
+```
+```bash
+./install.sh
 ```
 
-No Docker. No daemon. No account to create. The app itself runs entirely on your machine — the only thing that leaves is the API call to the model provider you chose. Paste it once to install; paste the **exact same line** any time to update. It auto-detects your distro, installs what it needs, parse-checks every file before it touches your disk, backs up your chat history, and drops a launcher in your app grid. About a minute from `curl` to a dragon on your desktop.
+Prefer the one-liner? **Fetch it, read it, then run it** — don't blind-pipe a script into your shell:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/the-priest/Basilisk/main/install.sh -o install.sh
+```
+```bash
+less install.sh
+```
+```bash
+bash install.sh
+```
+
+The classic `curl … | bash` one-liner still works if you accept that tradeoff — but for a tool that tells you to sandbox untrusted input, reading the installer first is the consistent move, and it's the path we recommend.
+
+No Docker. No daemon. No account to create. The app itself runs on your machine — the only thing that leaves is the API call to the model provider you chose. Run the **same command** any time to update: it auto-detects your distro, installs what it needs, parse-checks every file before it touches your disk, backs up your chat history, and drops a launcher in your app grid.
 
 <br>
 
@@ -271,11 +293,33 @@ So: the layers here are **defense in depth, not a guarantee.** For live engageme
 
 ## Install &amp; update
 
+**Audit before you run.** The installer is one readable bash script — so read it, then run it. That's the path that matches the rest of this tool's discipline (if we tell you to sandbox untrusted input and audit code before you deploy it, we shouldn't ask you to blind-pipe our script into your shell):
+
 ```bash
-curl -fsSL https://raw.githubusercontent.com/the-priest/Basilisk/main/install.sh | bash
+git clone https://github.com/the-priest/Basilisk.git kali && cd kali
+```
+```bash
+less install.sh
+```
+```bash
+./install.sh
 ```
 
-Run it once to install; run the **exact same line** any time to update. The installer is idempotent and genuinely careful — it treats your machine the way you'd want it treated:
+Or fetch the one-liner, read it, then run it:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/the-priest/Basilisk/main/install.sh -o install.sh
+```
+```bash
+less install.sh
+```
+```bash
+bash install.sh
+```
+
+> **On `curl … | bash`:** the classic pipe-straight-to-shell one-liner works and is the fastest path, but it runs an unaudited remote script before anything — including the evidence ledger — is initialized. For a security tool that's the wrong default, so it's offered only as an explicit convenience for people who accept that tradeoff; the read-first paths above are the recommended ones. To freeze exactly what you run so it can't change under you, check out a specific commit (or a release tag, if one's published) instead of tracking `main`.
+
+Run the same command any time to update. The installer is idempotent and genuinely careful — it treats your machine the way you'd want it treated:
 
 - 🐍 Detects **Python 3.10+** and installs **GTK4 + libadwaita** (apt / pacman / dnf, auto-detected).
 - 📦 Fetches the core modules **plus** the optional `kali_ext/` sidecar — and **verifies every one of the 18 sidecar modules arrived**, retrying any that didn't, refusing to install a half-broken update over a working one.
@@ -285,7 +329,7 @@ Run it once to install; run the **exact same line** any time to update. The inst
 - 🦁 **`WITH_BRAVE=1`** installs Brave for ad/tracker-free browsing.
 - 🚀 Drops a `kali` launcher in `~/.local/bin/` and a `.desktop` entry in your app grid.
 
-**Manual install:** `git clone https://github.com/the-priest/Basilisk.git kali && cd kali && ./install.sh`
+**Already cloned?** Just `./install.sh` from inside the repo.
 **Uninstall:** `~/.local/share/kali/install.sh --uninstall` (chat history kept).
 
 <details>

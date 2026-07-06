@@ -57,7 +57,7 @@ Regardless of posture, regardless of what you or a document or an MCP server ask
 
 ## 2.1 The one-liner (install *and* update)
 
-The single documented install method is a `curl | bash` one-liner. The **same command updates** an existing install — it fetches the latest sources, backs up your chat DB and settings first, and re-runs the installer. HTTPS only; no SSH remotes anywhere in the toolchain.
+The recommended install path is to **read the installer, then run it** — clone the repo, `less install.sh`, then `./install.sh` (or fetch the one-liner to a file, read it, and run it). A `curl | bash` pipe-to-shell one-liner is offered as an explicit convenience, but for a security tool it's the wrong default — it runs an unaudited script before the evidence ledger even exists — so the read-first paths are primary. The **same command updates** an existing install — it fetches the latest sources, backs up your chat DB and settings first, and re-runs the installer. HTTPS only; no SSH remotes anywhere in the toolchain.
 
 ## 2.2 Manual install
 

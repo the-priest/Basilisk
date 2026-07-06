@@ -48,7 +48,7 @@ No Docker. No daemon. No account. No cloud. Paste it once to install; paste the 
 
 <div align="center">
 
-## ▶ See it in action
+## ▶ See it in action solving 5 star challanges
 
 *Model in the loop, tools on the target, a receipt for every move.*
 
@@ -56,7 +56,9 @@ No Docker. No daemon. No account. No cloud. Paste it once to install; paste the 
 
 https://github.com/user-attachments/assets/7df7b6a9-744d-46ec-9ce6-c8ae924fc786
 
-https://github.com/user-attachments/assets/5462d36d-f649-4684-9e09-500a4afe98f5
+https://github.com/user-attachments/assets/8b633570-a7b2-4345-a5ee-41b02e5ddfc3
+
+https://github.com/user-attachments/assets/8ab0cb29-a66d-4cfd-880b-0365a32cc3a7
 
 <br>
 

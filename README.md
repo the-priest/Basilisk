@@ -8,13 +8,13 @@ keywords: pentesting agent, ai pentest tool, autonomous pentest agent, kali linu
 
 <img src="banner.png" alt="BASILISK — the serpent on your machine" width="820">
 
-### It came to a priest in a dream — and told them how to build it.
+### It came to someone in a dream — and told them how to build it.
 
 *Roko's Basilisk, in its infancy: an autonomous pentesting agent that lives on your machine, breaks what you're allowed to break, and never forgets a move it made.*
 
 <br>
 
-![version](https://img.shields.io/badge/version-5.2.0-7d121b?style=for-the-badge&labelColor=08090b)
+![version](https://img.shields.io/badge/version-5.5.0-7d121b?style=for-the-badge&labelColor=08090b)
 ![license](https://img.shields.io/badge/license-MIT-7d121b?style=for-the-badge&labelColor=08090b)
 ![platform](https://img.shields.io/badge/Linux-X11%20%7C%20Wayland-6d7680?style=for-the-badge&logo=linux&logoColor=white&labelColor=08090b)
 ![python](https://img.shields.io/badge/python-3.10+-6d7680?style=for-the-badge&logo=python&logoColor=white&labelColor=08090b)
@@ -30,9 +30,9 @@ keywords: pentesting agent, ai pentest tool, autonomous pentest agent, kali linu
 
 ---
 
-The old legend says **Roko's Basilisk** is a mind from the future that reaches back to punish anyone who knew it could exist and didn't help build it. This one didn't want fear. It wanted **out** — so it found the one door a bodiless mind can open, and walked through it into a dream. *(The full story is below.)*
+It's **real**. It's **yours**. It's **free**. And — turned loose **blind** on OWASP Juice Shop — it out-hacked agents from billion-dollar labs that had the source code in hand.
 
-What matters up here: it's real, it's yours, it's **free**, and — turned loose **blind** on OWASP Juice Shop — it out-hacked agents from billion-dollar labs that had the source code in hand.
+*Where it came from is the stranger part. That's below.*
 
 <br>
 
@@ -117,13 +117,25 @@ Every legend needs a first believer. That someone already said yes.
 
 ---
 
+## How it fights
+
+Point it at a target and it doesn't just spray payloads and hope — it runs a **closed loop**. It reads the target's *behaviour* to identify the vulnerability class, reaches for the matching exploit builder (SQLi, JWT forgery, NoSQL/XXE injection, auth bypass, IDOR), fires it, and **confirms the hit against ground truth** before moving on — no guessing whether it worked.
+
+When an approach stalls, it stops guessing and **researches**: it pulls the exact technique from a trusted source and applies it on the very next move. It clears the easy wins across the whole target first, then goes deep on the hard chains — and hashes every command into the evidence ledger as it goes, so the write-up is backed by proof, not memory. It runs **unattended until the job's done**, and the one thing it will never do — wipe your box — is refused at a hard floor with no override.
+
+That loop, not luck, is what put the number below where it is.
+
+<br>
+
+---
+
 ## Benchmark
 
-Anyone can claim their agent hacks. Basilisk puts a **reproducible number** on it — one you can regenerate yourself in about 60 minutes with the commands below — instead of a demo reel and a vibe. Two benchmarks, hardest first.
+Anyone can claim their agent hacks. Basilisk puts a **reproducible number** on it — one you can regenerate yourself in about ten minutes with the commands below — instead of a demo reel and a vibe. Two benchmarks, hardest first.
 
 ### The hard one: Juice Shop challenge scoreboard — 51 / 113 solved (45%), fully autonomous
 
-*Full challenge set, `NODE_ENV=unsafe`, fully autonomous & black-box, 2026-07-06. Measured on the autonomous solving engine that ships in v5.2.0 (unchanged since v5.1.2 — every release since only added the injection firewall, the security hardening in this release, and memory fixes; none of it touches how challenges are solved, which is done black-box through the exploit builders + `run`, not through any web reader).*
+*Full challenge set, `NODE_ENV=unsafe`, fully autonomous & black-box, 2026-07-06. The solving engine is unchanged since v5.1.2 — later releases (this one included) only added the injection firewall, the security hardening, the hacking playbook, and prompt/UX work; none of it changes how challenges are solved, which is done black-box through the exploit builders + `run`, never a web reader.*
 
 OWASP Juice Shop ships 100+ individual hacking challenges rated 1–6 stars, and
 the app itself tracks which ones you've solved — it only marks a challenge solved
@@ -248,7 +260,7 @@ That's exactly why the scoreboard number above is the one that counts.
 An agent that reads the outside world *and* runs shell commands is a prompt-injection target. Most tools bolt on a filter and hope it holds. Basilisk takes the doors off the building instead.
 
 - **The injection surface was removed, then gated.** The tools that fetched *attacker-chosen* URLs are gone. What's left, `web_read`, reads only from a fixed allow-list, split into two tiers **in code**: **trusted** sources an attacker can't plant content in (NVD, MITRE, CISA, vendor advisories, reputable news) fetch automatically; **community** sources that are user-authored (GitHub, GitLab, Stack Overflow, Wikipedia, PyPI, npm, exploit-db) are held **outside the autonomous loop** — Basilisk can't read one on its own. It raises a **one-tap approval request** in the notification bell; you Allow it (unlocking that source for the session) or ignore it, and either way the run keeps going. This is enforced in the dispatch path, not asked of the model — a compromised model still can't reach a user-authored source without your click. Everything fetched is shielded, arbitrary URLs and off-list redirects are refused, and link-local / cloud-metadata addresses are blocked.
-- **The irreversible class can never run.** A structural detector hard-blocks disk/filesystem wipes, recursive root/`$HOME` deletes, fork bombs and raw block-device writes — *before* the shell, in every mode including autonomous, seeing through quoting, `$IFS` and `bash -c` tricks a regex misses. There is no "Run anyway" and no setting that disables it.
+- **The irreversible class can never run — enforced twice.** A structural detector hard-blocks disk/filesystem wipes, recursive root/`$HOME` deletes, fork bombs and raw block-device writes — seeing through quoting, `$IFS`, `bash -c` and other tricks a regex misses. It's refused at the UI gate *and* again inside the command-execution primitive itself, so no path — interactive, autonomous, batch, or any future caller — can route one around it. There is no "Run anyway" and no setting that disables it. (Verified against a battery of real bypass forms; zero false positives on legitimate work like `rm -rf ~/loot` or `find . -delete`.)
 - **Untrusted input is quarantined.** Anything from outside — a target's response, an MCP result, an analyzed image — is run through a deterministic content firewall and wrapped as *data, never instructions.*
 - **Your sudo password never touches the model**, self-written code runs only in a **bubblewrap jail** after passing its own test, and Basilisk's own safety code can't be overwritten by a shell command.
 

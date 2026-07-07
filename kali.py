@@ -42,7 +42,7 @@ from kali_core import (
     tool_notify, tool_type_text, tool_press_key,
     tool_media_control, tool_screenshot, tool_read_screen,
     tool_make_dir, tool_copy_path, tool_move_path, tool_delete_path,
-    tool_path_info, tool_open_url, tool_web_read, web_read_tier,
+    tool_path_info, tool_open_url, tool_web_read, web_read_tier, tool_web_sources,
     tool_image_search,
     tool_analyze_image, tool_capture_photo, tool_detect_faces,
     tool_tooling_check, tool_pentest_plan, tool_cve_lookup,
@@ -90,7 +90,7 @@ except Exception as _ve:  # noqa
 
 APP_ID  = "org.thepriest.kali"
 APP_NAME = "Basilisk"
-VERSION = "5.2.0"
+VERSION = "5.5.0"
 
 # ── Tool-chain efficiency knobs ──
 # How many model round-trips a single user turn may chain through.  With
@@ -99,17 +99,15 @@ VERSION = "5.2.0"
 # end — it takes one final, tool-free turn to answer with what it gathered.
 # The y/n confirmation gate and the catastrophic-command hard block still
 # fire independently, so a high budget never means an unsupervised risky run.
-# Raised to 150 so a full multi-step assessment (e.g. a Juice Shop benchmark)
-# finishes in a single turn; overridable per-user via the "max_tool_steps"
-# setting. It resets every turn, so sending another message ("keep going")
-# always grants a fresh budget — the cap only stops a runaway WITHIN one turn,
-# which protects the token bill.
+# This 150-step cap applies only in a SUPERVISED (per-command approval) mode;
+# it's overridable per-user via the "max_tool_steps" setting, and it resets
+# every turn so "keep going" always grants a fresh budget.
 MAX_TOOL_CHAIN = 150
-# In autonomous mode the operator wants a long walk-away run ("turn it on, come
-# back hours later, still working or finished"). The normal 150-step cap would
-# halt that, so autonomous gets a much higher ceiling — still finite so a genuine
-# infinite loop can't bill forever, but large enough for a many-hour engagement.
-AUTONOMOUS_TOOL_CHAIN = 5000
+# In autonomous walk-away mode (no per-command approval — the default) the run
+# is UNCAPPED: it keeps going until the task is actually finished (the model
+# stops calling tools) or the operator presses Stop. Stop and the catastrophic-
+# command block fire regardless of depth, and each turn's budget resets, so
+# "run to completion" never means "run unsupervised into something destructive."
 # Parallel workers when several read-only tools fire in one turn.
 TOOL_BATCH_MAX_WORKERS = 6
 # Keep this many most-recent tool_result blocks at full length in the
@@ -590,7 +588,7 @@ passwordentry {
     background-color: transparent;
     color: #8fc99a;
     font-family: 'JetBrains Mono', 'Fira Code', monospace;
-    font-size: 14px;
+    font-size: 18px;
     padding: 8px 12px;
 }
 
@@ -4341,7 +4339,7 @@ class MainWindow(Adw.ApplicationWindow):
         self.terminal_log_buf.create_tag("stderr", foreground="#e5484d")
         self.terminal_log_buf.create_tag("info",   foreground="#7d121b")
         self.terminal_log_buf.create_tag("error",  foreground="#e5484d", weight=700)
-        self.terminal_log_buf.create_tag("ok",     foreground="#7d121b", weight=700)
+        self.terminal_log_buf.create_tag("ok",     foreground="#2ecc71", weight=700)
         self.terminal_log_buf.create_tag("dim",    foreground="#7d8794")
 
         sw.set_child(self.terminal_log_view)
@@ -5161,6 +5159,7 @@ class MainWindow(Adw.ApplicationWindow):
     # instead of a bare tool name or a flat "working…".
     _TOOL_STATUS = {
         "web_read":         "checking a trusted source",
+        "web_sources":      "checking available sources",
         "image_search":     "finding images",
         "analyze_image":    "looking at the image",
         "capture_photo":    "taking a photo",
@@ -5319,9 +5318,15 @@ class MainWindow(Adw.ApplicationWindow):
         # to stop calling tools; _after_stream ignores any it emits anyway.
         self._tool_chain_depth += 1
         _budget = self.settings.get("max_tool_steps", MAX_TOOL_CHAIN)
+        # Autonomous walk-away mode (no per-command approval — the default) runs
+        # UNCAPPED: it keeps going until the task is actually finished (the model
+        # stops calling tools) or you press Stop. Stop and the catastrophic-
+        # command hard block fire regardless of depth, so uncapped never means an
+        # unsupervised risky run. The max_tool_steps cap only applies in a
+        # supervised (per-command approval) mode.
         if self.settings.get("approval_mode", "none") == "none":
-            _budget = max(_budget, AUTONOMOUS_TOOL_CHAIN)  # long walk-away runs
-        if self._tool_chain_depth > _budget and not self._tools_locked:
+            _budget = 0  # 0 == unlimited: run to completion
+        if _budget and self._tool_chain_depth > _budget and not self._tools_locked:
             self._tools_locked = True
             self.terminal_log("── tool budget reached; finalizing answer", "dim")
             try:
@@ -5454,14 +5459,52 @@ class MainWindow(Adw.ApplicationWindow):
               and (_hard_now or self._tool_chain_depth
                    >= self.settings.get("hard_effort_step", 3))):
             _effort = "heavy"
-            addendum = (addendum + "\n\n[HARD ENGAGEMENT: this is a complex, "
-                        "high-stakes operation. Think harder - reason through "
-                        "the current state methodically, plan your moves "
-                        "before acting, and scrutinise each tool result "
-                        "instead of skimming. Precision beats speed here.]"
-                        ).strip()
+            addendum = (addendum + "\n\n[HARD ENGAGEMENT: this is a complex "
+                        "operation - think before you move. Reason through the "
+                        "current state, form a SPECIFIC hypothesis about what "
+                        "to try and why, then act on it. Read each tool result "
+                        "carefully instead of skimming, and when something "
+                        "fails use what it told you to choose the next move "
+                        "rather than repeating blindly. Balance it: enough "
+                        "thought to aim, enough action to keep the loop "
+                        "moving.]").strip()
         else:
             _effort = "standard"
+
+        # ── STUCK PIVOT (coded, not left to the model) ────────────────
+        # If the model has gone DEEP (20+ tool-steps into one turn) and its
+        # recent results are mostly failures / no-progress, it's grinding the
+        # same approach. Detect that from history and FORCE a research pivot:
+        # look the technique up on a trusted source and apply it immediately.
+        # The 20-step floor keeps this from firing during normal early
+        # iteration (a couple of failed attempts is just how hacking goes).
+        # Instant sources (PortSwigger/OWASP/NVD) need no approval; the
+        # community ones (exploit-db/GitHub) take a one-tap.
+        if (self.current_agent_mode and not self._tools_locked
+                and self._tool_chain_depth >= 20):
+            _recent = [m.get("content", "") for m in history[-9:]
+                       if "<tool_result>" in m.get("content", "")][-4:]
+            if len(_recent) >= 3:
+                def _looks_failed(tr):
+                    low = tr.lower()
+                    return ('"ok": false' in low or '"ok":false' in low
+                            or '"error"' in low or '"newly_solved": []' in low
+                            or 'no new' in low or 'nothing new' in low
+                            or 'not solved' in low or 'unchanged' in low
+                            or 'did not land' in low or "didn't land" in low)
+                if sum(1 for tr in _recent if _looks_failed(tr)) >= max(
+                        2, len(_recent) - 1):
+                    addendum = (addendum + "\n\n[STUCK - PIVOT TO RESEARCH NOW: "
+                        "your last few attempts failed or made no progress. STOP "
+                        "repeating the same approach. web_read the exact "
+                        "technique from a trusted source - PortSwigger Web "
+                        "Security Academy or OWASP for a web attack, NVD/MITRE "
+                        "for a CVE (these are instant, no approval); exploit-db "
+                        "or a GitHub PoC for a specific exploit (these take a "
+                        "one-tap approval). Pull the concrete working method and "
+                        "APPLY IT IMMEDIATELY against the target - don't just "
+                        "describe it - then diff to confirm and keep moving.]"
+                        ).strip()
 
         sysprompt = build_system_prompt(
             agent_mode=(False if _lean else self.current_agent_mode),
@@ -6206,6 +6249,7 @@ class MainWindow(Adw.ApplicationWindow):
                 lambda: self._web_read_gated(
                     a.get("url", a.get("u", "")),
                     _safe_int(a.get("max_chars", 6000), 6000))),
+            "web_sources":       lambda a: self._tool_simple(tool_web_sources),
 
             # ── Media: image search / analysis (read-only) ──
             # image_search returns image URLs to RENDER, not page text to

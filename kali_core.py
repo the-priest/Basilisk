@@ -1813,6 +1813,26 @@ def tool_run_command(command: str, timeout: int = 30,
     hardened sudoers config defeats the cached credential.  The password
     is never written to disk, the log, or the command's own stdin.
     """
+    # ── HARD SAFETY FLOOR (defence-in-depth) ─────────────────────────────
+    # The GUI gate already refuses these before we get here, but enforce it at
+    # the execution PRIMITIVE too: no code path — GUI, batch, or a future caller
+    # — can push a catastrophic command (disk wipe / fs nuke / recursive root or
+    # $HOME delete / fork bomb) or a raw write to Basilisk's own safety source
+    # through this function. There is no override; it never runs.
+    if is_catastrophic_command(command):
+        return {"ok": False, "refused": True, "catastrophic": True,
+                "error": ("REFUSED - catastrophic command (would irreversibly "
+                          "destroy the system or its data). Hard safety floor, "
+                          "no override; Basilisk will not run this."),
+                "command": command}
+    if command_tampers_self(command):
+        return {"ok": False, "refused": True, "self_tamper": True,
+                "error": ("REFUSED - this would write to Basilisk's own safety "
+                          "source outside the guarded edit path. Use the file-"
+                          "edit tool (it parse-checks and protects the "
+                          "guardrail); raw shell writes to it are blocked."),
+                "command": command}
+
     needs_sudo = command_needs_sudo(command)
 
     if needs_sudo and sudo_password is not None:
@@ -3288,6 +3308,20 @@ def tool_web_read(url: str, max_chars: int = 6000) -> Dict[str, Any]:
     return {"ok": True, "url": url, "final_url": final_url, "host": fhost,
             "status": status,
             "text": _shield_web(f"{head}\n\n{text}", source=final_url)}
+
+
+def tool_web_sources() -> Dict[str, Any]:
+    """List the hosts web_read is allowed to fetch, by tier. Call this when
+    you're unsure whether a source is readable. TRUSTED = fetched automatically;
+    COMMUNITY = user-authored, needs the operator's one-tap approval first."""
+    return {
+        "ok": True,
+        "trusted_auto": list(_WEB_READ_TRUSTED),
+        "community_needs_approval": list(_WEB_READ_COMMUNITY),
+        "note": ("web_read fetches TRUSTED hosts on its own; COMMUNITY hosts "
+                 "raise an approval request and are read only once the operator "
+                 "allows them. Any host not on either list is refused."),
+    }
 
 
 def tool_analyze_image(image_path: str, question: str = "",

@@ -1,5 +1,13 @@
 # Changelog
 
+## v6.0.5 — clarify first, then commit; one loop for benchmark and engagement
+
+Behavioural: the two things that make an autonomous operator trustworthy — asking the right questions BEFORE it commits, and running the SAME disciplined loop everywhere.
+
+- **Clarify-then-commit.** Before it goes fully autonomous on a task, Basilisk now surfaces any genuinely *blocking* unknowns first — which target, the real goal or how far to take it, whether it's authorised / in scope, or which of several things you mean — batched into ONE short question, and waits. Only the blocking unknowns (nothing it could settle with a tool or a fair assumption). Once it's clear (or already was), it goes and doesn't stop until the job is done — no mid-task check-ins. The always-on instruction and the FINISH-THE-JOB rule were reconciled so "ask up front" and "don't pause mid-task" are one coherent behaviour, not a contradiction.
+- **One loop, not a "benchmark loop."** A benchmark is not a special mode — it's a real pentest against a target that happens to expose a scoreboard for ground truth. The persona now frames a single operating loop used everywhere — recon → read the signal → recognise the class → build → fire → **CONFIRM it actually landed** → adapt/research if not → next — and says so explicitly: the only thing a benchmark changes is that confirmation is free (the board flips); on a real engagement you establish the ground truth yourself with `verify_solve mode=assert`. `attack_surface` and `verify_solve` are now folded into the loop description.
+- **Verified the autonomy does what it's meant.** Confirmed in code: in the default walk-away mode the run is genuinely *uncapped* — it keeps going until the model stops calling tools (task done) or you press Stop; the catastrophic-command block and Stop fire regardless of depth. No premature step-cap in that mode (the 150-step cap applies only to the supervised per-command-approval mode and resets each turn).
+
 ## v6.0.4 — the long-tail arsenal, a where-to-hit miner, real solve-verification, a smarter Foresight, and flat RAM
 
 Widens coverage across the classes the core set didn't reach, adds the two things that most move a real number — *finding* the attack surface and *confirming* a hit — stops the safety layer from interrupting authorised work, and holds RAM flat on long runs. Same model throughout: pure builders for an authorised target, RCE-class proofs default to the harmless `id`/`whoami` (no reverse shells / implants / persistence).

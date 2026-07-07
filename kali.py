@@ -105,7 +105,7 @@ except Exception as _ve:  # noqa
 
 APP_ID  = "org.thepriest.kali"
 APP_NAME = "Basilisk"
-VERSION = "6.0.9"
+VERSION = "6.0.10"
 
 # ── Tool-chain efficiency knobs ──
 # How many model round-trips a single user turn may chain through.  With
@@ -986,12 +986,22 @@ link, button.link, *:link { color: #7d121b; }
 }
 
 /* Composer action icons (attach, audit, scan, mic) - subtle + rounded */
+/* ===== Arcane "summoned" buttons: carved obsidian lit by an ember sigil,
+   not flat gray squares. Hover awakens the ember; press sinks it into the
+   stone. ASCII-only (this is a bytes-literal stylesheet). ===== */
 .icon-button {
-    background-color: #0e1013;
-    border: 1px solid #20262d;
-    border-radius: 11px;
-    color: #9aa3ad;
+    background-color: #0b0708;
+    background-image:
+        radial-gradient(ellipse at 50% 118%, rgba(170, 34, 20, 0.30), rgba(170, 34, 20, 0) 70%),
+        linear-gradient(180deg, rgba(64, 22, 16, 0.28), rgba(10, 6, 6, 0) 62%);
+    border: 1px solid rgba(125, 18, 27, 0.48);
+    border-radius: 12px;
+    color: #d9b3a1;
     padding: 7px;
+    box-shadow: inset 0 1px 0 rgba(210, 90, 48, 0.10),
+                inset 0 -6px 12px rgba(120, 26, 14, 0.16),
+                0 0 8px rgba(125, 18, 27, 0.22);
+    transition: all 160ms ease;
 }
 .notif-badge {
     background-color: #e5484d;
@@ -1012,14 +1022,29 @@ link, button.link, *:link { color: #7d121b; }
 .notif-body { color: #c4cad4; font-size: 13px; }
 .notif-time { color: #6b737d; font-size: 11px; }
 .icon-button:hover {
-    background-color: #1b2128;
-    color: #7d121b;
-    border-color: #4a0a11;
+    background-image:
+        radial-gradient(ellipse at 50% 118%, rgba(225, 54, 26, 0.44), rgba(225, 54, 26, 0) 72%),
+        linear-gradient(180deg, rgba(92, 30, 20, 0.36), rgba(10, 6, 6, 0) 60%);
+    color: #ffd7bf;
+    border-color: rgba(205, 64, 32, 0.90);
+    box-shadow: inset 0 1px 0 rgba(255, 130, 66, 0.16),
+                inset 0 -7px 14px rgba(185, 44, 22, 0.24),
+                0 0 17px rgba(205, 54, 28, 0.52);
+}
+.icon-button:active {
+    background-color: #070505;
+    box-shadow: inset 0 3px 10px rgba(0, 0, 0, 0.62),
+                inset 0 0 12px rgba(165, 32, 20, 0.32),
+                0 0 7px rgba(125, 18, 27, 0.26);
 }
 .icon-button.toggled {
-    color: #7d121b;
-    border-color: #4a0a11;
-    background-color: rgba(125, 18, 27, 0.12);
+    color: #ffcaa8;
+    border-color: rgba(220, 70, 36, 0.95);
+    background-image:
+        radial-gradient(ellipse at 50% 118%, rgba(220, 54, 26, 0.50), rgba(220, 54, 26, 0) 74%),
+        linear-gradient(180deg, rgba(100, 32, 22, 0.40), rgba(10, 6, 6, 0) 60%);
+    box-shadow: inset 0 -7px 14px rgba(190, 46, 22, 0.30),
+                0 0 16px rgba(210, 56, 28, 0.55);
 }
 /* Send button - blends into the background; only the silver dragon pops.
    Glows softly while working; still acts as Stop when pressed. */
@@ -1083,18 +1108,52 @@ link, button.link, *:link { color: #7d121b; }
 }
 /* Model / provider switcher in the composer */
 .model-switch-btn {
-    background-color: #0e1013;
-    border: 1px solid #20262d;
-    border-radius: 10px;
-    color: #9aa3ad;
+    background-color: #0b0708;
+    background-image:
+        radial-gradient(ellipse at 50% 130%, rgba(170, 34, 20, 0.22), rgba(170, 34, 20, 0) 72%),
+        linear-gradient(180deg, rgba(64, 22, 16, 0.22), rgba(10, 6, 6, 0) 62%);
+    border: 1px solid rgba(125, 18, 27, 0.42);
+    border-radius: 11px;
+    color: #cbb0a4;
     padding: 5px 12px;
     font-size: 10.5px;
     font-weight: 600;
+    box-shadow: inset 0 -5px 10px rgba(120, 26, 14, 0.14),
+                0 0 7px rgba(125, 18, 27, 0.18);
+    transition: all 160ms ease;
 }
 .model-switch-btn:hover {
-    background-color: #1b2128;
-    color: #7d121b;
-    border-color: #4a0a11;
+    color: #ffd7bf;
+    border-color: rgba(205, 64, 32, 0.85);
+    box-shadow: inset 0 -6px 12px rgba(185, 44, 22, 0.22),
+                0 0 14px rgba(205, 54, 28, 0.45);
+}
+/* Window controls (close / minimise): the same summoned-stone look, and the
+   close sigil flares blood-red when you reach for it. */
+windowcontrols > button,
+.titlebutton {
+    background-color: #0b0708;
+    background-image: radial-gradient(ellipse at 50% 120%, rgba(150, 30, 18, 0.24), rgba(150, 30, 18, 0) 72%);
+    border: 1px solid rgba(125, 18, 27, 0.40);
+    border-radius: 10px;
+    color: #c4a99c;
+    box-shadow: inset 0 -5px 10px rgba(120, 26, 14, 0.14),
+                0 0 6px rgba(125, 18, 27, 0.18);
+    transition: all 150ms ease;
+}
+windowcontrols > button:hover,
+.titlebutton:hover {
+    color: #ffd7bf;
+    border-color: rgba(205, 64, 32, 0.85);
+    box-shadow: inset 0 -6px 12px rgba(185, 44, 22, 0.22),
+                0 0 14px rgba(205, 54, 28, 0.45);
+}
+windowcontrols > button.close:hover,
+.titlebutton.close:hover {
+    background-image: radial-gradient(ellipse at 50% 120%, rgba(229, 72, 77, 0.50), rgba(229, 72, 77, 0) 74%);
+    border-color: rgba(229, 72, 77, 0.95);
+    color: #ffffff;
+    box-shadow: 0 0 16px rgba(229, 72, 77, 0.60);
 }
 .model-group-header {
     color: #ff3a47;

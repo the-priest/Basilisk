@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.0.10 — arcane buttons: carved obsidian and ember sigils, not gray squares
+
+Cosmetic. Every chrome button was a flat gray robotic square; now they read like rune-stones lit from within by a Basilisk ember. Carved-obsidian base with a blood-red glow rising from the bottom, a faint sigil border, an inset carved highlight — and on hover the ember *awakens* (the glow flares and the border lights up); pressing sinks it into the stone. Applied to the composer buttons (attach, idea/suggest, camera, read-aloud, terminal), the model switcher, the menu / notification / settings buttons, and the window controls (the close sigil flares blood-red as you reach for it). Left untouched: the pieces that are already art -- the dragon logo toggle and the BASILISK wordmarks.
+
 ## v6.0.9 — fix the oversized header wordmark
 
 The v6.0.8 header wordmark rendered from a full-resolution texture with CONTAIN, so the wide title area scaled it up to fill and blew the header up to hundreds of pixels tall. Fixed: both the header wordmark (24px) and the sidebar wordmark (34px) are now scaled DOWN to a small intrinsic size, set to SCALE_DOWN with no expansion, so they render small and centered and the top bar is back to its normal height.

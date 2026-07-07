@@ -105,7 +105,7 @@ except Exception as _ve:  # noqa
 
 APP_ID  = "org.thepriest.kali"
 APP_NAME = "Basilisk"
-VERSION = "6.0.7"
+VERSION = "6.0.8"
 
 # ── Tool-chain efficiency knobs ──
 # How many model round-trips a single user turn may chain through.  With
@@ -144,6 +144,9 @@ MAX_TERMINAL_LINES = 2500
 # truncates any single monster line before it's inserted.
 MAX_TERMINAL_CHARS = 220_000
 MAX_TERMINAL_LINE_CHARS = 2_000
+# Keep only the last N command-blocks (a "$ cmd" line + its output = one turn)
+# in the live log; older ones are deleted from the TextBuffer, freeing their RAM.
+MAX_TERMINAL_TURNS = 20
 # Keep only the most recent chat bubbles in the widget tree. GTK message
 # widgets (TextViews, code blocks, images) are heavy; holding a whole long
 # conversation is what balloons RAM to gigabytes. The full transcript lives in
@@ -4233,6 +4236,9 @@ class MainWindow(Adw.ApplicationWindow):
 
         # Header
         hb = Adw.HeaderBar()
+        # Only our own dragon toggle belongs at the top-left — suppress the
+        # compositor's start-side title button so there aren't two icons there.
+        hb.set_show_start_title_buttons(False)
         # The sidebar toggle IS the dragon logo now — tap the emblem to show/hide
         # the sidebar (one branded button instead of a plain toggle + a logo).
         sb_toggle = Gtk.Button()
@@ -4258,7 +4264,26 @@ class MainWindow(Adw.ApplicationWindow):
         self.chat_subtitle_lbl = Gtk.Label(label="", xalign=0.5)
         self.chat_subtitle_lbl.add_css_class("chat-subtitle")
         self.title_widget_box.append(self.chat_title_lbl)
-        hb.set_title_widget(self.title_widget_box)
+        # Header centre shows a SMALL BASILISK death-metal wordmark instead of the
+        # tiny "New chat" title text. (chat_title_lbl is kept, un-shown, so rename/
+        # title code still works.)
+        _hdr_title = None
+        if _LOGO_PNG_PATH:
+            try:
+                _t2 = Gdk.Texture.new_from_filename(_LOGO_PNG_PATH)
+                _h2 = 22
+                _w2 = max(1, int(_h2 * _t2.get_intrinsic_width()
+                                 / _t2.get_intrinsic_height()))
+                _hdr_title = Gtk.Picture.new_for_paintable(_t2)
+                _hdr_title.set_content_fit(Gtk.ContentFit.CONTAIN)
+                _hdr_title.set_can_shrink(True)
+                _hdr_title.set_size_request(_w2, _h2)
+                _hdr_title.set_valign(Gtk.Align.CENTER)
+                _hdr_title.set_tooltip_text(APP_NAME)
+            except Exception:
+                _hdr_title = None
+        hb.set_title_widget(_hdr_title if _hdr_title is not None
+                            else self.title_widget_box)
 
         # (Provider + online status used to live here as pills; the operator
         # knows their provider, so that's gone — connectivity is now just the
@@ -4639,6 +4664,19 @@ class MainWindow(Adw.ApplicationWindow):
             btn.connect("clicked", lambda *_, c=cb: c())
             actions.append(btn)
 
+        # Suggestion button — send a nudge to Basilisk mid-run WITHOUT stopping
+        # it. Type your suggestion and tap this: while it's working the note is
+        # queued into the conversation and picked up on its next step; when idle
+        # it just sends. A lightbulb glyph (icon themes don't all ship one).
+        self.suggest_btn = Gtk.Button()
+        _sg = Gtk.Label(label="\U0001F4A1")   # lightbulb
+        self.suggest_btn.set_child(_sg)
+        self.suggest_btn.add_css_class("icon-button")
+        self.suggest_btn.set_tooltip_text(
+            "Send a suggestion without stopping Basilisk")
+        self.suggest_btn.connect("clicked", lambda *_: self._send_suggestion())
+        actions.append(self.suggest_btn)
+
         # Speaker toggle — read assistant replies aloud.  Only shown when
         # a TTS engine is actually available on the box.
         self.tts_toggle = None
@@ -4679,9 +4717,11 @@ class MainWindow(Adw.ApplicationWindow):
         actions_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
         actions_row.set_margin_start(4)
         actions_row.set_margin_end(4)
-        # Model switcher sits inline, on the same line as the action buttons.
-        actions_row.append(self.model_btn)
+        # Buttons on the LEFT (chips_scroll is hexpand so it fills), model name
+        # pushed to the RIGHT edge.
         actions_row.append(chips_scroll)
+        self.model_btn.set_halign(Gtk.Align.END)
+        actions_row.append(self.model_btn)
 
         # The idle/thinking status pill was removed — the chat itself now shows
         # exactly what each turn did, so a persistent "idle" pill was redundant.
@@ -5130,8 +5170,35 @@ class MainWindow(Adw.ApplicationWindow):
 
         self._kick_assistant_turn()
 
-    # ── voice (speech in / speech out) ──────────────────────────
+    def _send_suggestion(self):
+        """Send a suggestion to Basilisk WITHOUT stopping it. While it's working,
+        the note is added to the conversation and picked up on its NEXT step (the
+        model's history is rebuilt from the store each step, so it appears there
+        automatically). When idle, this just behaves like a normal Send."""
+        buf = self.input_view.get_buffer()
+        text = buf.get_text(buf.get_start_iter(), buf.get_end_iter(),
+                            False).strip()
+        if not text:
+            self._show_toast("Type a suggestion first.")
+            return
+        if not self._is_busy():
+            self._send_user_message()      # idle → ordinary send
+            return
+        if self.current_chat_id is None:
+            return
+        buf.set_text("")
+        cid = self.current_chat_id
+        # Stored with a tag so the model reads it as a live operator nudge, not a
+        # brand-new request. No _kick_assistant_turn — the running loop picks it
+        # up on its next step; the model is NOT interrupted.
+        self.store.add_message(cid, "user",
+                               "[operator suggestion, mid-run — weave this in "
+                               "without stopping]: " + text)
+        self._append_message_widget("user", text)
+        self._show_toast("Suggestion sent — Basilisk will fold it in on its "
+                         "next step (still working).", timeout=4)
 
+    # ── voice (speech in / speech out) ──────────────────────────
     def _on_tts_toggled(self, btn):
         on = btn.get_active()
         self.settings["tts_enabled"] = on
@@ -8211,6 +8278,7 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _clear_terminal_log(self, *_):
         self.terminal_log_buf.set_text("")
+        self._terminal_turn_offsets = []
         self.terminal_status_lbl.set_text("cleared")
 
     def _terminal_scroll_to_bottom(self):
@@ -8243,22 +8311,48 @@ class MainWindow(Adw.ApplicationWindow):
         def _ui():
             try:
                 buf = self.terminal_log_buf
+                # Turn tracking: each "$ cmd" line starts a new command-block.
+                # Keep only the last MAX_TERMINAL_TURNS; delete older blocks
+                # outright so their text leaves the buffer (and RAM).
+                if kind == "cmd":
+                    offs = getattr(self, "_terminal_turn_offsets", None)
+                    if offs is None:
+                        offs = []
+                        self._terminal_turn_offsets = offs
+                    offs.append(buf.get_char_count())
+                    if len(offs) > MAX_TERMINAL_TURNS:
+                        cut_off = offs[-MAX_TERMINAL_TURNS]
+                        if cut_off > 0:
+                            buf.delete(buf.get_start_iter(),
+                                       buf.get_iter_at_offset(cut_off))
+                        # shift remaining boundaries down by what we removed
+                        self._terminal_turn_offsets = [
+                            o - cut_off for o in offs if o >= cut_off]
                 buf.insert_with_tags_by_name(buf.get_end_iter(), text + "\n", kind)
-                # Rolling window — bound BOTH lines and bytes. The byte cap uses
-                # get_iter_at_offset (returns a plain iter, always succeeds), so
-                # trimming stays reliable regardless of how this GTK build returns
-                # get_iter_at_line. Display-only; nothing else reads this buffer.
+                # Backstop rolling window — bound BOTH lines and bytes. These also
+                # delete from the FRONT, so track how much and shift the turn
+                # offsets by the same amount (otherwise they'd point to the wrong
+                # place and a later turn-trim could wipe the buffer). The byte cap
+                # uses get_iter_at_offset (a plain iter, always succeeds).
+                deleted = 0
                 try:
                     n = buf.get_line_count()
                     if n > MAX_TERMINAL_LINES:
                         res = buf.get_iter_at_line(n - MAX_TERMINAL_LINES)
                         cut = res[1] if isinstance(res, tuple) else res
+                        deleted += cut.get_offset()
                         buf.delete(buf.get_start_iter(), cut)
                 except Exception:
                     pass
                 over = buf.get_char_count() - MAX_TERMINAL_CHARS
                 if over > 0:
                     buf.delete(buf.get_start_iter(), buf.get_iter_at_offset(over))
+                    deleted += over
+                if deleted:
+                    _offs = getattr(self, "_terminal_turn_offsets", None)
+                    if _offs:
+                        self._terminal_turn_offsets = [
+                            o - deleted for o in _offs if o >= deleted]
                 self.terminal_status_lbl.set_text(text[:40].strip() or "…")
                 GLib.idle_add(self._terminal_scroll_to_bottom)
             except Exception:

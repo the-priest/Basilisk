@@ -1,5 +1,13 @@
 # Changelog
 
+## v6.0.8 — mid-run suggestions, header/composer fixes, a 20-turn terminal log
+
+- **Suggest to Basilisk mid-run without stopping it.** New lightbulb button in the composer: type a nudge while it's working and tap it — the note is folded into the conversation and picked up on its very next step (the model's history is rebuilt each step, so it lands there automatically). No interruption, no lost progress. When idle, it just sends normally.
+- **Fixed the two icons in the top-left corner.** The main header was showing the compositor's start-side title button next to our dragon toggle. Suppressed it — now only the dragon logo (which toggles the sidebar) sits there.
+- **Header centre: small BASILISK wordmark instead of the tiny "New chat" text.** The little title label is gone; a small death-metal wordmark sits there now.
+- **Composer row swapped:** the four action buttons (attach / camera / read-aloud / terminal) are on the LEFT now, the model name pinned to the RIGHT.
+- **Terminal log is bounded to the last 20 command-blocks.** Older command-blocks are deleted outright from the buffer (and RAM) as new ones arrive — the live log stays small no matter how long an autonomous run goes. The line/byte backstops still apply and now keep the turn tracking in sync.
+
 ## v6.0.7 — a tidier composer and a branded header
 
 More UI polish, all cosmetic/layout.

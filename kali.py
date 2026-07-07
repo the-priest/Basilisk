@@ -105,7 +105,7 @@ except Exception as _ve:  # noqa
 
 APP_ID  = "org.thepriest.kali"
 APP_NAME = "Basilisk"
-VERSION = "6.0.6"
+VERSION = "6.0.7"
 
 # ── Tool-chain efficiency knobs ──
 # How many model round-trips a single user turn may chain through.  With
@@ -1047,6 +1047,20 @@ link, button.link, *:link { color: #7d121b; }
 }
 /* Header buttons (sidebar toggle, new chat) - blend into the header, with a
    quiet dragon-green accent only on hover so they don't draw the eye. */
+.wordmark-btn {
+    background: transparent;
+    background-image: none;
+    border: none;
+    box-shadow: none;
+    padding: 0 4px;
+    min-height: 0;
+    min-width: 0;
+}
+.wordmark-btn:hover {
+    background-color: rgba(125, 18, 27, 0.16);
+    box-shadow: none;
+}
+.logo-toggle { padding: 3px; }
 .header-icon-button {
     background-color: transparent;
     background-image: none;
@@ -4167,7 +4181,16 @@ class MainWindow(Adw.ApplicationWindow):
             t = Gtk.Label(label=APP_NAME.upper(), xalign=0.0)
             t.add_css_class("app-title")
             t.set_valign(Gtk.Align.CENTER)
-        title_box.append(t)
+        # The BASILISK death-metal wordmark IS the new-chat button now: tap the
+        # logo art to start a fresh chat (no separate + button beside it).
+        wordmark_btn = Gtk.Button()
+        wordmark_btn.add_css_class("wordmark-btn")
+        wordmark_btn.set_has_frame(False)
+        wordmark_btn.set_child(t)
+        wordmark_btn.set_tooltip_text("New chat")
+        wordmark_btn.set_valign(Gtk.Align.CENTER)
+        wordmark_btn.connect("clicked", lambda *_: self._new_chat())
+        title_box.append(wordmark_btn)
         self.online_dot = Gtk.Label(label="●")
         self.online_dot.add_css_class("online-dot")
         self.online_dot.set_valign(Gtk.Align.CENTER)
@@ -4181,12 +4204,6 @@ class MainWindow(Adw.ApplicationWindow):
         _empty_title = Gtk.Label()
         _empty_title.set_visible(False)
         sb_header.set_title_widget(_empty_title)
-
-        new_btn = Gtk.Button.new_from_icon_name("document-new-symbolic")
-        new_btn.set_tooltip_text("New chat")
-        new_btn.add_css_class("header-icon-button")
-        new_btn.connect("clicked", lambda *_: self._new_chat())
-        sb_header.pack_end(new_btn)
         sb.append(sb_header)
 
         # (Chat search removed by request.)
@@ -4216,9 +4233,18 @@ class MainWindow(Adw.ApplicationWindow):
 
         # Header
         hb = Adw.HeaderBar()
-        sb_toggle = Gtk.Button.new_from_icon_name("sidebar-show-symbolic")
+        # The sidebar toggle IS the dragon logo now — tap the emblem to show/hide
+        # the sidebar (one branded button instead of a plain toggle + a logo).
+        sb_toggle = Gtk.Button()
         sb_toggle.add_css_class("header-icon-button")
+        sb_toggle.add_css_class("logo-toggle")
         sb_toggle.set_tooltip_text("Toggle sidebar")
+        if _AVATAR_PNG_PATH:
+            _logo_img = Gtk.Image.new_from_file(_AVATAR_PNG_PATH)
+            _logo_img.set_pixel_size(24)
+            sb_toggle.set_child(_logo_img)
+        else:
+            sb_toggle.set_icon_name("sidebar-show-symbolic")
         sb_toggle.connect("clicked", lambda *_:
                           self.split.set_show_sidebar(
                               not self.split.get_show_sidebar()))
@@ -4575,19 +4601,14 @@ class MainWindow(Adw.ApplicationWindow):
         area = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         area.add_css_class("input-area")
 
-        # Model switcher — shows the active provider · model, click to switch
-        # to any model on any provider you hold a key for, on the fly.
-        model_bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
-        model_bar.set_margin_start(4)
-        model_bar.set_margin_end(4)
+        # Model switcher — shows the active provider · model, click to switch.
+        # Now sits INLINE in the action-button row below, not on its own line.
         self.model_btn = Gtk.Button()
         self.model_btn.add_css_class("model-switch-btn")
-        self.model_btn.set_halign(Gtk.Align.START)
+        self.model_btn.set_valign(Gtk.Align.CENTER)
         self.model_btn.set_tooltip_text("Switch model / provider")
         self.model_btn.connect("clicked", self._open_model_switcher)
         self._update_model_button()
-        model_bar.append(self.model_btn)
-        area.append(model_bar)
 
         # Action chips
         actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
@@ -4658,30 +4679,21 @@ class MainWindow(Adw.ApplicationWindow):
         actions_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
         actions_row.set_margin_start(4)
         actions_row.set_margin_end(4)
+        # Model switcher sits inline, on the same line as the action buttons.
+        actions_row.append(self.model_btn)
         actions_row.append(chips_scroll)
 
-        # Permanent status pill — lives in the button row, always visible. Shows
-        # "idle" when nothing's running and the live action title while working.
-        # chips_scroll (above) is hexpand, so this sits pinned at the right edge;
-        # the label is ellipsized to a fixed width so its text changing can NEVER
-        # reflow the toolbar buttons. Non-interactive (can't be pressed).
+        # The idle/thinking status pill was removed — the chat itself now shows
+        # exactly what each turn did, so a persistent "idle" pill was redundant.
+        # The pill objects are still created (kept un-parented) so _set_working /
+        # update_status_pills keep working; they just aren't shown.
         self.status_pill_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
                                        spacing=6)
         self.status_pill_box.add_css_class("status-pill")
-        self.status_pill_box.set_valign(Gtk.Align.CENTER)
-        self.status_pill_box.set_can_target(False)
         self.status_pill_spinner = Gtk.Spinner()
-        self.status_pill_spinner.add_css_class("status-pill-spinner")
-        self.status_pill_spinner.set_visible(False)
         self.status_pill_label = Gtk.Label(label="idle")
-        self.status_pill_label.add_css_class("status-pill-label")
-        self.status_pill_label.set_ellipsize(Pango.EllipsizeMode.END)
-        self.status_pill_label.set_max_width_chars(22)
-        self.status_pill_label.set_width_chars(6)
-        self.status_pill_label.set_xalign(1.0)
         self.status_pill_box.append(self.status_pill_spinner)
         self.status_pill_box.append(self.status_pill_label)
-        actions_row.append(self.status_pill_box)
 
         area.append(actions_row)
 

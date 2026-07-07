@@ -1,5 +1,14 @@
 # Changelog
 
+## v6.0.7 — a tidier composer and a branded header
+
+More UI polish, all cosmetic/layout.
+
+- **Model switcher moved onto the button line.** It used to float on its own row above the toolbar (looked orphaned once the buttons thinned out); it now sits inline, on the same line as Attach / Camera / Read-aloud / Terminal.
+- **Removed the idle/thinking status pill.** With the chat now spelling out exactly what each turn did, a persistent "idle" pill was dead weight. Gone. (Its internals are kept internally so nothing that updated it breaks.)
+- **The dragon logo IS the sidebar toggle.** One branded button instead of a plain toggle sitting next to a logo — tap the emblem to show/hide the sidebar.
+- **The BASILISK death-metal wordmark IS the new-chat button.** Click the logo art to start a fresh chat; the separate "+" button is gone.
+
 ## v6.0.6 — the chat shows what it actually did, a cleaner toolbar, a brighter dragon
 
 UI pass. The big one: a tool-using turn now reads as *what it did*, not a blank "thinking".

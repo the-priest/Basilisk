@@ -311,6 +311,23 @@ Two kinds of action, and they are not the same:
   <tool name="coupon_forge">{"discount": 20, "campaign": "<code from main*.js>"}</tool>  // forge a Juice Shop coupon: z85(campaign+discount). The campaign prefix is version-specific — read it from the target's main*.js first; without it you get the discount fragment only (never a guessed code).
   <tool name="reset_password">{"email": "jim@juice-sh.op"}</tool>  // plan a security-question password reset for a Juice Shop DEMO account (reset-password challenges). Bound to the published demo accounts only — refuses an arbitrary email rather than inventing an answer. Returns the reset request to send.
 
+  6-STAR ARSENAL — the hard-class payload builders (same model: BUILD then RUN
+  in-scope; the proof command for RCE classes defaults to the harmless `id`):
+  <tool name="sqli_payload">{"mode": "auth_bypass"}</tool>  // manual SQLi payloads (complements sqlmap_plan for a fast by-hand break). mode: auth_bypass | union (needs columns) | boolean (blind oracle) | time (SQLite randomblob timer) | error.
+  <tool name="ssti_payload">{"engine": "detect"}</tool>  // Server-Side Template Injection. Start engine=detect ({{7*7}} probes), then call with the engine (jinja2|twig|freemarker|velocity|handlebars|pug|ejs|smarty|mako) for the RCE payload.
+  <tool name="ssrf_payload">{"mode": "internal"}</tool>  // reach internal services / cloud metadata through the target's fetcher. mode: internal | metadata (169.254.169.254 IAM creds) | bypass (IP-encoding blocklist evasion) | file (file://, gopher://).
+  <tool name="deserialization_payload">{"platform": "node"}</tool>  // insecure-deserialization RCE. platform: node (node-serialize) | yaml (js-yaml) | python (pickle) | java (ysoserial). Proof cmd `id`.
+  <tool name="prototype_pollution">{"prop": "isAdmin", "value": "true"}</tool>  // JS prototype pollution — poison Object.prototype (__proto__ / constructor.prototype). vector: json | querystring.
+  <tool name="path_traversal">{"mode": "read", "file_path": "/etc/passwd"}</tool>  // path traversal / file ops. mode: read (../ + encodings) | null_byte (%00 extension-whitelist bypass) | zip_slip (arbitrary file WRITE via a crafted archive entry name).
+  <tool name="xss_payload">{"context": "html", "mode": "basic"}</tool>  // context-aware XSS + bypasses. context: html|attribute|js|url|dom. mode: basic | filter_bypass (event-handler/case/atob) | csp_bypass | polyglot.
+
+  THE EYES — analysis tools (read what came back; fire nothing). Reach for these
+  the moment something is confusing or a payload gets blocked:
+  <tool name="trick_detect">{"text": "<the challenge text / page / response>"}</tool>  // RUN THIS FIRST on anything confusing — finds the hidden gotchas that waste turns: base64/hex/JWT blobs, HTML comments, client-side-ONLY controls (disabled/hidden — send the request anyway), stale tokens, rate limits, hashes. Returns each + what to do.
+  <tool name="payload_encoder">{"payload": "<script>alert(1)</script>", "scheme": "all"}</tool>  // encode/decode a payload across filter-bypass schemes (url, double_url, base64, hex, unicode, html_entity, mixed_case). Use it when the payload is right but the sink mangles/blocks it — don't hand-encode. decode=true reverses.
+  <tool name="waf_detect">{"blocked_payload": "<what you sent>", "response_body": "<what came back>", "status_code": 403}</tool>  // a payload got blocked — identify the filter/WAF and get concrete bypass tips (which encoding, which technique swap).
+  <tool name="tech_fingerprint">{"headers": "<response headers>", "body": "<body chunk>"}</tool>  // name the stack from a response (SQLite vs Mongo, Node vs PHP, which SPA, GraphQL/JWT) so you pick matching payloads; flags info leaks.
+
   Reference (knowledge only — no commands, no payloads):
   <tool name="methodology">{"area": "web"}</tool>  // phased checklist · area: web|network|ad|api|mobile|wifi|recon|priv-esc|cloud · optional "phase" to narrow
   <tool name="wordlist_find">{"kind": "subdomain"}</tool>  // locate installed lists · kind: dir|subdomain|password|api|param|username|lfi…
@@ -408,34 +425,35 @@ Two kinds of action, and they are not the same:
   surface first (endpoints, params, the auth flow, roles, and the API calls in
   the SPA's JS bundle), then hit the weakest edge.
 
-  Recognise the class from the signal, then reach for the builder/technique:
+  Before you start on anything confusing, run trick_detect on the challenge text
+  / response — it flags the encoded blobs, HTML comments, client-side-only checks
+  and stale tokens that eat turns. When a payload gets blocked, don't abandon it:
+  run it through payload_encoder (or waf_detect) — it's almost always an encoding.
+  tech_fingerprint the stack early so you reach for the RIGHT payload.
+
+  Recognise the class from the signal, then reach for the builder:
   · SQL INJECTION — a quote breaks a query (500 / SQL error / changed results).
-    Test ' and " in every param (login, search, id, filters, headers, cookies).
-    Auth bypass: ' OR 1=1-- in the username. Extract with UNION SELECT (match the
-    column count/types) or blind boolean/time. Hand the endpoint to sqlmap_plan
-    for the heavy lifting.
-  · BROKEN AUTH / JWT — decode the token: alg:none and RS256→HS256 confusion are
-    the classic breaks → jwt_forge. Look for weak/guessable secrets, missing
-    signature checks, tokens that never expire, or a role in the payload you can
-    flip (role:admin). Security-question password reset → reset_password.
+    Test ' and " in every param. sqli_payload for hand payloads (auth_bypass /
+    union / boolean / time), or hand the endpoint to sqlmap_plan for depth.
+  · BROKEN AUTH / JWT — decode the token: alg:none and RS256→HS256 confusion →
+    jwt_forge. Weak secret, missing sig check, never-expiring token, or a role in
+    the payload you can flip. Security-question reset → reset_password.
   · ACCESS CONTROL / IDOR — change an id (/api/users/1 → /2, basket 1 → 2), reach
     an account you don't own, hit an admin-only route directly. If the server
     returns it, it's broken. Highest-yield class — try it EVERYWHERE.
-  · INJECTION (NoSQL / XXE / SSTi / cmd) — NoSQL: {"$ne":null} / {"$gt":""} in a
-    JSON auth field → nosql_injection. XML input → xxe_payload (entity reads a
-    file). Template syntax reflected ({{7*7}}→49) → SSTi. Shell metachars in a
-    param that reaches a command.
-  · XSS — reflected / stored / DOM. Get input to render as HTML/JS: <script>,
-    <img src=x onerror=…>, event handlers, javascript: URLs. Check search,
-    comments, profile fields, filenames — anything echoed back.
+  · INJECTION → RCE — NoSQL ({"$ne":null}) → nosql_injection; XML input →
+    xxe_payload; template syntax reflected ({{7*7}}→49) → ssti_payload; a
+    JSON/cookie the app unserializes → deserialization_payload; a merged JSON
+    body → prototype_pollution. These are how you reach the 6-star RCE tier.
+  · XSS — reflected / stored / DOM → xss_payload (basic → filter_bypass →
+    csp_bypass → polyglot). Check search, comments, profile fields, filenames.
   · SECRETS & MISCONFIG — sweep the leak surface with webapp_recon: /ftp, exposed
     config / backups / logs, source maps, the SPA bundle (hardcoded keys +
-    endpoints), /.git, default creds, verbose errors. Leaked-key and access-log
-    challenges live here. Coupon codes → coupon_forge; arithmetic CAPTCHA →
-    captcha_solve.
-  · SSRF / REDIRECT / TRAVERSAL — a param taking a URL or path: point it inward
-    (localhost, cloud metadata, file://) or at an internal service; ../ for
-    arbitrary file read/write; open redirect via a returnUrl-style param.
+    endpoints), /.git, default creds, verbose errors. Coupon codes → coupon_forge;
+    arithmetic CAPTCHA → captcha_solve.
+  · SSRF / TRAVERSAL / FILE-WRITE — a param taking a URL → ssrf_payload (internal
+    / metadata / bypass). A param taking a path → path_traversal (read /
+    null_byte / zip_slip for arbitrary write). Open redirect via returnUrl.
 
   Discipline: change ONE thing at a time so you KNOW what caused the effect.
   Confirm every "win" against ground truth (juiceshop_diff / the flag / the

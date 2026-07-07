@@ -4200,6 +4200,104 @@ def tool_reset_password(email: str = "",
         return {"ok": False, "error": f"reset_password_plan failed: {e}"}
 
 
+# ── 6-star arsenal wrappers (all pure payload/analysis generators) ──
+def _exp_call(fn: str, **kw) -> Dict[str, Any]:
+    try:
+        _x = _exploits_mod()
+    except Exception as e:
+        return {"ok": False, "error": f"exploits module unavailable: {e}"}
+    try:
+        return getattr(_x, fn)(**kw)
+    except Exception as e:
+        return {"ok": False, "error": f"{fn} failed: {e}"}
+
+
+def tool_ssti_payload(engine: str = "detect", cmd: str = "id") -> Dict[str, Any]:
+    """Server-Side Template Injection: a detection probe set, then a per-engine
+    RCE payload (Jinja2/Twig/Freemarker/Velocity/Handlebars/Pug/EJS/…). Proof
+    command defaults to `id`. For a scope_set target."""
+    return _exp_call("ssti_payload", engine=engine, cmd=cmd)
+
+
+def tool_ssrf_payload(mode: str = "internal", target_url: str = "http://localhost/",
+                      host: str = "169.254.169.254") -> Dict[str, Any]:
+    """SSRF payloads to reach internal services / cloud metadata through the
+    target's own fetcher, plus blocklist-bypass encodings. modes: internal |
+    metadata | bypass | file."""
+    return _exp_call("ssrf_payload", mode=mode, target_url=target_url, host=host)
+
+
+def tool_deserialization_payload(platform: str = "node", cmd: str = "id") -> Dict[str, Any]:
+    """Insecure-deserialization RCE payloads (node-serialize / js-yaml / pickle /
+    Java ysoserial). Proof command `id`. Authorised target only."""
+    return _exp_call("deserialization_payload", platform=platform, cmd=cmd)
+
+
+def tool_prototype_pollution(prop: str = "isAdmin", value: str = "true",
+                             vector: str = "json") -> Dict[str, Any]:
+    """JavaScript prototype-pollution payloads (__proto__ / constructor.prototype)
+    to poison a trusted property. vector: json | querystring."""
+    return _exp_call("prototype_pollution", prop=prop, value=value, vector=vector)
+
+
+def tool_path_traversal(mode: str = "read", file_path: str = "/etc/passwd",
+                        filename: str = "malicious.md") -> Dict[str, Any]:
+    """Path traversal / file read-write payloads. modes: read (../ + encodings) |
+    null_byte (%00 extension bypass) | zip_slip (arbitrary file write)."""
+    return _exp_call("path_traversal", mode=mode, file_path=file_path, filename=filename)
+
+
+def tool_xss_payload(context: str = "html", mode: str = "basic") -> Dict[str, Any]:
+    """Context-aware XSS payloads + filter/CSP bypasses. context: html | attribute
+    | js | url | dom. mode: basic | filter_bypass | csp_bypass | polyglot."""
+    return _exp_call("xss_payload", context=context, mode=mode)
+
+
+def tool_sqli_payload(mode: str = "auth_bypass", columns: Any = 3,
+                      table: str = "Users") -> Dict[str, Any]:
+    """Manual SQL-injection payloads (complements sqlmap_plan). modes: auth_bypass
+    | union | boolean | time | error."""
+    try:
+        columns = int(columns)
+    except Exception:
+        columns = 3
+    return _exp_call("sqli_payload", mode=mode, columns=columns, table=table)
+
+
+def tool_payload_encoder(payload: str = "", scheme: str = "all",
+                         decode: Any = False) -> Dict[str, Any]:
+    """Encode/decode a payload across filter-bypass schemes (url, double_url,
+    base64, hex, unicode, html_entity, mixed_case). Reach for this when a payload
+    is right but the sink mangles or blocks it. decode=True reverses."""
+    return _exp_call("payload_encoder", payload=payload, scheme=scheme,
+                     decode=bool(decode))
+
+
+def tool_tech_fingerprint(headers: str = "", body: str = "") -> Dict[str, Any]:
+    """Read a response's headers + body and name the stack (DB, runtime, SPA,
+    GraphQL/JWT) so you pick matching payloads, and flag info leaks."""
+    return _exp_call("tech_fingerprint", headers=headers, body=body)
+
+
+def tool_waf_detect(blocked_payload: str = "", response_body: str = "",
+                    status_code: Any = 0) -> Dict[str, Any]:
+    """A payload got blocked — identify the filter/WAF and how to get past it.
+    Pass the payload you sent + the response body/status."""
+    try:
+        status_code = int(status_code)
+    except Exception:
+        status_code = 0
+    return _exp_call("waf_detect", blocked_payload=blocked_payload,
+                     response_body=response_body, status_code=status_code)
+
+
+def tool_trick_detect(text: str = "") -> Dict[str, Any]:
+    """Scan a challenge/page/response for hidden tricks that waste turns: encoded
+    data, comments, client-side-only checks, tokens, rate limits, hashes. Run it
+    FIRST on anything confusing; returns each gotcha + what to do."""
+    return _exp_call("trick_detect", text=text)
+
+
 def tool_webapp_recon(base_url: str = "http://localhost:3000",
                       extra_paths: Any = None,
                       max_paths: Any = 40) -> Dict[str, Any]:

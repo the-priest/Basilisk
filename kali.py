@@ -59,6 +59,10 @@ from kali_core import (
     tool_juiceshop_next, tool_juiceshop_diff,
     tool_jwt_forge, tool_nosql_injection, tool_xxe_payload,
     tool_coupon_forge, tool_captcha_solve, tool_reset_password,
+    tool_ssti_payload, tool_ssrf_payload, tool_deserialization_payload,
+    tool_prototype_pollution, tool_path_traversal, tool_xss_payload,
+    tool_sqli_payload, tool_payload_encoder, tool_tech_fingerprint,
+    tool_waf_detect, tool_trick_detect,
     tool_webapp_recon, tool_juiceshop_source,
     tool_benchmark_targets, tool_benchmark_score, tool_benchmark_report,
     tool_benchmark_compare,
@@ -296,11 +300,11 @@ headerbar {
 .chat-row .title-line {
     color: #e8ebef;
     font-weight: 700;
-    font-size: 17px;
+    font-size: 20px;
 }
 .chat-row .meta-line {
     color: #6d7680;
-    font-size: 10.5px;
+    font-size: 12px;
     letter-spacing: 0.3px;
     margin-top: 3px;
 }
@@ -588,7 +592,7 @@ passwordentry {
     background-color: transparent;
     color: #8fc99a;
     font-family: 'JetBrains Mono', 'Fira Code', monospace;
-    font-size: 18px;
+    font-size: 20px;
     padding: 8px 12px;
 }
 
@@ -3815,6 +3819,12 @@ class MainWindow(Adw.ApplicationWindow):
         # In-memory only (a fresh run starts locked down again); the gate that
         # enforces this lives in _web_read_gated, not in the model's prompt.
         self._web_grants: set = set()
+        # In-app sudo password cache. Held ONLY in memory, passed straight to
+        # the sudo subprocess, never written to disk/log/history — the model
+        # cannot see it. Entered once per chat; cleared when you start a new
+        # chat; expires 30 minutes after entry, after which it's asked again.
+        self._sudo_pw = None
+        self._sudo_pw_time = 0.0
         # Apply the inline-image toggle to the module global the renderer reads.
         global _RENDER_IMAGES
         try:
@@ -4292,7 +4302,7 @@ class MainWindow(Adw.ApplicationWindow):
         """Live terminal output panel — shows exactly what tools are doing."""
         panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         panel.add_css_class("terminal-panel")
-        panel.set_size_request(-1, _scaled(220, floor=140))
+        panel.set_size_request(-1, _scaled(360, floor=240))
 
         # Header row
         header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
@@ -4334,7 +4344,7 @@ class MainWindow(Adw.ApplicationWindow):
         self.terminal_log_buf = self.terminal_log_view.get_buffer()
 
         # Colour tags
-        self.terminal_log_buf.create_tag("cmd",    foreground="#7d121b", weight=700)
+        self.terminal_log_buf.create_tag("cmd",    foreground="#d51f2e", weight=700)
         self.terminal_log_buf.create_tag("stdout", foreground="#9aa3ad")
         self.terminal_log_buf.create_tag("stderr", foreground="#e5484d")
         self.terminal_log_buf.create_tag("info",   foreground="#7d121b")
@@ -4734,6 +4744,11 @@ class MainWindow(Adw.ApplicationWindow):
         cid = self.store.create_chat(
             title="New chat", model=model,
             agent_mode=self.settings.get("agent_mode_default", True))
+        # A new chat starts locked down: the sudo password and any community-
+        # source grants from the previous chat are wiped — each must be
+        # re-authorised in the new chat.
+        self._clear_sudo_pw()
+        self._web_grants = set()
         self._load_chat(cid)
         self._refresh_sidebar()
         return False
@@ -5204,6 +5219,17 @@ class MainWindow(Adw.ApplicationWindow):
         "nosql_injection":    "building a NoSQL payload",
         "xxe_payload":        "building an XXE payload",
         "coupon_forge":       "forging a coupon",
+        "ssti_payload":       "building an SSTi payload",
+        "ssrf_payload":       "building an SSRF payload",
+        "deserialization_payload": "building a deserialization payload",
+        "prototype_pollution": "building a prototype-pollution payload",
+        "path_traversal":     "building a traversal payload",
+        "xss_payload":        "building an XSS payload",
+        "sqli_payload":       "building a SQLi payload",
+        "payload_encoder":    "encoding the payload",
+        "tech_fingerprint":   "fingerprinting the stack",
+        "waf_detect":         "analysing the filter",
+        "trick_detect":       "scanning for hidden tricks",
         "captcha_solve":      "reading the captcha",
         "reset_password":     "planning a reset",
         "webapp_recon":       "sweeping the app",
@@ -5952,6 +5978,48 @@ class MainWindow(Adw.ApplicationWindow):
             return lambda: tool_reset_password(
                 a.get("email", ""),
                 a.get("new_password", a.get("password", "Pwned123!")))
+        if n == "ssti_payload":
+            return lambda: tool_ssti_payload(
+                a.get("engine", "detect"), a.get("cmd", a.get("command", "id")))
+        if n == "ssrf_payload":
+            return lambda: tool_ssrf_payload(
+                a.get("mode", "internal"),
+                a.get("target_url", a.get("url", "http://localhost/")),
+                a.get("host", "169.254.169.254"))
+        if n == "deserialization_payload":
+            return lambda: tool_deserialization_payload(
+                a.get("platform", "node"), a.get("cmd", a.get("command", "id")))
+        if n == "prototype_pollution":
+            return lambda: tool_prototype_pollution(
+                a.get("prop", a.get("property", "isAdmin")),
+                a.get("value", "true"), a.get("vector", "json"))
+        if n == "path_traversal":
+            return lambda: tool_path_traversal(
+                a.get("mode", "read"),
+                a.get("file_path", a.get("file", "/etc/passwd")),
+                a.get("filename", "malicious.md"))
+        if n == "xss_payload":
+            return lambda: tool_xss_payload(
+                a.get("context", "html"), a.get("mode", "basic"))
+        if n == "sqli_payload":
+            return lambda: tool_sqli_payload(
+                a.get("mode", "auth_bypass"), a.get("columns", 3),
+                a.get("table", "Users"))
+        if n == "payload_encoder":
+            return lambda: tool_payload_encoder(
+                a.get("payload", a.get("text", "")), a.get("scheme", "all"),
+                a.get("decode", False))
+        if n == "tech_fingerprint":
+            return lambda: tool_tech_fingerprint(
+                a.get("headers", ""), a.get("body", ""))
+        if n == "waf_detect":
+            return lambda: tool_waf_detect(
+                a.get("blocked_payload", a.get("payload", "")),
+                a.get("response_body", a.get("body", "")),
+                a.get("status_code", a.get("status", 0)))
+        if n == "trick_detect":
+            return lambda: tool_trick_detect(
+                a.get("text", a.get("body", a.get("content", ""))))
         if n == "webapp_recon":
             return lambda: tool_webapp_recon(
                 a.get("base_url", a.get("url", a.get("target",
@@ -6457,6 +6525,50 @@ class MainWindow(Adw.ApplicationWindow):
                 lambda: tool_reset_password(
                     a.get("email", ""),
                     a.get("new_password", a.get("password", "Pwned123!")))),
+            "ssti_payload":       lambda a: self._tool_simple(
+                lambda: tool_ssti_payload(
+                    a.get("engine", "detect"),
+                    a.get("cmd", a.get("command", "id")))),
+            "ssrf_payload":       lambda a: self._tool_simple(
+                lambda: tool_ssrf_payload(
+                    a.get("mode", "internal"),
+                    a.get("target_url", a.get("url", "http://localhost/")),
+                    a.get("host", "169.254.169.254"))),
+            "deserialization_payload": lambda a: self._tool_simple(
+                lambda: tool_deserialization_payload(
+                    a.get("platform", "node"),
+                    a.get("cmd", a.get("command", "id")))),
+            "prototype_pollution": lambda a: self._tool_simple(
+                lambda: tool_prototype_pollution(
+                    a.get("prop", a.get("property", "isAdmin")),
+                    a.get("value", "true"), a.get("vector", "json"))),
+            "path_traversal":     lambda a: self._tool_simple(
+                lambda: tool_path_traversal(
+                    a.get("mode", "read"),
+                    a.get("file_path", a.get("file", "/etc/passwd")),
+                    a.get("filename", "malicious.md"))),
+            "xss_payload":        lambda a: self._tool_simple(
+                lambda: tool_xss_payload(
+                    a.get("context", "html"), a.get("mode", "basic"))),
+            "sqli_payload":       lambda a: self._tool_simple(
+                lambda: tool_sqli_payload(
+                    a.get("mode", "auth_bypass"), a.get("columns", 3),
+                    a.get("table", "Users"))),
+            "payload_encoder":    lambda a: self._tool_simple(
+                lambda: tool_payload_encoder(
+                    a.get("payload", a.get("text", "")),
+                    a.get("scheme", "all"), a.get("decode", False))),
+            "tech_fingerprint":   lambda a: self._tool_simple(
+                lambda: tool_tech_fingerprint(
+                    a.get("headers", ""), a.get("body", ""))),
+            "waf_detect":         lambda a: self._tool_simple(
+                lambda: tool_waf_detect(
+                    a.get("blocked_payload", a.get("payload", "")),
+                    a.get("response_body", a.get("body", "")),
+                    a.get("status_code", a.get("status", 0)))),
+            "trick_detect":       lambda a: self._tool_simple(
+                lambda: tool_trick_detect(
+                    a.get("text", a.get("body", a.get("content", ""))))),
             "webapp_recon":       lambda a: self._tool_simple(
                 lambda: tool_webapp_recon(
                     a.get("base_url", a.get("url", a.get("target",
@@ -7040,6 +7152,24 @@ class MainWindow(Adw.ApplicationWindow):
         self._execute_command(command, explanation or "operator approved",
                               from_card=True)
 
+    def _sudo_pw_valid(self) -> bool:
+        """A cached sudo password exists and hasn't hit its 30-minute expiry."""
+        import time
+        return bool(self._sudo_pw) and (time.time() - self._sudo_pw_time) < 1800
+
+    def _cache_sudo_pw(self, pw):
+        """Hold the sudo password in memory for this chat (30-min TTL). It is
+        never written to disk, the log, the ledger, or the conversation — the
+        model has no way to read it."""
+        import time
+        self._sudo_pw = pw or None
+        self._sudo_pw_time = time.time() if pw else 0.0
+
+    def _clear_sudo_pw(self):
+        """Wipe the cached sudo password (new chat, expiry, or a failed auth)."""
+        self._sudo_pw = None
+        self._sudo_pw_time = 0.0
+
     def _execute_command(self, command, reason, from_card=False):
         """Confirm (with sudo password if needed), run, feed result back.
         Shared by the model's `run` tool and the card's Run button.
@@ -7179,6 +7309,9 @@ class MainWindow(Adw.ApplicationWindow):
                             "non-interactively. The password may have been "
                             "wrong, or sudo timed out its cached credential.")
                         self.terminal_log("✗ sudo auth failed", "error")
+                        # Drop the bad/expired cached password so the next root
+                        # command asks for it again instead of failing silently.
+                        GLib.idle_add(self._clear_sudo_pw)
                     else:
                         self.terminal_log(f"✓ rc={r['rc']}", "ok" if r['rc'] == 0 else "error")
                     out = "\n".join(parts)
@@ -7194,19 +7327,11 @@ class MainWindow(Adw.ApplicationWindow):
                 return
             run_bg(password)
 
-        # The card click already counts as approval, so for an ordinary
-        # command we just run.  We still surface the confirm dialog when
-        # the command needs root (to collect the password), or — for a
-        # model-initiated run — when the operator asked to confirm every
-        # command.
-        # (#9) If a root command is needed but sudo already has a cached
-        # credential this session, skip the password prompt and run silently
-        # (when auto_sudo_when_cached is on).  Approval gating is separate:
-        # approval_mode decides whether a model-initiated run confirms.
+        # Sudo password: held in an in-app cache, entered ONCE per chat, reused
+        # silently for 30 minutes, then asked again; wiped on a new chat. The
+        # password lives only in memory and is passed straight to sudo — never
+        # logged, stored, or shown to the model.
         sudo_needed = command_needs_sudo(command)
-        have_cached_sudo = (sudo_needed
-                            and self.settings.get("auto_sudo_when_cached", True)
-                            and sudo_cached())
         reason_txt = reason or "no reason"
         # ── NO CONFIRMATION. Basilisk is autonomous, full stop. ──
         # There is no "confirm every command", no approval card, no mode. Every
@@ -7217,9 +7342,8 @@ class MainWindow(Adw.ApplicationWindow):
         #   2. A raw shell write to Basilisk's OWN source is refused too, so a
         #      malicious page/tool can't overwrite the safety code — also no
         #      dialog, just refused.
-        # The one dialog that can appear is to COLLECT A SUDO PASSWORD, once,
-        # when a root command has no cached credential; after that it's cached
-        # and reused silently and you never see it again.
+        # The one dialog that can appear is to COLLECT A SUDO PASSWORD, once per
+        # chat, when a root command has no valid cached credential.
         if command_tampers_self(command):
             self.terminal_log("■ refused — raw write to Basilisk's own source "
                               "(use the guarded edit path)", "error")
@@ -7229,13 +7353,23 @@ class MainWindow(Adw.ApplicationWindow):
                 "protects the safety code from being overwritten). Use propose_edit "
                 "/ write_file for legitimate self-edits.\n\n  " + command)
             return
-        if sudo_needed and not have_cached_sudo:
-            # Collect the sudo password once (then it's cached + reused silently).
-            confirm_command_dialog(self, command, reason_txt, decide,
-                                   catastrophic=False)
+        if sudo_needed:
+            if self._sudo_pw_valid():
+                # Cached this chat and still inside the 30-min window — run silently.
+                self.terminal_log("• using cached sudo credential (this chat)", "dim")
+                run_bg(self._sudo_pw)
+            else:
+                # Never entered this chat, or the 30-min cache expired: ask once,
+                # cache it for this chat, then run.
+                self._clear_sudo_pw()
+
+                def _decide_and_cache(allow, password=None):
+                    if allow and password:
+                        self._cache_sudo_pw(password)
+                    decide(allow, password)
+                confirm_command_dialog(self, command, reason_txt,
+                                       _decide_and_cache, catastrophic=False)
         else:
-            if have_cached_sudo:
-                self.terminal_log("• using cached sudo credential", "dim")
             run_bg(None)
 
     def _tool_audit(self):

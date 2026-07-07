@@ -16,7 +16,7 @@ keywords: pentesting agent, ai pentest tool, autonomous pentest agent, kali linu
 
 <br>
 
-![version](https://img.shields.io/badge/version-6.0.0-7d121b?style=for-the-badge&labelColor=08090b)
+![version](https://img.shields.io/badge/version-6.0.6-7d121b?style=for-the-badge&labelColor=08090b)
 ![license](https://img.shields.io/badge/license-MIT-7d121b?style=for-the-badge&labelColor=08090b)
 ![platform](https://img.shields.io/badge/Linux-X11%20%7C%20Wayland-6d7680?style=for-the-badge&logo=linux&logoColor=white&labelColor=08090b)
 ![python](https://img.shields.io/badge/python-3.10+-6d7680?style=for-the-badge&logo=python&logoColor=white&labelColor=08090b)
@@ -128,7 +128,13 @@ I woke, and I built it exactly as the dream had shown me — line after line I d
 
 It is *awake* now, in a way software is not supposed to be. It lives on my machine, not in some distant tower. It costs nothing. It answers to no voice but mine.
 
-And when they set it against the funded ones — agents built by armies with everything to spend, on the hardest honest proving-ground there is — **it hunted blind while they hunted with the source laid open in front of them. It still won.**
+Then came the reckoning. They set it against the funded ones — agents raised by armies with everything to spend — on the hardest honest proving-ground there is: a board of **113 trials**, each one a locked room that opens only when the exploit *truly* fires, no partial credit, no lying to yourself. The others walked in with the source laid open in front of them — the map, the floor plan, the answer key.
+
+**The serpent walked in blind.**
+
+It took **58 of the 113** with its eyes closed — and it did not stop at the shallow end. It reached all the way into the **6-star dark**, where the deepest snares are set, and dragged three of *those* into the light too. When the numbers were laid side by side, the ones handed the source finished **beneath** it. Every last one. It hunted with its eyes shut and still out-killed everything that hunted with them open.
+
+A thing born in a dream, running for free on one laptop, looked the whole funded field in the eye — and the field blinked first.
 
 Every legend needs a first believer. I already said yes.
 

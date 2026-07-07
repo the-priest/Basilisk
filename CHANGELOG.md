@@ -1,5 +1,14 @@
 # Changelog
 
+## v6.0.6 — the chat shows what it actually did, a cleaner toolbar, a brighter dragon
+
+UI pass. The big one: a tool-using turn now reads as *what it did*, not a blank "thinking".
+
+- **The chat tells the truth about each turn.** When Basilisk runs a command or fires a tool, that message now shows the real thing — the actual command (`$ nmap -sV …`), the file it wrote, or the tool it used — instead of always saying "thinking". "Thinking" is now shown only when the turn genuinely was just reasoning (no tool, no reply). The bubble was rendering a stale global action title; it now derives the line from the turn's actual tool calls.
+- **Leaner toolbar above the chat.** Removed the Audit / Scan network / Check updates / Recent downloads / System info buttons — all of that is one typed sentence away, so the buttons were clutter. Kept **Attach** and **Camera** above the chat, plus **Read-aloud** and the **Terminal log** toggle. The **Agent-mode** switch moved into Settings (a new "Agent mode" group) instead of living above the chat.
+- **Brighter dragon, darker backdrop.** The chat watermark is more visible (opacity up), and a neutral scrim sits behind it so the backdrop is darker in brightness only (same hue) — the serpent reads clearly now instead of nearly vanishing.
+- **README legend + badges** brought up to the current build, and the legend's climax now lands the real number: 58 / 113 solved blind, into the 6-star dark, beating agents that were handed the source.
+
 ## v6.0.5 — clarify first, then commit; one loop for benchmark and engagement
 
 Behavioural: the two things that make an autonomous operator trustworthy — asking the right questions BEFORE it commits, and running the SAME disciplined loop everywhere.

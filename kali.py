@@ -105,7 +105,7 @@ except Exception as _ve:  # noqa
 
 APP_ID  = "org.thepriest.kali"
 APP_NAME = "Basilisk"
-VERSION = "6.0.5"
+VERSION = "6.0.6"
 
 # ── Tool-chain efficiency knobs ──
 # How many model round-trips a single user turn may chain through.  With
@@ -934,6 +934,9 @@ button.suggested-action {
     background: transparent;
 }
 .chat-watermark { background: transparent; }
+/* Darker backdrop behind the dragon watermark -- reduces brightness only
+   (a neutral scrim over the ember gradient), so the brighter dragon pops. */
+.chat-scrim { background-color: rgba(0, 0, 0, 0.45); }
 
 /* Links (e.g. 'Get an API key') in Basilisk blue */
 link, button.link, *:link { color: #7d121b; }
@@ -1574,6 +1577,53 @@ _RENDER_IMAGES = True
 # the button row and by the in-chat in-progress placeholder so both show the
 # action title instead of a generic "working".
 _CURRENT_ACTION = ""
+
+
+def _action_summary(calls) -> str:
+    """A one-line, human 'what it just did' for an assistant turn that carried
+    ONLY tool calls — the actual command for `run`, the file path for a write,
+    or the tool name(s). This is what shows in the chat bubble so the turn reads
+    'ran nmap -sV …' instead of a generic 'thinking'. Returns '' if there's
+    nothing tool-like (caller then shows 'thinking…')."""
+    def _phrase(c):
+        n = (getattr(c, "name", "") or "").strip()
+        a = getattr(c, "args", None) or {}
+        if n == "run":
+            cmd = str(a.get("command", a.get("cmd", ""))).strip()
+            if not cmd:
+                return "ran a command"
+            if len(cmd) > 200:
+                cmd = cmd[:200] + " …"
+            return "CMD:" + cmd
+        if n in ("propose_edit", "write_file"):
+            p = str(a.get("path", a.get("file", ""))).strip()
+            return ("wrote " + p) if p else "wrote a file"
+        if n == "propose":
+            cmd = str(a.get("command", a.get("cmd", ""))).strip()
+            return ("proposed: " + cmd) if cmd else "proposed a command"
+        if n.startswith("memory_"):
+            return "updated memory"
+        return ("used " + n) if n else ""
+    phrases = []
+    for c in calls:
+        if (getattr(c, "name", "") or "") == "think":
+            continue
+        p = _phrase(c)
+        if p:
+            phrases.append(p)
+    if not phrases:
+        return ""
+    parts = []
+    for p in phrases[:3]:
+        if p.startswith("CMD:"):
+            parts.append("`$ " + p[4:] + "`")   # render commands as inline code
+        else:
+            parts.append("_" + p + "_")
+    more = len(phrases) - 3
+    text = "  ".join(parts)
+    if more > 0:
+        text += "  _(+%d more)_" % more
+    return text
 
 # Mirror of the approval_mode setting so the message renderer (no settings
 # handle) can tell whether to draw interactive proposal cards. In autonomous
@@ -2415,19 +2465,28 @@ class MessageWidget(Gtk.Box):
         # itself.  Only fall back to the placeholder for a bare execution
         # tag with no prose and no card.
         if not display_text and self.role == "assistant":
-            has_propose = False
+            calls = []
             try:
-                has_propose = any(c.name == "propose"
-                                  for c in parse_tool_calls(text))
+                calls = parse_tool_calls(text)
             except Exception:
-                pass
+                calls = []
+            has_propose = any(getattr(c, "name", "") == "propose" for c in calls)
             if has_propose:
                 display_text = ""
+            elif calls:
+                # This turn DID something — show the real command it ran / what it
+                # did (e.g. "$ nmap -sV …", "wrote report.md"), not a generic
+                # "thinking". Falls back to the live action title, then working.
+                summary = _action_summary(calls)
+                if summary:
+                    display_text = summary
+                else:
+                    _act = (_CURRENT_ACTION or "").strip()
+                    display_text = "_(%s)_" % _act if _act else "_(working…)_"
             else:
-                # Show what Basilisk is actually doing ("forging a JWT…")
-                # instead of a generic "working…". Falls back if nothing's set.
-                _act = (_CURRENT_ACTION or "").strip()
-                display_text = f"_({_act})_" if _act else "_(working…)_"
+                # No tool calls and no prose in this turn — it really was just
+                # reasoning. Only here is "thinking" the honest label.
+                display_text = "_(thinking…)_"
 
         blocks = split_message_into_blocks(display_text) if display_text else []
         for b in blocks:
@@ -2859,6 +2918,19 @@ class SettingsDialog(Adw.PreferencesDialog):
         rg.add(self.auto_fallback_row)
 
         page.add(rg)
+
+        # ── Agent mode (moved here from above the chat) ──
+        ag = Adw.PreferencesGroup()
+        ag.set_title("Agent mode")
+        ag.set_description(
+            "Let Basilisk use system tools and run commands on its own. Off = a "
+            "plain conversational chat (it describes what it would run instead).")
+        self.agent_mode_row = Adw.SwitchRow()
+        self.agent_mode_row.set_title("Agent mode (system tools)")
+        self.agent_mode_row.set_active(bool(parent.current_agent_mode))
+        self.agent_mode_row.connect("notify::active", self._on_agent_mode_setting)
+        ag.add(self.agent_mode_row)
+        page.add(ag)
 
         # ── One group per cloud provider: key + model picker ──
         for spec in PROVIDERS:
@@ -3567,6 +3639,16 @@ class SettingsDialog(Adw.PreferencesDialog):
         self.win.settings[key] = value
         save_settings(self.win.settings)
 
+    def _on_agent_mode_setting(self, row, _ps):
+        # Drive the (now-hidden) toolbar toggle so every existing agent-mode side
+        # effect fires — per-chat persistence, subtitle, and the internal state.
+        want = row.get_active()
+        tog = getattr(self.win, "agent_toggle", None)
+        if tog is not None and tog.get_active() != want:
+            tog.set_active(want)          # fires _on_agent_toggled
+        else:
+            self.win.current_agent_mode = want
+
     def _set_render_images(self, on):
         # Persist and apply live so the chat renderer picks it up immediately.
         self._set("chat_render_images", on)
@@ -4273,9 +4355,17 @@ class MainWindow(Adw.ApplicationWindow):
         # scroller if the watermark SVG isn't on disk.
         wm = self._build_chat_watermark()
         if wm is not None:
+            # Darken the backdrop behind the dragon (brightness only, same hue)
+            # so the brighter watermark reads clearly against it. The scrim box
+            # sits behind the (transparent-background) watermark picture.
+            scrim = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+            scrim.add_css_class("chat-scrim")
+            scrim.set_hexpand(True)
+            scrim.set_vexpand(True)
+            scrim.append(wm)
             chat_overlay = Gtk.Overlay()
             chat_overlay.set_vexpand(True)
-            chat_overlay.set_child(wm)
+            chat_overlay.set_child(scrim)
             chat_overlay.add_overlay(self.msg_scroll)
             main.append(chat_overlay)
         else:
@@ -4307,10 +4397,10 @@ class MainWindow(Adw.ApplicationWindow):
                 except Exception:
                     from gi.repository import Gio
                     tex = Gdk.Texture.new_from_file(Gio.File.new_for_path(path))
-                opacity = 0.6          # PNG alpha is pre-baked subtle
+                opacity = 0.9          # brighter — the dragon should read clearly
             else:
                 tex = _svg_texture(path, 720)
-                opacity = 0.09
+                opacity = 0.2
             if tex is None:
                 return None
             pic = Gtk.Picture.new_for_paintable(tex)
@@ -4504,6 +4594,9 @@ class MainWindow(Adw.ApplicationWindow):
         actions.set_margin_start(4)
         actions.set_margin_end(4)
 
+        # Agent-mode toggle: the widget still exists (it drives all the
+        # agent-mode side effects) but it lives in Settings now, not above the
+        # chat. Kept un-parented here so Settings' switch can flip it.
         self.agent_toggle = Gtk.ToggleButton()
         self.agent_toggle.set_icon_name("applications-system-symbolic")
         self.agent_toggle.add_css_class("icon-button")
@@ -4512,19 +4605,8 @@ class MainWindow(Adw.ApplicationWindow):
         if self.current_agent_mode:
             self.agent_toggle.add_css_class("toggled")
         self.agent_toggle.connect("toggled", self._on_agent_toggled)
-        actions.append(self.agent_toggle)
 
         for icon, tip, cb in [
-            ("security-high-symbolic", "Audit security",
-             self._user_action_audit),
-            ("network-wireless-symbolic", "Scan network",
-             self._user_action_scan),
-            ("system-software-update-symbolic", "Check for updates",
-             self._user_action_updates),
-            ("folder-download-symbolic", "Recent downloads",
-             self._user_action_downloads),
-            ("computer-symbolic", "System info",
-             self._user_action_sysinfo),
             ("mail-attachment-symbolic", "Attach file",
              self._pick_attachment),
             ("camera-photo-symbolic", "Take a photo (Basilisk can see it)",

@@ -18,6 +18,7 @@ from gi.repository import (Gtk, Adw, GLib, Gdk, Gio, Pango, GObject,  # noqa
 
 import sys
 import os
+import gc
 import re
 import json
 import threading
@@ -129,7 +130,15 @@ HISTORY_TRIM_HEAD_CHARS = 600
 # — trimming old widgets frees memory and speeds up layout, and changes nothing
 # about behaviour, autonomy, or the model's context.
 MAX_TERMINAL_LINES = 2500
-MAX_CHAT_ROWS = 220
+# Keep only the most recent chat bubbles in the widget tree. GTK message
+# widgets (TextViews, code blocks, images) are heavy; holding a whole long
+# conversation is what balloons RAM to gigabytes. The full transcript lives in
+# the SQLite store on disk and the model's context is rebuilt from there — these
+# widgets are display-only, so once a conversation passes this many visible
+# messages the oldest are unparented AND disposed (their memory reclaimed),
+# never touching context, autonomy, or behaviour. Tune higher for more
+# scroll-back at the cost of RAM.
+MAX_CHAT_ROWS = 20
 
 
 # ═════════════════════════════════════════════════════════════════════
@@ -2240,6 +2249,23 @@ class MessageWidget(Gtk.Box):
             self.set_content(content)
         if self._thoughts:
             self._render_thoughts()
+
+    def dispose_widget(self):
+        """Release this bubble's references so it can be freed the moment it's
+        trimmed from the view. It holds callbacks back to the window and heavy
+        child containers; nulling them breaks any reference cycle so CPython
+        reclaims the widget (and its TextViews / code blocks / images) instead of
+        letting it linger in RAM. Display-only — the message stays in the store."""
+        self._on_run_command = None
+        self._on_apply_edit = None
+        self._on_speak = None
+        self._blocks_container = None
+        self._streaming_label = None
+        self._thoughts_container = None
+        self._thoughts_label = None
+        self.speak_btn = None
+        self._content = ""
+        self._thoughts = ""
 
     def _build_shell(self):
         if self.role == "user":
@@ -4776,26 +4802,28 @@ class MainWindow(Adw.ApplicationWindow):
             child = nxt
 
         msgs = self.store.list_messages(chat_id)
-        if not msgs:
+
+        def _renderable(m):
+            # Same rules the append path uses: hide stored tool-result rows,
+            # tool 'call' rows, and empty in-flight assistant placeholders.
+            if (m.meta or {}).get("kind") == "tool_result":
+                return False
+            if m.role == "tool":
+                return False
+            if m.role == "assistant" and not m.content.strip():
+                return False
+            return True
+
+        renderable = [m for m in msgs if _renderable(m)]
+        if not renderable:
             self._show_empty_state()
         else:
-            for m in msgs:
-                kind = (m.meta or {}).get("kind")
-                # Skip stored tool-result rows entirely; the assistant's
-                # follow-up message already conveys their content.
-                if kind == "tool_result":
-                    continue
-                # Skip tool 'call' indicators (⚙ tool: …).  The user wants
-                # these hidden — the spinner banner tells them work is
-                # happening, and the assistant's follow-up describes what.
-                if m.role == "tool":
-                    continue
-                # Skip empty assistant placeholders — these are pre-allocated
-                # DB rows for in-flight streams.  Rendering them produces an
-                # empty bubble; the real content arrives when the stream
-                # completes and updates this row.
-                if m.role == "assistant" and not m.content.strip():
-                    continue
+            # Only build widgets for the most recent window. Older messages stay
+            # safe in the store (and would be trimmed on append anyway) — not
+            # building them means opening a long conversation is fast and never
+            # spikes RAM, instead of constructing then destroying hundreds of
+            # heavy widgets.
+            for m in renderable[-MAX_CHAT_ROWS:]:
                 self._append_message_widget(m.role, m.content, m.meta)
 
         GLib.idle_add(self._force_scroll_to_bottom)
@@ -4831,14 +4859,30 @@ class MainWindow(Adw.ApplicationWindow):
         # is rebuilt from there — these widgets are display only, so trimming the
         # oldest frees GTK memory (and speeds layout) without touching context,
         # autonomy, or behaviour. Only trims from the FRONT, never the live tail.
+        # Each trimmed bubble is DISPOSED (its refs broken) so it's reclaimed
+        # promptly, not just unparented; a throttled gc sweep collects any cycles.
         try:
+            trimmed = 0
             extra = self._count_msg_rows() - MAX_CHAT_ROWS
             while extra > 0:
                 old = self.msg_box.get_first_child()
                 if old is None or old is w:
                     break
+                if isinstance(old, MessageWidget):
+                    try:
+                        old.dispose_widget()
+                    except Exception:
+                        pass
                 self.msg_box.remove(old)
+                trimmed += 1
                 extra -= 1
+            if trimmed:
+                # Reclaim the freed widgets' memory. Throttled so a fast burst of
+                # messages doesn't pay a gc pause on every single one.
+                self._trim_since_gc = getattr(self, "_trim_since_gc", 0) + trimmed
+                if self._trim_since_gc >= 8:
+                    self._trim_since_gc = 0
+                    gc.collect()
         except Exception:
             pass
         # New message → force scroll.  This is when the user sent something

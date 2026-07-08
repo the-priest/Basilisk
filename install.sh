@@ -100,7 +100,13 @@ OLD_DATA_DIR="${HOME}/.local/share/oracle"
 OLD_CONFIG_DIR="${HOME}/.config/oracle"
 
 REQUIRED_FILES=(kali.py kali_core.py kali_safety.py kali_ledger.py kali_persona.py kali_voice.py)
-OPTIONAL_FILES=(org.thepriest.kali.svg kali-dragon.svg kali-watermark.png kali-cross.svg kali-avatar.png basilisk-logo.png basilisk-priest.png kali-btn-settings.png kali-btn-bell.png kali-btn-terminal.png kali-btn-minimise.png kali-btn-close.png)
+# kali_btn_art.py (embedded button art) is handled as a best-effort copy
+# further down, not REQUIRED_FILES: marking it hard-required would make a
+# bare `curl|bash` install fail outright on any machine before this file has
+# been pushed to your own repo. It's still bundled directly in every zip
+# delivered to you, so a local-checkout install (the normal path) always has
+# it regardless of this manifest.
+OPTIONAL_FILES=(org.thepriest.kali.svg kali-dragon.svg kali-watermark.png kali-cross.svg kali-avatar.png basilisk-logo.png basilisk-priest.png kali-btn-settings.png kali-btn-bell.png kali-btn-terminal.png kali-btn-minimise.png kali-btn-close.png kali_btn_art.py)
 # kali_ext sidecar modules — fetched in remote (curl|bash) mode so phones
 # and fresh boxes get the full toolset (headroom / verify / pentest plus the
 # memory/skills/foresight extensions), not just the core four files.
@@ -741,11 +747,27 @@ fi
 # Place the chat-background watermark and the emblem in the install dir so the
 # app finds them at runtime (best-effort — the chat simply has no watermark if
 # the file isn't there).
-for _art in kali-watermark.png kali-dragon.svg kali-cross.svg kali-avatar.png basilisk-logo.png basilisk-priest.png; do
+# Place the chat-background watermark and the emblem in the install dir so the
+# app finds them at runtime (best-effort — the chat simply has no watermark if
+# the file isn't there).
+for _art in kali-watermark.png kali-dragon.svg kali-cross.svg kali-avatar.png basilisk-logo.png basilisk-priest.png kali-btn-settings.png kali-btn-bell.png kali-btn-terminal.png kali-btn-minimise.png kali-btn-close.png; do
   if [ -s "${SRC_DIR}/${_art}" ]; then
     cp "${SRC_DIR}/${_art}" "${INSTALL_DIR}/${_art}" 2>/dev/null || true
   fi
 done
+
+# kali_btn_art.py -- the EMBEDDED (base64) copy of the button art, imported
+# directly by kali.py. This is the real guarantee the custom buttons work:
+# even if the kali-btn-*.png files above are ever missing, kali.py decodes
+# these bytes instead. Parse-checked before copying so a corrupt file can
+# never overwrite a working one; best-effort otherwise (kali.py's import is
+# wrapped in try/except, so a missing module just falls back to symbolic
+# icons rather than crashing).
+if [ -s "${SRC_DIR}/kali_btn_art.py" ]; then
+  if python3 -c "import ast; ast.parse(open('${SRC_DIR}/kali_btn_art.py').read())" 2>/dev/null; then
+    cp "${SRC_DIR}/kali_btn_art.py" "${INSTALL_DIR}/kali_btn_art.py" 2>/dev/null || true
+  fi
+fi
 
 # Sanity check: SVG file exists and isn't empty
 if [ ! -s "${ICON_DIR}/${APP_ID}.svg" ]; then

@@ -1,5 +1,12 @@
 # Changelog
 
+## v6.1.3 — the actual reason the button art never showed up (found and fixed)
+
+The real bug: `install.sh` had the 5 button PNGs added to its remote-fetch list, but the SEPARATE loop that actually copies files into `~/.local/share/kali` (the one that runs for BOTH local and remote installs) never had them added. So the images never reached the install dir, in any install mode — the buttons always fell back to the old symbolic icons. My mistake in the previous version; fixed directly now, and:
+
+- **A permanent guarantee, not just a copy-loop fix.** The button art is now ALSO embedded as base64 inside a new `kali_btn_art.py`, imported directly by `kali.py`. `kali.py` tries an on-disk `kali-btn-*.png` first (so you can still drop in a replacement file to re-theme a button later); if that's not there, it decodes the embedded copy instead. This means the art can now only go missing if `kali_btn_art.py` itself goes missing — the same class of file as `kali_core.py`, which has never had this problem.
+- `install.sh`'s art-copy loop now includes all 5 button PNGs, and separately copies (and parse-checks) `kali_btn_art.py` into the install dir.
+
 ## v6.1.2 — custom dragon-forged button art
 
 Your five dragon-emblem art pieces are wired in as real button faces (settings/gear, notification bell, terminal, minimise, close). Each is scaled down to button size, kept transparent (the art carries its own carved-stone frame, so no double border), with the same ember-glow hover as the rest of the buttons. Every one falls back cleanly to the old symbolic icon if its file is ever missing.

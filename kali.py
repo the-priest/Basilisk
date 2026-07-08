@@ -24,6 +24,11 @@ import json
 import threading
 import urllib.request
 import datetime
+import base64
+try:
+    from kali_btn_art import BTN_ART_B64
+except Exception:
+    BTN_ART_B64 = {}   # missing module -> art buttons just fall back to symbolic
 from typing import List, Dict, Any, Optional, Callable
 
 from kali_core import (
@@ -105,7 +110,7 @@ except Exception as _ve:  # noqa
 
 APP_ID  = "org.thepriest.kali"
 APP_NAME = "Basilisk"
-VERSION = "6.1.2"
+VERSION = "6.1.3"
 
 # ── Tool-chain efficiency knobs ──
 # How many model round-trips a single user turn may chain through.  With
@@ -2155,32 +2160,61 @@ def _find_btn_png(name: str) -> Optional[str]:
     return None
 
 
-_BTN_SETTINGS = _find_btn_png("settings")
-_BTN_BELL     = _find_btn_png("bell")
-_BTN_TERMINAL = _find_btn_png("terminal")
-_BTN_MINIMISE = _find_btn_png("minimise")
-_BTN_CLOSE    = _find_btn_png("close")
+_BTN_SETTINGS = _find_btn_png("settings") or "settings"
+_BTN_BELL     = _find_btn_png("bell")     or "bell"
+_BTN_TERMINAL = _find_btn_png("terminal") or "terminal"
+_BTN_MINIMISE = _find_btn_png("minimise") or "minimise"
+_BTN_CLOSE    = _find_btn_png("close")    or "close"
 
 
-def _btn_art(path: Optional[str], px: int = 26):
-    """A Gtk.Picture of a button-art PNG scaled to `px` HEIGHT (aspect kept, never
-    upscaled, never expands — so it can't blow up a header/toolbar). None on any
-    failure so the caller falls back to a symbolic icon."""
-    if not path:
+def _btn_art(name_or_path, px: int = 26):
+    """A Gtk.Picture of a button-art PNG scaled to `px` HEIGHT (aspect kept,
+    never upscaled, never expands -- so it can't blow up a header/toolbar).
+
+    Accepts EITHER a resolved on-disk path (from _find_btn_png -- lets you
+    later drop in a replacement file to re-theme a single button) OR a short
+    name ("settings"/"bell"/"terminal"/"minimise"/"close"), in which case it
+    decodes the byte-identical art embedded in kali_btn_art.py. That embedded
+    copy is the GUARANTEED fallback: it ships inside a required .py file, so
+    it can never go missing the way a separate optional PNG fetch can.
+    Returns None only if both the disk file and the embedded data are
+    unavailable, so callers can fall back to a symbolic icon.
+    """
+    pb = None
+    if name_or_path and os.path.isfile(name_or_path):
+        try:
+            pb = GdkPixbuf.Pixbuf.new_from_file_at_scale(
+                name_or_path, -1, px, True)
+        except Exception:
+            pb = None
+    if pb is None and name_or_path:
+        # name_or_path may be a resolved disk path (unlikely to also be a key)
+        # or a short key like "settings" -- try the embedded copy either way.
+        key = os.path.splitext(os.path.basename(str(name_or_path)))[0]
+        key = key.replace("kali-btn-", "")
+        b64 = BTN_ART_B64.get(key) or BTN_ART_B64.get(str(name_or_path))
+        if b64:
+            try:
+                raw = base64.b64decode(b64)
+                loader = GdkPixbuf.PixbufLoader()
+                loader.write(raw)
+                loader.close()
+                full = loader.get_pixbuf()
+                w = max(1, int(full.get_width() * px / full.get_height()))
+                pb = full.scale_simple(w, px, GdkPixbuf.InterpType.BILINEAR)
+            except Exception:
+                pb = None
+    if pb is None:
         return None
-    try:
-        pb = GdkPixbuf.Pixbuf.new_from_file_at_scale(path, -1, px, True)
-        pic = Gtk.Picture.new_for_paintable(Gdk.Texture.new_for_pixbuf(pb))
-        pic.set_content_fit(Gtk.ContentFit.SCALE_DOWN)
-        pic.set_can_shrink(True)
-        pic.set_hexpand(False)
-        pic.set_vexpand(False)
-        pic.set_halign(Gtk.Align.CENTER)
-        pic.set_valign(Gtk.Align.CENTER)
-        pic.set_size_request(pb.get_width(), px)
-        return pic
-    except Exception:
-        return None
+    pic = Gtk.Picture.new_for_paintable(Gdk.Texture.new_for_pixbuf(pb))
+    pic.set_content_fit(Gtk.ContentFit.SCALE_DOWN)
+    pic.set_can_shrink(True)
+    pic.set_hexpand(False)
+    pic.set_vexpand(False)
+    pic.set_halign(Gtk.Align.CENTER)
+    pic.set_valign(Gtk.Align.CENTER)
+    pic.set_size_request(pb.get_width(), px)
+    return pic
 
 
 def _find_avatar_png() -> Optional[str]:

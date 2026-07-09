@@ -1,5 +1,17 @@
 # Changelog
 
+## v6.2.0 — open the web (on your terms), a full red re-forge, and an igniting-dragon splash
+
+**Web access, reworked.** Trusted sources still fetch automatically with no prompt. Every *other* public host on the internet — not just a fixed community list — is now reachable, but each domain needs your one-tap approval first (the same gate GitHub/Wikipedia already used). Internal / private / loopback / link-local / cloud-metadata addresses stay hard-refused with no override (SSRF floor), on the initial request and on every redirect hop. Enforced in the dispatch path, never asked of the model. Persona and `web_sources` updated to match.
+
+**Buttons, all red.** The five composer buttons (attach, camera, suggestion, sound, terminal) are the new dragon-forged red art. The four chrome buttons (settings, notifications, minimise, close) were recolored green → red. All nine are embedded as byte-identical base64 in `kali_btn_art.py`, so they can never go missing on an update; on-disk PNGs still win if present.
+
+**Startup splash.** On launch, the chat-background dragon starts dark and a band of light sweeps up from its base to its head; once lit, it fades and the app opens. Fully self-guarding — any failure (no cairo, old GTK, no display) falls straight through to opening the app normally. Toggle with `startup_splash` in settings (default on).
+
+**Persona reflects the Legend.** Basilisk's identity now tracks the README's legend — the mind that sheds skin, the gaze, the fangs, the sight through deceit, the sealed tablet, the one locked door, the floor it can't sink beneath — mapped onto the real architecture. Every hacking/technical instruction kept; the immutable GUARDRAIL block untouched.
+
+**Fixes.** Removed the grey frame around the settings/notifications MenuButtons (their inner `> button` kept GTK's default styling; now transparent to match the other art buttons).
+
 ## v6.1.3 — the actual reason the button art never showed up (found and fixed)
 
 The real bug: `install.sh` had the 5 button PNGs added to its remote-fetch list, but the SEPARATE loop that actually copies files into `~/.local/share/kali` (the one that runs for BOTH local and remote installs) never had them added. So the images never reached the install dir, in any install mode — the buttons always fell back to the old symbolic icons. My mistake in the previous version; fixed directly now, and:

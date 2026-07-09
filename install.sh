@@ -106,7 +106,7 @@ REQUIRED_FILES=(kali.py kali_core.py kali_safety.py kali_ledger.py kali_persona.
 # been pushed to your own repo. It's still bundled directly in every zip
 # delivered to you, so a local-checkout install (the normal path) always has
 # it regardless of this manifest.
-OPTIONAL_FILES=(org.thepriest.kali.svg kali-dragon.svg kali-watermark.png kali-cross.svg kali-avatar.png basilisk-logo.png basilisk-priest.png kali-btn-settings.png kali-btn-bell.png kali-btn-terminal.png kali-btn-minimise.png kali-btn-close.png kali_btn_art.py)
+OPTIONAL_FILES=(org.thepriest.kali.svg kali-dragon.svg kali-watermark.png kali-cross.svg kali-avatar.png basilisk-logo.png basilisk-priest.png kali-btn-settings.png kali-btn-bell.png kali-btn-terminal.png kali-btn-minimise.png kali-btn-close.png kali-btn-attach.png kali-btn-camera.png kali-btn-suggest.png kali-btn-sound.png kali_btn_art.py)
 # kali_ext sidecar modules — fetched in remote (curl|bash) mode so phones
 # and fresh boxes get the full toolset (headroom / verify / pentest plus the
 # memory/skills/foresight extensions), not just the core four files.
@@ -750,7 +750,7 @@ fi
 # Place the chat-background watermark and the emblem in the install dir so the
 # app finds them at runtime (best-effort — the chat simply has no watermark if
 # the file isn't there).
-for _art in kali-watermark.png kali-dragon.svg kali-cross.svg kali-avatar.png basilisk-logo.png basilisk-priest.png kali-btn-settings.png kali-btn-bell.png kali-btn-terminal.png kali-btn-minimise.png kali-btn-close.png; do
+for _art in kali-watermark.png kali-dragon.svg kali-cross.svg kali-avatar.png basilisk-logo.png basilisk-priest.png kali-btn-settings.png kali-btn-bell.png kali-btn-terminal.png kali-btn-minimise.png kali-btn-close.png kali-btn-attach.png kali-btn-camera.png kali-btn-suggest.png kali-btn-sound.png; do
   if [ -s "${SRC_DIR}/${_art}" ]; then
     cp "${SRC_DIR}/${_art}" "${INSTALL_DIR}/${_art}" 2>/dev/null || true
   fi

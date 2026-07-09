@@ -110,7 +110,7 @@ except Exception as _ve:  # noqa
 
 APP_ID  = "org.thepriest.kali"
 APP_NAME = "Basilisk"
-VERSION = "6.1.3"
+VERSION = "6.2.0"
 
 # ── Tool-chain efficiency knobs ──
 # How many model round-trips a single user turn may chain through.  With
@@ -1113,6 +1113,35 @@ link, button.link, *:link { color: #7d121b; }
 .art-button:active {
     background-color: rgba(125, 18, 27, 0.22);
     box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.40), 0 0 8px rgba(205, 54, 28, 0.40);
+}
+/* A Gtk.MenuButton (settings, notifications) wraps its child in an inner
+   > button that keeps GTK's default flat-grey styling -- that's the grey box
+   around those two.  .art-button only clears the OUTER menubutton, so clear the
+   inner button too: fully transparent, no border/shadow, ember glow on hover to
+   match the plain art buttons. */
+menubutton.art-button > button {
+    background: transparent;
+    background-image: none;
+    border: none;
+    box-shadow: none;
+    padding: 2px;
+    min-width: 0;
+    min-height: 0;
+    border-radius: 12px;
+}
+menubutton.art-button > button:hover {
+    background-color: rgba(125, 18, 27, 0.14);
+    box-shadow: 0 0 14px rgba(205, 54, 28, 0.45);
+}
+menubutton.art-button > button:active {
+    background-color: rgba(125, 18, 27, 0.22);
+    box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.40), 0 0 8px rgba(205, 54, 28, 0.40);
+}
+/* Startup splash window -- dark backdrop behind the igniting-dragon animation
+   (the DrawingArea paints over this; it just avoids a white flash on the very
+   first frame). */
+.splash-window {
+    background-color: #0e1013;
 }
 .header-icon-button {
     background-color: transparent;
@@ -2165,6 +2194,10 @@ _BTN_BELL     = _find_btn_png("bell")     or "bell"
 _BTN_TERMINAL = _find_btn_png("terminal") or "terminal"
 _BTN_MINIMISE = _find_btn_png("minimise") or "minimise"
 _BTN_CLOSE    = _find_btn_png("close")    or "close"
+_BTN_ATTACH   = _find_btn_png("attach")   or "attach"
+_BTN_CAMERA   = _find_btn_png("camera")   or "camera"
+_BTN_SUGGEST  = _find_btn_png("suggest")  or "suggest"
+_BTN_SOUND    = _find_btn_png("sound")    or "sound"
 
 
 def _btn_art(name_or_path, px: int = 26):
@@ -4842,14 +4875,20 @@ class MainWindow(Adw.ApplicationWindow):
             self.agent_toggle.add_css_class("toggled")
         self.agent_toggle.connect("toggled", self._on_agent_toggled)
 
-        for icon, tip, cb in [
+        for icon, tip, cb, art in [
             ("mail-attachment-symbolic", "Attach file",
-             self._pick_attachment),
+             self._pick_attachment, _BTN_ATTACH),
             ("camera-photo-symbolic", "Take a photo (Basilisk can see it)",
-             self._user_action_camera),
+             self._user_action_camera, _BTN_CAMERA),
         ]:
-            btn = Gtk.Button.new_from_icon_name(icon)
-            btn.add_css_class("icon-button")
+            btn = Gtk.Button()
+            _bart = _btn_art(art)
+            if _bart is not None:
+                btn.set_child(_bart)
+                btn.add_css_class("art-button")
+            else:
+                btn.set_child(Gtk.Image.new_from_icon_name(icon))
+                btn.add_css_class("icon-button")
             btn.set_tooltip_text(tip)
             btn.connect("clicked", lambda *_, c=cb: c())
             actions.append(btn)
@@ -4859,9 +4898,14 @@ class MainWindow(Adw.ApplicationWindow):
         # queued into the conversation and picked up on its next step; when idle
         # it just sends. A lightbulb glyph (icon themes don't all ship one).
         self.suggest_btn = Gtk.Button()
-        _sg = Gtk.Label(label="\U0001F4A1")   # lightbulb
-        self.suggest_btn.set_child(_sg)
-        self.suggest_btn.add_css_class("icon-button")
+        _sgart = _btn_art(_BTN_SUGGEST)
+        if _sgart is not None:
+            self.suggest_btn.set_child(_sgart)
+            self.suggest_btn.add_css_class("art-button")
+        else:
+            _sg = Gtk.Label(label="\U0001F4A1")   # lightbulb
+            self.suggest_btn.set_child(_sg)
+            self.suggest_btn.add_css_class("icon-button")
         self.suggest_btn.set_tooltip_text(
             "Send a suggestion without stopping Basilisk")
         self.suggest_btn.connect("clicked", lambda *_: self._send_suggestion())
@@ -4872,8 +4916,13 @@ class MainWindow(Adw.ApplicationWindow):
         self.tts_toggle = None
         if self.tts is not None and self.tts.available():
             self.tts_toggle = Gtk.ToggleButton()
-            self.tts_toggle.set_icon_name("audio-volume-high-symbolic")
-            self.tts_toggle.add_css_class("icon-button")
+            _sndart = _btn_art(_BTN_SOUND)
+            if _sndart is not None:
+                self.tts_toggle.set_child(_sndart)
+                self.tts_toggle.add_css_class("art-button")
+            else:
+                self.tts_toggle.set_icon_name("audio-volume-high-symbolic")
+                self.tts_toggle.add_css_class("icon-button")
             self.tts_toggle.set_tooltip_text(
                 f"Read replies aloud — {self.tts.engine_name()}")
             on = bool(self.settings.get("tts_enabled"))
@@ -7369,27 +7418,32 @@ class MainWindow(Adw.ApplicationWindow):
             return ""
 
     def _web_grant_domain(self, host: str) -> str:
-        """The community allow-list domain `host` falls under (so a grant covers
-        the whole domain, e.g. approving one github.com URL covers *.github.com),
-        or '' if it isn't a community host."""
+        """The domain an approval covers for `host` — so allowing one URL covers
+        the whole site (approving one github.com URL covers *.github.com). Now
+        that ANY non-trusted public host is approval-gated (not just a fixed
+        community list), this returns the registrable domain for any public host,
+        and '' only for a trusted host (auto, no grant needed) or an internal one
+        (refused, never granted)."""
         try:
-            from kali_core import _WEB_READ_COMMUNITY
+            from kali_core import (web_read_tier, _grant_domain_for,
+                                   _is_internal_host)
         except Exception:
             return ""
         h = (host or "").lower().rstrip(".")
-        for dom in _WEB_READ_COMMUNITY:
-            if h == dom or h.endswith("." + dom):
-                return dom
-        return ""
+        if not h or _is_internal_host(h):
+            return ""
+        if web_read_tier(h) == "trusted":
+            return ""            # trusted → fetched automatically, no grant
+        return _grant_domain_for(h)
 
     def _web_read_gated(self, url: str, max_chars: int):
-        """Two-tier gate for web_read, enforced HERE in code (never left to the
-        model): trusted sources fetch immediately; a community / user-authored
-        source (GitHub, Wikipedia, Stack Overflow, arXiv, exploit-db, …) is held
-        OUTSIDE the autonomous loop — it fetches only if the operator granted the
-        domain this session, otherwise it raises a non-blocking approval request
-        (notification + Allow button) and the agent is told to carry on without
-        it. A host on neither tier is refused by tool_web_read as before."""
+        """Access gate for web_read, enforced HERE in code (never left to the
+        model): TRUSTED sources fetch immediately; ANY OTHER public host (GitHub,
+        Wikipedia, a vendor blog, a random site) is held OUTSIDE the autonomous
+        loop — it fetches only if the operator granted the domain this session,
+        otherwise it raises a non-blocking approval request (notification + Allow
+        button) and the agent is told to carry on without it. Internal / private
+        / metadata hosts are refused by tool_web_read regardless (SSRF floor)."""
         if web_read_tier(url) == "community":
             dom = self._web_grant_domain(self._url_host(url))
             if dom and dom not in self._web_grants:
@@ -7399,12 +7453,12 @@ class MainWindow(Adw.ApplicationWindow):
                     "pending_approval": True,
                     "host": dom,
                     "error": (
-                        f"'{dom}' is a community / user-authored source, so it's "
-                        "held outside the autonomous loop and I can't read it on "
-                        "my own. I've put an access request in the notifications "
-                        "bell — the operator can Allow it (which unlocks it for "
-                        "the rest of this session) or ignore it. It is NOT "
-                        "auto-granted: I'll continue without it and look for "
+                        f"'{dom}' isn't on the trusted-source list, so it's held "
+                        "outside the autonomous loop and I can't read it on my "
+                        "own. I've put an access request in the notifications "
+                        "bell — the operator can Allow it (which unlocks that "
+                        "domain for the rest of this session) or ignore it. It is "
+                        "NOT auto-granted: I'll continue without it and look for "
                         "another way. Don't re-request it in a loop — move on, "
                         "and if it gets approved I'll be able to read it."),
                 }
@@ -7430,10 +7484,11 @@ class MainWindow(Adw.ApplicationWindow):
             "url": url,
             "state": "pending",
             "title": f"Access requested: {domain}",
-            "message": (f"Basilisk wants to read {domain} — a community / "
-                        "user-authored source held outside the autonomous loop. "
-                        "Allow it to let Basilisk read this source for the rest "
-                        "of this session, or ignore it and the run keeps going."),
+            "message": (f"Basilisk wants to read {domain} — a source that isn't "
+                        "on the trusted-auto list, so it's held outside the "
+                        "autonomous loop. Allow it to let Basilisk read this "
+                        "domain for the rest of this session, or ignore it and "
+                        "the run keeps going."),
             "ts": _t.strftime("%Y-%m-%d %H:%M"),
             "read": False,
         })
@@ -8606,6 +8661,148 @@ class MainWindow(Adw.ApplicationWindow):
 # APPLICATION
 # ═════════════════════════════════════════════════════════════════════
 
+class DragonSplash(Gtk.Window):
+    """Startup splash: the chat-background dragon, dark, with a band of light
+    that sweeps UP from the bottom to its head — when the light reaches the top
+    the whole dragon is lit, then it fades and the main window opens behind it.
+
+    Entirely self-guarding: every path is wrapped so that ANY failure (no cairo,
+    no pixbuf, a draw error, an old GTK) just fires on_done and closes, so the
+    app always opens normally. It is NEVER allowed to wedge startup."""
+
+    def __init__(self, app, image_path, on_done):
+        super().__init__(application=app)
+        self.on_done = on_done
+        self._done = False
+        self._tick_id = 0
+        try:
+            self.set_decorated(False)
+            self.set_resizable(False)
+            self.add_css_class("splash-window")
+        except Exception:
+            pass
+        self._side = 460
+        self.set_default_size(self._side, self._side)
+        self._pb = GdkPixbuf.Pixbuf.new_from_file(image_path)  # may raise → caught by caller
+        self.area = Gtk.DrawingArea()
+        self.area.set_content_width(self._side)
+        self.area.set_content_height(self._side)
+        self.area.set_draw_func(self._draw)
+        self.set_child(self.area)
+        import time
+        self._t0 = time.monotonic()
+        self._sweep = 0.95   # seconds: light travels bottom → head
+        self._hold = 0.40    # fully lit, held
+        self._fade = 0.35    # fade out to reveal the app
+        self._tick_id = GLib.timeout_add(16, self._tick)
+
+    def _elapsed(self) -> float:
+        import time
+        return time.monotonic() - self._t0
+
+    def _tick(self):
+        if self._elapsed() >= self._sweep + self._hold + self._fade:
+            self._finish()
+            return False
+        try:
+            self.area.queue_draw()
+        except Exception:
+            self._finish()
+            return False
+        return True
+
+    def _finish(self):
+        if self._done:
+            return
+        self._done = True
+        try:
+            if self._tick_id:
+                GLib.source_remove(self._tick_id)
+        except Exception:
+            pass
+        self._tick_id = 0
+        try:
+            self.on_done()
+        except Exception:
+            pass
+        try:
+            self.close()
+        except Exception:
+            pass
+
+    def _draw(self, area, cr, w, h):
+        try:
+            import cairo
+            # dark backdrop (matches app chrome)
+            cr.set_source_rgb(0.055, 0.063, 0.075)
+            cr.paint()
+            pb = self._pb
+            iw, ih = pb.get_width(), pb.get_height()
+            scale = min(w / iw, h / ih)
+            dw, dh = iw * scale, ih * scale
+            ox, oy = (w - dw) / 2.0, (h - dh) / 2.0
+
+            t = self._elapsed()
+            sweep = min(1.0, t / self._sweep) if self._sweep > 0 else 1.0
+            prog = sweep * sweep * (3.0 - 2.0 * sweep)      # smoothstep ease
+            flash_y = oy + dh * (1.0 - prog)                # bottom → top
+
+            def blit(alpha=1.0):
+                cr.save()
+                cr.translate(ox, oy)
+                cr.scale(scale, scale)
+                Gdk.cairo_set_source_pixbuf(cr, pb, 0, 0)
+                cr.paint_with_alpha(alpha)
+                cr.restore()
+
+            # 1) dark dragon everywhere
+            blit(1.0)
+            cr.save()
+            cr.rectangle(ox, oy, dw, dh)
+            cr.clip()
+            cr.set_source_rgba(0, 0, 0, 0.78)
+            cr.paint()
+            cr.restore()
+
+            # 2) lit region below the flash line: full-bright dragon + warm ignite
+            lit_h = (oy + dh) - flash_y
+            if lit_h > 0:
+                cr.save()
+                cr.rectangle(ox, flash_y, dw, lit_h)
+                cr.clip()
+                blit(1.0)
+                cr.set_operator(cairo.OPERATOR_ADD)
+                cr.set_source_rgba(0.55, 0.06, 0.03, 0.15)
+                cr.rectangle(ox, flash_y, dw, lit_h)
+                cr.fill()
+                cr.set_operator(cairo.OPERATOR_OVER)
+                cr.restore()
+
+            # 3) the travelling flash band
+            if 0.0 < prog < 1.0:
+                band = 32.0
+                grad = cairo.LinearGradient(0, flash_y - band, 0, flash_y + band)
+                grad.add_color_stop_rgba(0.0, 0.90, 0.22, 0.12, 0.0)
+                grad.add_color_stop_rgba(0.5, 1.00, 0.55, 0.38, 0.60)
+                grad.add_color_stop_rgba(1.0, 0.90, 0.22, 0.12, 0.0)
+                cr.save()
+                cr.rectangle(ox, flash_y - band, dw, band * 2.0)
+                cr.clip()
+                cr.set_operator(cairo.OPERATOR_ADD)
+                cr.set_source(grad)
+                cr.paint()
+                cr.restore()
+
+            # 4) fade out at the end to reveal the app underneath
+            if t > self._sweep + self._hold:
+                fp = (t - self._sweep - self._hold) / self._fade
+                fp = max(0.0, min(1.0, fp))
+                cr.set_source_rgba(0.055, 0.063, 0.075, fp)
+                cr.paint()
+        except Exception:
+            GLib.idle_add(self._finish)
+
+
 class KaliApp(Adw.Application):
     def __init__(self):
         super().__init__(application_id=APP_ID,
@@ -8649,9 +8846,35 @@ class KaliApp(Adw.Application):
             log(f"reload_css failed: {e}")
 
     def do_activate(self):
-        if not self.win:
-            self.win = MainWindow(self)
-        self.win.present()
+        # Already running (second activation) → just present the window.
+        if self.win:
+            self.win.present()
+            return
+
+        def _open_main():
+            if not self.win:
+                self.win = MainWindow(self)
+            self.win.present()
+
+        # Startup splash — the chat-background dragon lighting up bottom → head.
+        # Fully optional and self-guarding: gated by a setting (default on), only
+        # runs on a raster dragon image, and ANY failure falls straight through
+        # to opening the app. Can't visually test it here (no display), so it is
+        # wrapped to never block startup.
+        want_splash = True
+        try:
+            want_splash = bool(load_settings().get("startup_splash", True))
+        except Exception:
+            want_splash = True
+        if want_splash:
+            try:
+                img = _WATERMARK_SVG_PATH or _AVATAR_PNG_PATH
+                if img and img.lower().endswith(".png") and os.path.isfile(img):
+                    DragonSplash(self, img, _open_main).present()
+                    return
+            except Exception as e:
+                log(f"startup splash failed, opening app directly: {e}")
+        _open_main()
 
     def do_shutdown(self):
         if self.win:

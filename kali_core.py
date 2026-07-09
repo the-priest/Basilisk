@@ -3163,10 +3163,77 @@ def _host_matches(host: Optional[str], domains) -> bool:
     return any(host == dom or host.endswith("." + dom) for dom in domains)
 
 
+# Compound public suffixes where the registrable domain is the last THREE
+# labels (so an approval for "example.co.uk" grants example.co.uk, not co.uk).
+_COMPOUND_TLDS = (
+    "co.uk", "org.uk", "gov.uk", "ac.uk", "com.au", "net.au", "org.au",
+    "co.nz", "co.jp", "co.kr", "co.in", "com.br", "com.mx", "com.tr",
+    "co.za", "com.sg", "com.hk",
+)
+
+
+def _internal_ip(ipstr: str) -> bool:
+    try:
+        import ipaddress
+        ip = ipaddress.ip_address(ipstr)
+        return bool(ip.is_private or ip.is_loopback or ip.is_link_local
+                    or ip.is_reserved or ip.is_multicast or ip.is_unspecified)
+    except Exception:
+        return False
+
+
+def _is_internal_host(host: Optional[str]) -> bool:
+    """SSRF guard. True if `host` is (or resolves to) something that must NEVER
+    be fetched no matter how the tier gate is set: loopback / private / link-
+    local / reserved IPs, cloud-metadata endpoints, and internal-only names.
+    'The rest of the internet' can be operator-approved; the internal network
+    and metadata services are not 'the internet' and stay hard-refused. (IP
+    literals + a resolve-check catch the common cases; this is not full DNS-
+    rebinding protection.)"""
+    h = (host or "").strip().lower().rstrip(".")
+    if not h:
+        return True
+    if (h == "localhost" or h.endswith(".localhost") or h.endswith(".local")
+            or h.endswith(".internal") or h.endswith(".lan")
+            or h == "metadata.google.internal" or h == "metadata"):
+        return True
+    if _internal_ip(h):        # host is a bare IP literal
+        return True
+    try:                       # resolve the name and reject internal answers
+        import socket
+        for info in socket.getaddrinfo(h, None):
+            if _internal_ip(info[4][0]):
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def _grant_domain_for(host: Optional[str]) -> str:
+    """The registrable domain an approval covers (so allowing one URL covers the
+    whole site, e.g. approving docs.example.com grants example.com). Uses the
+    last 2 labels, or 3 for known compound suffixes."""
+    h = (host or "").strip().lower().rstrip(".")
+    if not h or _internal_ip(h):
+        return h
+    parts = h.split(".")
+    if len(parts) <= 2:
+        return h
+    last3 = ".".join(parts[-3:])
+    for c in _COMPOUND_TLDS:
+        if last3.endswith(c):
+            return ".".join(parts[-3:])
+    return ".".join(parts[-2:])
+
+
 def web_read_tier(url_or_host: str) -> Optional[str]:
-    """Classify a URL/host against the allow-list: 'trusted' (auto-fetchable),
-    'community' (needs operator approval), or None (refused outright).  Used by
-    the dispatch gate so the trusted/untrusted split is enforced in code."""
+    """Classify a URL/host for the web_read gate:
+      'trusted'   — authoritative source, fetched automatically, no prompt.
+      'community' — any other PUBLIC internet host: fetched only after the
+                    operator approves the domain (same gate GitHub/Wikipedia use).
+      None        — internal / private / metadata host: refused outright, no
+                    approval can override (SSRF floor).
+    The trusted/approval/refused split is enforced in code, not the prompt."""
     h = (url_or_host or "").strip()
     if "://" in h or "/" in h:
         try:
@@ -3175,26 +3242,28 @@ def web_read_tier(url_or_host: str) -> Optional[str]:
             h = urlsplit(h2).hostname or ""
         except Exception:
             h = ""
+    if not h:
+        return None
     if _host_matches(h, _WEB_READ_TRUSTED):
         return "trusted"
-    if _host_matches(h, _WEB_READ_COMMUNITY):
-        return "community"
-    return None
+    if _is_internal_host(h):
+        return None
+    return "community"
 
 
 def _web_read_host_ok(host: Optional[str]) -> bool:
-    """True iff host is exactly an allow-listed domain or a subdomain of one
-    (either tier).  Matches on the PARSED hostname, never a substring — so none
-    of 'evil.com/nvd.nist.gov', 'nvd.nist.gov.evil.com', or userinfo tricks like
-    'nvd.nist.gov@evil.com' can slip through."""
-    return _host_matches(host, _WEB_READ_ALLOW)
+    """True iff `host` is safe to fetch: any PUBLIC host is fine here (the
+    trusted-vs-approval decision is made by the gate BEFORE we fetch); only
+    internal / private / metadata hosts are rejected, as an SSRF floor that
+    applies on the initial request and on every redirect hop."""
+    return not _is_internal_host(host)
 
 
 class _AllowlistRedirect(urllib.request.HTTPRedirectHandler):
-    """Follows a redirect ONLY while it stays on the allow-list.  A redirect to
-    any other host — including an internal IP that an open-redirect on a trusted
-    host might point at — is refused, so a trusted host can't bounce the fetch
-    off-list or into the local network."""
+    """Follows a redirect ONLY while it stays on a PUBLIC host.  A redirect to
+    an internal / private / link-local address (e.g. an open-redirect on a page
+    bouncing the fetch at 169.254.169.254 or 127.0.0.1) is refused — the SSRF
+    floor holds on every hop, not just the first request."""
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         try:
             import urllib.parse  # noqa: F401
@@ -3262,14 +3331,15 @@ def _wr_html_to_text(html_src: str) -> str:
 
 
 def tool_web_read(url: str, max_chars: int = 6000) -> Dict[str, Any]:
-    """Fetch and read a page — but ONLY from the trusted allow-list
-    (NVD/NIST, CISA, MITRE, FIRST, official vendor/distro security channels,
-    OWASP, PortSwigger, Kali docs, exploit-db).  Any other host is refused.
-    This is the SAFE replacement for the removed general web_read: reach for it
-    to look up a CVE, an advisory, a tool flag, or a technique from an
-    authoritative source instead of guessing — never as a way to open arbitrary
-    web pages, which is intentionally impossible.  Returns shielded, readable
-    text with the final URL so you can cite it."""
+    """Fetch and read a web page as shielded, readable text (with the final URL
+    so you can cite it). Access is tiered and enforced in code: TRUSTED sources
+    (NVD/NIST, CISA, MITRE, FIRST, OWASP, PortSwigger, Kali docs, official
+    vendor/distro advisories, exploit-db) are read automatically; ANY other
+    public internet host is read only after the operator approves its domain
+    (the same one-tap gate GitHub/Wikipedia use). Internal / private / metadata
+    addresses are refused outright and no approval overrides that (SSRF floor).
+    Reach for it to look up a CVE, an advisory, a tool flag, or a technique from
+    the source instead of guessing."""
     import urllib.parse  # noqa: F401
     url = (url or "").strip()
     if not url:
@@ -3282,14 +3352,12 @@ def tool_web_read(url: str, max_chars: int = 6000) -> Dict[str, Any]:
                 "error": f"refusing '{parsed.scheme}:' scheme — http/https only"}
     if not _web_read_host_ok(parsed.hostname):
         return {"ok": False,
-                "error": (f"host '{parsed.hostname}' is not on the trusted "
-                          "allow-list, so web_read refuses it. This tool only "
-                          "reads authoritative security / reference sources "
-                          "(NVD, MITRE, CISA, FIRST, OWASP, PortSwigger, Kali "
-                          "docs, official vendor advisories, exploit-db); it "
-                          "cannot fetch arbitrary pages — that was removed as a "
-                          "prompt-injection surface."),
-                "allowed": list(_WEB_READ_ALLOW)}
+                "error": (f"host '{parsed.hostname}' is an internal / private / "
+                          "metadata address, which web_read refuses outright "
+                          "(SSRF floor — no approval overrides this). Public "
+                          "internet hosts are fine: trusted sources fetch "
+                          "automatically, any other public site fetches once "
+                          "the operator approves it.")}
     try:
         status, body, final_url = _trusted_fetch(url, timeout=20)
     except Exception as e:
@@ -3298,9 +3366,9 @@ def tool_web_read(url: str, max_chars: int = 6000) -> Dict[str, Any]:
     fhost = urllib.parse.urlparse(final_url).hostname
     if not _web_read_host_ok(fhost):
         return {"ok": False,
-                "error": (f"the request redirected to '{fhost}', which is not "
-                          "on the allow-list — refusing to return off-list "
-                          "content.")}
+                "error": (f"the request redirected to '{fhost}', an internal / "
+                          "private address — refusing to return its content "
+                          "(SSRF floor).")}
     text = _wr_html_to_text(body) if ("<" in body and ">" in body) else body
     if len(text) > max_chars:
         text = text[:max_chars] + f"\n… [truncated at {max_chars} chars]"
@@ -3311,16 +3379,21 @@ def tool_web_read(url: str, max_chars: int = 6000) -> Dict[str, Any]:
 
 
 def tool_web_sources() -> Dict[str, Any]:
-    """List the hosts web_read is allowed to fetch, by tier. Call this when
-    you're unsure whether a source is readable. TRUSTED = fetched automatically;
-    COMMUNITY = user-authored, needs the operator's one-tap approval first."""
+    """Explain web_read's access tiers. Call this when you're unsure whether a
+    source is readable. TRUSTED hosts are fetched automatically; ANY OTHER public
+    internet host is readable once the operator approves its domain (one tap);
+    internal / private / metadata addresses are always refused."""
     return {
         "ok": True,
         "trusted_auto": list(_WEB_READ_TRUSTED),
-        "community_needs_approval": list(_WEB_READ_COMMUNITY),
-        "note": ("web_read fetches TRUSTED hosts on its own; COMMUNITY hosts "
-                 "raise an approval request and are read only once the operator "
-                 "allows them. Any host not on either list is refused."),
+        "any_other_public_host": "readable after one-tap operator approval",
+        "always_refused": ("internal / private / loopback / link-local / "
+                           "cloud-metadata addresses (SSRF floor)"),
+        "note": ("web_read fetches TRUSTED hosts on its own. Any other PUBLIC "
+                 "site (GitHub, Wikipedia, a vendor blog, a random host) raises "
+                 "a one-tap approval and is read once the operator allows that "
+                 "domain for the session. Internal/private/metadata addresses "
+                 "are refused outright and no approval overrides that."),
     }
 
 

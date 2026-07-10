@@ -5025,20 +5025,16 @@ class MainWindow(Adw.ApplicationWindow):
         self.send_btn.add_css_class("send-button")
         self.send_btn.set_valign(Gtk.Align.CENTER)
         self.send_btn.set_vexpand(False)
+        self.send_btn.set_hexpand(False)
         self.send_btn.set_tooltip_text("Send")
         if _AVATAR_PNG_PATH:
-            # The emblem FILLS the button (square, COVER) so no dark border of
-            # button-background shows around it.  CENTER valign + a square size
-            # request keeps it a fixed square instead of stretching to the
-            # (growable) input height and floating a small head in a tall box.
-            _S = _scaled(54, floor=44)
-            _send_pic = Gtk.Picture.new_for_filename(_AVATAR_PNG_PATH)
-            _send_pic.set_content_fit(Gtk.ContentFit.COVER)
-            _send_pic.set_can_shrink(True)
-            _send_pic.set_hexpand(True)
-            _send_pic.set_vexpand(True)
-            self.send_btn.set_size_request(_S, _S)
-            self.send_btn.set_child(_send_pic)
+            # Small fixed-size emblem, same size it always was.  The button hugs
+            # it (min-width:0, tiny padding, no border in CSS) so no dark gutter
+            # shows around it; the emblem art is already cropped flush to its
+            # frame so there's no transparent margin either.
+            _send_img = Gtk.Image.new_from_file(_AVATAR_PNG_PATH)
+            _send_img.set_pixel_size(_scaled(40, floor=30))
+            self.send_btn.set_child(_send_img)
         else:
             self.send_btn.set_icon_name("send-to-symbolic")
         self.send_btn.connect("clicked", lambda *_: self._on_send_or_stop())

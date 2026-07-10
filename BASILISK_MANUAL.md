@@ -2,7 +2,7 @@
 
 *The full reference for Basilisk, the AI security operator that lives on your Linux machine.*
 
-**Version 6.7.0** · GTK4 + libadwaita · X11 & Wayland · desktop and NetHunter mobile
+**Version 6.9.0** · GTK4 + libadwaita · X11 & Wayland · desktop and NetHunter mobile
 
 ---
 
@@ -417,7 +417,7 @@ Create or overwrite any file — document, report, script, config — via a **di
 Off by default. When on, Basilisk remembers across sessions. The memory **files are stored on your machine** (nothing is uploaded to a memory service); recalled snippets are injected into the prompt as context only when relevant, so — like everything else — they travel to your chosen model provider (SiliconFlow/DeepSeek) as part of that turn.
 
 - **`memory_remember`** — store a fact, with a kind and a salience.
-- **`memory_recall`** — retrieve relevant memories. Recall is **relevance-scoped**: keyword match + recency + salience (optionally embeddings), injecting only the **top-k** per turn, never the whole store. It connects **security paraphrases** — "SQL injection" finds a memory stored as "SQLi", across a couple dozen synonym groups (XSS, RCE, LFI, SSRF, privesc, recon…).
+- **`memory_recall`** — retrieve relevant memories. Recall is **hybrid and relevance-scoped**: a keyword channel (FTS/overlap + recency + salience) always runs, and when a SiliconFlow key is present a **semantic channel** matches by meaning via embeddings (default `BAAI/bge-m3`). A memory surfaces if it hits **either** channel, so semantic can only ever *add* recall — a fact stored as "ThinkPad X395" is now found by "what laptop do I run," not just by its exact words. The semantic channel is gated relative to each query's own similarity so unrelated questions inject nothing; with no key or the endpoint down it falls back to keyword. Only the **top-k** are injected per turn, never the whole store. Keyword recall also connects **security paraphrases** — "SQL injection" finds a memory stored as "SQLi", across a couple dozen synonym groups (XSS, RCE, LFI, SSRF, privesc, recon…). Memories stored before semantic recall was enabled are embedded in a background pass so they're searchable by meaning too.
 - **`memory_forget`** — drop a memory by query or id.
 
 "Remember that the client's scope is 10.0.0.0/24" — and later, "what was the scope again?"
@@ -456,6 +456,8 @@ Hold-to-talk voice input, transcribed by a Whisper-class model. Provider is **au
 ## 18.2 Text-to-speech (hear it back)
 
 Basilisk can **read replies aloud** — Piper (neural) or espeak, auto-selected. Rate and inter-sentence pause are tunable. Thoughts are never spoken. All off by default.
+
+A **monster voice** (on by default once read-aloud is enabled) runs the spoken output through a pitch-down + chest/growl/cavern chain so she sounds like a deep monster rather than a neutral TTS; espeak also drops to a lower male base. The pitch-shift uses `sox` (preferred) or `ffmpeg`; with neither installed the voice still speaks, just unprocessed. Depth (semitones) is tunable, and the Test button in Settings plays a sample.
 
 ---
 
@@ -520,14 +522,14 @@ The deliberate non-goals: Basilisk does **not** write self-propagating malware, 
 - Command approval: there is none. Basilisk is autonomous — every command runs with no prompt. The only dialog is a one-time sudo password (then cached, never shown). Destructive/system-destroying commands, and raw shell writes to Basilisk's own source, are refused outright.
 
 **Subsystems (mostly off by default)**
-- `memory_enabled`, `skills_enabled`, `foresight_enabled`, `reach_enabled` — recall, self-written tools, consequence-prediction, native web reach.
+- `memory_enabled`, `memory_semantic`, `skills_enabled`, `foresight_enabled`, `reach_enabled` — recall, semantic (embedding) recall, self-written tools, consequence-prediction, native web reach.
 - `mcp_enabled` + `mcp_servers` — external tool servers (off).
 - `worker_enabled` + `worker_interval_seconds` — background companion (off).
 - `headroom_enabled` (on), `lean_chat` (on). `max_mode` (off) — OFF is the hard default: lean tool loading (a compact tool directory + load-on-demand, ~7k tokens lighter per turn); ON ships every tool spec inline every turn for maximum context at much higher token cost. Autonomous mode always stays lean.
 
 **Vision & media** — `chat_render_images`, `vision_model`, `vision_provider`.
 
-**Voice** — `tts_enabled`, `tts_engine`, `tts_rate`; `stt_model`, `stt_provider`, `voice_autosend`.
+**Voice** — `tts_enabled`, `tts_engine`, `tts_rate`, `tts_monster`, `tts_depth`; `stt_model`, `stt_provider`, `voice_autosend`.
 
 **Chats** — `ephemeral_new_chat_on_launch`, `chat_retention_hours` (24), `discard_empty_chats`.
 

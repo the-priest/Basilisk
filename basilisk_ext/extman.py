@@ -258,6 +258,20 @@ def record_turn(user_text: str, assistant_text: str) -> None:
         _log("[record_turn] " + traceback.format_exc())
 
 
+def backfill_memory(limit: int = 64) -> int:
+    """Embed a bounded batch of memories that have no vector yet, so semantic
+    recall can see everything stored before embeddings were enabled.  Returns
+    the count embedded (0 when nothing's left or the store/embedder is absent).
+    The host loops this on a background thread until it returns 0."""
+    if not (S.ready and S.mem):
+        return 0
+    try:
+        return S.mem.backfill_embeddings(limit)
+    except Exception:
+        _log("[backfill_memory] " + traceback.format_exc())
+        return 0
+
+
 # ── hook 3: extra tools (merged into the dispatch dict) ───────────────────
 
 def extra_tools(host: Any) -> Dict[str, Callable[[Dict[str, Any]], str]]:

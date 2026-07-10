@@ -881,6 +881,38 @@ _WAV_PLAYERS = [
     ["play", "-q"],
 ]
 
+# ── monster-voice audio FX ──────────────────────────────────────────
+# The synthesized voice (piper neural or espeak) is run through a pitch-down +
+# chest/growl/cavern chain so Basilisk speaks like a deep monster instead of a
+# neutral TTS.  sox is the clean tool for this; ffmpeg is a capable fallback.
+# If neither is installed the voice simply isn't processed (still speaks) — so
+# the effect is best-effort, never a hard dependency.
+_AUDIO_FX_CACHE: Optional[str] = None    # 'sox' | 'ffmpeg' | '' (probed, none)
+
+
+def _find_audio_fx() -> Optional[str]:
+    global _AUDIO_FX_CACHE
+    if _AUDIO_FX_CACHE is None:
+        if shutil.which("sox"):
+            _AUDIO_FX_CACHE = "sox"
+        elif shutil.which("ffmpeg"):
+            _AUDIO_FX_CACHE = "ffmpeg"
+        else:
+            _AUDIO_FX_CACHE = ""
+    return _AUDIO_FX_CACHE or None
+
+
+def _wav_rate(path: str, default: int = 22050) -> int:
+    """Sample rate from a WAV header (offset 24, LE uint32) — no subprocess."""
+    try:
+        with open(path, "rb") as f:
+            h = f.read(28)
+        if h[:4] == b"RIFF" and h[8:12] == b"WAVE":
+            return int.from_bytes(h[24:28], "little") or default
+    except Exception:
+        pass
+    return default
+
 
 class TextToSpeech:
     """A background worker that speaks queued text.  speak() enqueues,
@@ -1204,6 +1236,68 @@ class TextToSpeech:
             v = 0.0
         return max(0.0, min(1.0, v))
 
+    def _monster_cfg(self) -> Tuple[bool, float]:
+        """(enabled, depth_semitones).  Monster voice defaults ON so the
+        assistant sounds like a deep monster out of the box; depth is how far
+        the pitch drops (semitones).  Both tunable in Settings > Voice."""
+        s = self.get_settings()
+        on = s.get("tts_monster", True)
+        on = True if on is None else bool(on)
+        try:
+            depth = float(s.get("tts_depth", 4.0) or 4.0)
+        except (TypeError, ValueError):
+            depth = 4.0
+        return on, max(0.0, min(8.0, depth))
+
+    def _monsterize(self, gen: int, in_wav: str) -> str:
+        """Pitch the voice down and add chest weight, a little grit and a touch
+        of cavern so it reads as a deep monster.  Returns a NEW wav path (the
+        caller deletes it) or the input path unchanged when disabled or no
+        audio-fx tool (sox/ffmpeg) is installed."""
+        on, depth = self._monster_cfg()
+        if not on or depth <= 0.01:
+            return in_wav
+        tool = _find_audio_fx()
+        if not tool:
+            return in_wav
+        fd, out = tempfile.mkstemp(prefix="basilisk_tts_mon_", suffix=".wav")
+        os.close(fd)
+        try:
+            if tool == "sox":
+                cents = int(round(depth * 100))
+                cmd = ["sox", in_wav, out,
+                       "pitch", str(-cents),   # deeper, tempo preserved
+                       "bass", "+6",           # chest weight
+                       "overdrive", "5", "12",  # subtle growl / grit
+                       "reverb", "24",         # a little cavern
+                       "gain", "-n", "-1"]     # normalise, avoid clipping
+            else:  # ffmpeg: asetrate pitch-down + atempo restore, rate-agnostic
+                sr = _wav_rate(in_wav)
+                ratio = 2 ** (-depth / 12.0)   # < 1 lowers the pitch
+                af = (f"asetrate={sr}*{ratio:.5f},aresample={sr},"
+                      f"atempo={1.0/ratio:.5f},bass=g=6,"
+                      f"aecho=0.8:0.7:55:0.35")
+                cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                       "-i", in_wav, "-af", af, out]
+            p = subprocess.Popen(cmd, stdin=subprocess.DEVNULL,
+                                 stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL)
+            self._register(p)
+            try:
+                p.wait(timeout=60)
+            finally:
+                self._clear(p)
+            if gen == self._gen and os.path.exists(out) \
+                    and os.path.getsize(out) > 44:
+                return out
+        except Exception as e:
+            _log(f"monsterize failed ({tool}): {e}")
+        try:
+            os.remove(out)
+        except Exception:
+            pass
+        return in_wav
+
     def _speak_piper(self, gen: int, text: str) -> None:
         if gen != self._gen:
             return
@@ -1243,7 +1337,13 @@ class TextToSpeech:
             if gen != self._gen:
                 return
             if os.path.exists(wav) and os.path.getsize(wav) > 44:
-                self._play_wav(gen, wav)
+                fx = self._monsterize(gen, wav)
+                self._play_wav(gen, fx)
+                if fx != wav:
+                    try:
+                        os.remove(fx)
+                    except Exception:
+                        pass
         finally:
             try:
                 os.remove(wav)
@@ -1269,10 +1369,49 @@ class TextToSpeech:
         wpm = int(max(80, min(400, 175 * self._rate())))
         voice = (s.get("tts_voice_espeak") or "").strip()
         text = re.sub(r"\s+", " ", text).strip()   # no stray newline pauses
+        on, _depth = self._monster_cfg()
+        # Deep male base so espeak already sounds lower and more menacing; the
+        # monster FX (if sox/ffmpeg is present) then pitches it down further.
+        # A user-set espeak voice always wins.
+        if on and not voice:
+            voice = "en-us+m3"
         # -g 0 = no extra word gap; keeps espeak from dragging between words.
         cmd = [self._espeak, "-s", str(wpm), "-g", "0"]
+        if on:
+            cmd += ["-p", "30"]     # lower base pitch (0-99, 50 = default)
         if voice:
             cmd += ["-v", voice]
+        if on:
+            # Route through a WAV so the monster FX can process it.
+            fd, wav = tempfile.mkstemp(prefix="basilisk_tts_", suffix=".wav")
+            os.close(fd)
+            try:
+                p = subprocess.Popen(cmd + ["-w", wav, "--", text],
+                                     stdin=subprocess.DEVNULL,
+                                     stdout=subprocess.DEVNULL,
+                                     stderr=subprocess.DEVNULL)
+                self._register(p)
+                try:
+                    p.wait()
+                finally:
+                    self._clear(p)
+                if gen != self._gen:
+                    return
+                if os.path.exists(wav) and os.path.getsize(wav) > 44:
+                    fx = self._monsterize(gen, wav)
+                    self._play_wav(gen, fx)
+                    if fx != wav:
+                        try:
+                            os.remove(fx)
+                        except Exception:
+                            pass
+            finally:
+                try:
+                    os.remove(wav)
+                except Exception:
+                    pass
+            return
+        # Monster voice off: speak directly, as before.
         cmd += ["--", text]
         p = subprocess.Popen(cmd, stdin=subprocess.DEVNULL,
                              stdout=subprocess.DEVNULL,

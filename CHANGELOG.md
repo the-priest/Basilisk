@@ -1,5 +1,23 @@
 # Changelog
 
+## v6.9.0 — she remembers by meaning now, not just by matching words
+
+**The recall problem is fixed at the root.** Memories were being stored fine, but recall was keyword-only — it could only find a memory if your question reused the same words the memory was written in. Ask "what laptop do I run" when the stored fact says "ThinkPad X395," or "which model backend" when it says "SiliconFlow," and recall came back empty. The store was never broken; the *matching* was too literal. That's what read as "she stores memories but can't recall them."
+
+**Recall is now hybrid: keyword OR meaning.** The keyword channel still runs exactly as before, and on top of it a semantic channel matches on embeddings — so a memory surfaces if your question hits it by *either* wording or meaning. Because semantic can only ever *add* matches, turning it on can never hide a memory keyword would have found. Every fact you'd already stored gets embedded in a background pass on startup, so your existing memory becomes searchable by meaning too, not just new stuff.
+
+**It stays honest about noise.** Sentence embeddings sit at a moderate baseline similarity even for unrelated text, so a naive threshold would inject junk. Instead the semantic channel only accepts a match that clearly stands out above the query's own typical similarity — a question about nothing you've stored produces a flat distribution with no standout, so nothing gets injected.
+
+**Offline-safe, and yours to control.** Embeddings ride the SiliconFlow key you already use (model defaults to `BAAI/bge-m3`, override in settings). No key, or the endpoint's down? Recall silently falls back to keyword — it degrades, it never breaks. There's a new *Semantic recall* switch in Settings if you want it off. The embedding call adds a small per-recall round trip on a tight timeout; if it's ever slow, that turn just runs keyword.
+
+## v6.8.0 — she speaks with a monster's throat now
+
+**Basilisk has a voice to match the face.** Read-aloud used to come out in a plain, neutral TTS register — a serpent that looked like the end of the world and sounded like a satnav. No longer. Every spoken reply now runs through a monster-voice chain: the synthesized speech is pitched down into a deep register, given chest weight on the low end, a little overdriven grit for a growl, and a touch of cavern reverb — so she sounds like something speaking up out of the dark, not reading you the weather.
+
+**Works on whatever engine you've got.** The chain sits *after* synthesis, so it deepens both Piper (neural) and espeak — and espeak additionally gets a lower, male base voice so it's already growling before the FX even land. The pitch-shift itself uses `sox` if it's installed (cleanest) or `ffmpeg` as a capable fallback; if you have neither, the voice still speaks, just without the deep processing (install `sox` for the full effect — `apt install sox`).
+
+**Two new knobs in Settings > Voice.** *Monster voice* (on by default) toggles the whole thing, and *Voice depth* sets how many semitones the pitch drops — crank it for something more subterranean, ease it back if you want the words crisper. Changes take effect on the next thing she says; no restart. The Test button plays a sample so you can dial it in by ear.
+
 ## v6.7.0 — the whole toolbar is forged now, and one face rules the app
 
 **Five plaques where five buttons used to be.** The composer row was a lie of two halves — one wide serpent-and-plaque **Attach** button, then four flat little symbol coins (camera, lightbulb, speaker, prompt) that shared none of its craft. Retired. Camera, Suggestions, Voice and Terminal are each a full dragon-forged word-plaque now — the serpent coiled over cracked red stone, the name engraved across it in the same hand as Attach. The row reads as one set instead of one plaque chaperoning four placeholders.

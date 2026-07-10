@@ -110,7 +110,7 @@ except Exception as _ve:  # noqa
 
 APP_ID  = "org.thepriest.basilisk"
 APP_NAME = "Basilisk"
-VERSION = "6.7.0"
+VERSION = "6.9.0"
 
 # ── Tool-chain efficiency knobs ──
 # How many model round-trips a single user turn may chain through.  With
@@ -3281,6 +3281,19 @@ class SettingsDialog(Adw.PreferencesDialog):
             lambda r, _ps: self._set("memory_consolidate", r.get_active()))
         ext_g.add(self.mem_consolidate_row)
 
+        self.mem_semantic_row = Adw.SwitchRow()
+        self.mem_semantic_row.set_title("Semantic recall")
+        self.mem_semantic_row.set_subtitle(
+            "Recall memories by meaning, not just matching words, using "
+            "SiliconFlow embeddings. Needs a SiliconFlow key; falls back to "
+            "keyword recall without one.")
+        self.mem_semantic_row.set_active(
+            bool(parent.settings.get("memory_semantic", True)))
+        self.mem_semantic_row.connect(
+            "notify::active",
+            lambda r, _ps: self._set("memory_semantic", r.get_active()))
+        ext_g.add(self.mem_semantic_row)
+
         self.foresight_model_row = Adw.SwitchRow()
         self.foresight_model_row.set_title("Foresight: add a model pass")
         self.foresight_model_row.set_subtitle(
@@ -3645,6 +3658,32 @@ class SettingsDialog(Adw.PreferencesDialog):
             self.tts_engine_row.set_selected(self._tts_engine_keys.index(cur_eng))
         self.tts_engine_row.connect("notify::selected", self._on_tts_engine)
         og.add(self.tts_engine_row)
+
+        self.tts_monster_row = Adw.SwitchRow()
+        self.tts_monster_row.set_title("Monster voice")
+        self.tts_monster_row.set_subtitle(
+            "Deep growling monster instead of a plain voice.  Needs sox or "
+            "ffmpeg for the full pitch-down; install one if it sounds flat.")
+        self.tts_monster_row.set_active(
+            bool(parent.settings.get("tts_monster", True)))
+        self.tts_monster_row.set_sensitive(tts is not None and tts.available())
+        self.tts_monster_row.connect("notify::active", self._on_tts_monster)
+        og.add(self.tts_monster_row)
+
+        self.tts_depth_row = Adw.SpinRow.new_with_range(0.0, 8.0, 0.5)
+        self.tts_depth_row.set_title("Voice depth")
+        self.tts_depth_row.set_subtitle(
+            "Semitones the voice drops.  Higher = deeper and more monstrous.")
+        self.tts_depth_row.set_digits(1)
+        self.tts_depth_row.set_value(
+            float(parent.settings.get("tts_depth", 4.0) or 4.0))
+        self.tts_depth_row.set_sensitive(
+            tts is not None and tts.available()
+            and bool(parent.settings.get("tts_monster", True)))
+        self.tts_depth_row.connect(
+            "notify::value",
+            lambda r, *_: self._set("tts_depth", round(r.get_value(), 1)))
+        og.add(self.tts_depth_row)
 
         rate_row = Adw.SpinRow.new_with_range(0.5, 2.0, 0.05)
         rate_row.set_title("Speech rate")
@@ -4049,6 +4088,14 @@ class SettingsDialog(Adw.PreferencesDialog):
         tb = getattr(self.win, "tts_toggle", None)
         if tb is not None and tb.get_active() != on:
             tb.set_active(on)
+
+    def _on_tts_monster(self, row, _ps):
+        on = row.get_active()
+        self._set("tts_monster", on)
+        # Depth only matters when the monster voice is on — grey it out otherwise.
+        dr = getattr(self, "tts_depth_row", None)
+        if dr is not None:
+            dr.set_sensitive(on)
         if not on and getattr(self.win, "tts", None):
             self.win.tts.stop()
 
@@ -4178,12 +4225,21 @@ class MainWindow(Adw.ApplicationWindow):
         self._ext = None
         try:
             from basilisk_ext import extman as _extman
+            # Semantic memory recall: wire the embedder only when it's enabled
+            # AND a SiliconFlow key exists (that's the endpoint hosting the
+            # embedding models).  Otherwise pass None and memory stays in the
+            # offline keyword mode — recall degrades, never breaks.
+            _semantic = (bool(self.settings.get("memory_semantic", True))
+                         and bool((self.settings.get("siliconflow_api_key")
+                                   or "").strip()))
             _extman.init(settings=self.settings,
                          data_dir="~/.local/share/basilisk",
                          complete_fn=self._ext_complete,
-                         embed_fn=None,
+                         embed_fn=(self._ext_embed if _semantic else None),
                          ledger=get_ledger())
             self._ext = _extman
+            if _semantic:
+                self._start_memory_backfill()
         except Exception as _e:
             log(f"basilisk_ext not loaded: {_e}")
 
@@ -5809,6 +5865,49 @@ class MainWindow(Adw.ApplicationWindow):
             return buf["t"]
         except Exception:
             return ""
+
+    def _ext_embed(self, texts):
+        """Embed strings for semantic memory recall via the SiliconFlow
+        embeddings endpoint (OpenAI-compatible, same key chat already uses).
+        Returns a list of float vectors.  Raises on ANY failure so the memory
+        layer falls back to keyword recall — a flaky or offline embedder must
+        never break recall, only make that one call keyword-only."""
+        key = (self.settings.get("siliconflow_api_key") or "").strip()
+        if not key or not texts:
+            raise RuntimeError("no embedding backend")
+        base = (self.settings.get("siliconflow_base_url")
+                or "https://api.siliconflow.com/v1").rstrip("/")
+        model = ((self.settings.get("memory_embed_model") or "").strip()
+                 or "BAAI/bge-m3")
+        payload = json.dumps({"model": model,
+                              "input": list(texts)}).encode("utf-8")
+        req = urllib.request.Request(
+            base + "/embeddings", data=payload,
+            headers={"Authorization": f"Bearer {key}",
+                     "Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=12) as r:
+            data = json.loads(r.read())
+        items = data.get("data") or []
+        vecs = [it.get("embedding") for it in items
+                if isinstance(it, dict) and it.get("embedding")]
+        if len(vecs) != len(texts):
+            raise RuntimeError("embedding count mismatch")
+        return vecs
+
+    def _start_memory_backfill(self):
+        """One-shot background pass that embeds any memories stored before
+        semantic recall was enabled, so they become searchable by meaning too.
+        Bounded loop on a daemon thread; stops the moment there's nothing left."""
+        def _run():
+            try:
+                ext = getattr(self, "_ext", None)
+                if ext is None:
+                    return
+                while ext.backfill_memory(64) > 0:
+                    pass
+            except Exception:
+                pass
+        threading.Thread(target=_run, daemon=True).start()
 
     def _kick_assistant_turn(self):
         # If the operator hit stop between tool turns, don't start another.

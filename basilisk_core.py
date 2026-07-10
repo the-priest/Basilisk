@@ -311,6 +311,10 @@ DEFAULT_SETTINGS = {
     "memory_enabled":          True,    # persistent cross-session recall
     "memory_recall_k":         6,       # how many memories to inject per turn
     "memory_consolidate":      True,    # model-based fact extraction (costs a call)
+    "memory_semantic":         True,    # semantic recall via SiliconFlow embeddings
+                                        # (auto-off without a SiliconFlow key —
+                                        # falls back to offline keyword recall)
+    "memory_embed_model":      "",      # blank = BAAI/bge-m3
     "skills_enabled":          True,    # self-written, sandbox-tested skills
     "foresight_enabled":       True,    # predict consequences before acting
     "foresight_model":         False,   # add a model pass on top of the rules

@@ -322,35 +322,26 @@ class MemoryStore:
 
     # ── recall ────────────────────────────────────────────────────────
     def recall(self, query: str, k: int = 6) -> List[sqlite3.Row]:
+        """Hybrid recall.  The keyword channel (FTS/overlap) ALWAYS runs; when
+        an embedder is wired, the semantic (cosine) channel is folded in on top.
+        A memory surfaces if it hits EITHER channel — so turning embeddings on
+        can only ADD recall, never hide a memory keyword would have found (e.g.
+        one stored before embeddings were enabled, with no vector yet).  If the
+        embedder is offline or errors, this turn is simply keyword-only."""
         query = (query or "").strip()
         if not query:
             return []
+        qv = None
         if self.embed_fn:
             try:
-                return self._recall_vector(query, k)
+                qv = self.embed_fn([query])[0]
             except Exception:
-                pass  # fall through to keyword
-        return self._recall_keyword(query, k)
+                qv = None
+        return self._recall_hybrid(query, qv, k)
 
-    def _recall_vector(self, query: str, k: int) -> List[sqlite3.Row]:
-      with self._lock:
-        qv = self.embed_fn([query])[0]
-        scored: List[Tuple[float, sqlite3.Row]] = []
-        now = time.time()
-        for row in self._db.execute(
-                "SELECT * FROM memories WHERE embedding IS NOT NULL"):
-            sim = _cosine(qv, _unpack(row["embedding"]))
-            score = (0.7 * sim
-                     + 0.2 * row["salience"]
-                     + 0.1 * self._recency(row["ts"], now))
-            scored.append((score, row))
-        scored.sort(key=lambda t: t[0], reverse=True)
-        return [r for _, r in scored[:k]]
-
-    def _recall_keyword(self, query: str, k: int) -> List[sqlite3.Row]:
-      with self._lock:
-        now = time.time()
-        qtoks = _expand_query_tokens(query, _tokens(query))
+    def _keyword_rows(self, qtoks: List[str], k: int) -> List[sqlite3.Row]:
+        """Keyword candidate rows — FTS prefix match, else a bounded overlap
+        scan.  Caller holds self._lock."""
         rows: List[sqlite3.Row] = []
         if self._fts and qtoks:
             # Prefix-wildcard each token so 'commands' finds 'command' etc.
@@ -367,14 +358,87 @@ class MemoryStore:
                                         "ORDER BY id DESC LIMIT 500"):
                 if _overlap(qtoks, row["text"]) > 0:
                     rows.append(row)
-        scored = []
-        for row in rows:
-            score = (0.6 * _overlap(qtoks, row["text"])
-                     + 0.25 * row["salience"]
-                     + 0.15 * self._recency(row["ts"], now))
-            scored.append((score, row))
+        return rows
+
+    # Semantic gating.  Sentence embeddings are anisotropic — even unrelated
+    # text sits at a moderate baseline cosine — so a fixed floor alone lets
+    # noise through.  A memory only counts as a semantic hit if its cosine
+    # clears BOTH an absolute floor AND the query's own typical (median)
+    # similarity by a margin: a query truly about nothing stored produces a
+    # flat distribution with no standout, so nothing passes.
+    _SEM_MIN = 0.35
+    _SEM_MARGIN = 0.08
+
+    def _recall_hybrid(self, query: str, qv: Optional[List[float]],
+                       k: int) -> List[sqlite3.Row]:
+      with self._lock:
+        now = time.time()
+        qtoks = _expand_query_tokens(query, _tokens(query))
+        # 1. keyword channel — always contributes its matches.
+        kw_rows: Dict[int, sqlite3.Row] = {
+            r["id"]: r for r in self._keyword_rows(qtoks, k)}
+        # 2. semantic channel — cosine over embedded rows, relatively gated.
+        sem_score: Dict[int, float] = {}
+        sem_rows: Dict[int, sqlite3.Row] = {}
+        if qv is not None:
+            emb = []
+            for r in self._db.execute(
+                    "SELECT * FROM memories WHERE embedding IS NOT NULL"):
+                emb.append((_cosine(qv, _unpack(r["embedding"])), r))
+            if emb:
+                sims = sorted(s for s, _ in emb)
+                med = sims[len(sims) // 2]
+                gate = max(self._SEM_MIN, med + self._SEM_MARGIN)
+                for s, r in emb:
+                    if s >= gate:
+                        sem_score[r["id"]] = s
+                        sem_rows[r["id"]] = r
+        cand: Dict[int, sqlite3.Row] = dict(kw_rows)
+        cand.update(sem_rows)
+        scored: List[Tuple[float, sqlite3.Row]] = []
+        for cid, r in cand.items():
+            kw = _overlap(qtoks, r["text"])
+            rel = max(kw, sem_score.get(cid, 0.0))   # hit on EITHER channel
+            if rel <= 0.0:
+                continue
+            score = (0.6 * rel + 0.25 * r["salience"]
+                     + 0.15 * self._recency(r["ts"], now))
+            scored.append((score, r))
         scored.sort(key=lambda t: t[0], reverse=True)
-        return [r for _, r in scored[:k] if _overlap(qtoks, r["text"]) > 0]
+        return [r for _, r in scored[:k]]
+
+    def backfill_embeddings(self, limit: int = 64) -> int:
+        """Embed stored memories that have no vector yet (everything from before
+        semantic recall was enabled) so the semantic channel can see them.
+        Bounded per call — the host loops it on a background thread.  embed_fn
+        is called OUTSIDE the DB lock (it's a network call).  Returns how many
+        rows were embedded; 0 when nothing's left or no embedder is wired."""
+        if not self.embed_fn:
+            return 0
+        with self._lock:
+            rows = list(self._db.execute(
+                "SELECT id, text FROM memories WHERE embedding IS NULL "
+                "ORDER BY id DESC LIMIT ?", (max(1, limit),)))
+        if not rows:
+            return 0
+        try:
+            vecs = self.embed_fn([r["text"] for r in rows])
+        except Exception:
+            return 0
+        if len(vecs) != len(rows):
+            return 0
+        n = 0
+        with self._lock:
+            for r, v in zip(rows, vecs):
+                try:
+                    self._db.execute(
+                        "UPDATE memories SET embedding=? WHERE id=?",
+                        (_pack(v), r["id"]))
+                    n += 1
+                except Exception:
+                    pass
+            self._db.commit()
+        return n
 
     @staticmethod
     def _recency(ts: float, now: float) -> float:

@@ -121,7 +121,7 @@ def init(settings: Dict[str, Any],
                 try:
                     S.mcp = _mcp.MCPManager(servers, ledger=ledger)
                     disc = S.mcp.discover()
-                    _log(f"[mcp] discovered: " +
+                    _log("[mcp] discovered: " +
                          ", ".join(f"{k}={len(v)}" for k, v in disc.items()))
                 except Exception:
                     _log("[mcp] discovery FAILED\n" + traceback.format_exc())

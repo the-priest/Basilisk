@@ -2,7 +2,7 @@
 
 *The full reference for Basilisk, the AI security operator that lives on your Linux machine.*
 
-**Version 6.9.0** · GTK4 + libadwaita · X11 & Wayland · desktop and NetHunter mobile
+**Version 6.10.0** · GTK4 + libadwaita · X11 & Wayland · desktop and NetHunter mobile
 
 ---
 
@@ -468,7 +468,7 @@ A **monster voice** (on by default once read-aloud is enabled) runs the spoken o
 - **Lean chat** — on plainly conversational turns the full tool catalog is skipped, saving latency and tokens.
 - **Stream reliability** — a stalled provider stream aborts on a short idle timeout and self-heals to the next model, instead of freezing the UI on "thinking…". (New in 5.x.)
 - **Urgency fast-path** — when you're clearly in a hurry, Basilisk skips preamble.
-- **Notification inbox** — a bell with a persistent store; `notify` posts here as well as to the desktop.
+- **Notification inbox** — a bell with a persistent store; `notify` posts here as well as to the desktop, and plays a short chime when something arrives (toggle it off with the *Notification sound* switch in Settings).
 - **Status pill** — a permanent indicator in the button row: it reads **"idle"** when nothing's running and the **live action title** ("forging a JWT…", "reading the source…") while Basilisk works. It never moves the other buttons, and it can't be pressed. In-chat, an in-progress reply shows the same action title instead of a generic "working".
 - **Media control** — `media_control` drives whatever media player is running on the desktop (play / pause / next / previous / stop / status) over the standard desktop media interface. (The old in-app audio/video *panel* and its `media_play` / `media_show` tools were removed in 5.1.5; this lighter control tool is what remains.)
 - **Ephemeral chats** — fresh chat per launch, auto-retention, empty-placeholder cleanup — all tunable.

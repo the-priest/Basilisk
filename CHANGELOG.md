@@ -1,5 +1,17 @@
 # Changelog
 
+## v6.10.0 — new scales on the titlebar, and the audit crawls out of its grave
+
+**The whole titlebar wears the serpent now.** Notifications and Settings swapped to the new dragon-forged word-plaques, Minimise re-carved to match, and two new controls joined them: **Expand** (maximise / restore toggle) and **Close**. All five are sized to the same height as the composer buttons along the bottom, so the top and bottom rails finally read as one set instead of two different art styles. The plaques ship on disk AND embedded as base64 in the button-art module, so they can never go missing on an update.
+
+**The monster voice works even on a bare box.** It was never truly broken — it just went quiet or flat when the machine had no sox/ffmpeg to pitch-shift, or no WAV player to push the processed audio through. Fixed both: espeak's *own* base pitch now drops with the depth setting, so the voice is deep and menacing even with zero post-processing, and when there's no WAV player it falls back to espeak's direct audio instead of silently producing nothing. `ffmpeg` was also added to the installer's voice packages so the full cavern-deep FX chain is there out of the box.
+
+**A chime when she speaks up.** Notifications now make a sound — a short two-note chime, synthesised once and cached, fired through whatever audio player exists. Silent by default only if you turn it off (new *Notification sound* switch in Settings) or the box has no player.
+
+**Fixed: the security audit was stone dead.** The `Finding` type had lost its `@dataclass` decorator, so every audit check threw `TypeError` the instant it tried to record a finding — and even past that, the score-to-grade step referenced a `SEVERITY_WEIGHTS` table that didn't exist (`NameError`). The whole read-only system audit (firewall / SSH / kernel / updates / auth / crypto) crashed on the first check. Decorator restored, weights defined and tuned to the existing A+→F ladder (a lone critical drops you to C, a high to B). The audit runs clean end to end again.
+
+**Debug pass.** All 40 modules compile, pyflakes is clean of undefined names, all 14 test suites green, the CSS blob is still pure ASCII, and every button plaque (on-disk and embedded) loads.
+
 ## v6.9.0 — she remembers by meaning now, not just by matching words
 
 **The recall problem is fixed at the root.** Memories were being stored fine, but recall was keyword-only — it could only find a memory if your question reused the same words the memory was written in. Ask "what laptop do I run" when the stored fact says "ThinkPad X395," or "which model backend" when it says "SiliconFlow," and recall came back empty. The store was never broken; the *matching* was too literal. That's what read as "she stores memories but can't recall them."

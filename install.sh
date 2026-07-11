@@ -415,6 +415,7 @@ fi
 # ── 6b. Voice (speech in / speech out) ────────────────────────────
 # espeak-ng  = guaranteed TTS fallback (always works, robotic)
 # recorder/player = parecord/paplay (pulseaudio-utils) or arecord/aplay
+# ffmpeg     = pitch-shift + FX for the deep "monster" voice (also a player)
 # Piper      = local NEURAL voice — sounds pleasant, the real default
 # voice model = a natural British voice (~63MB) for Piper
 # All best-effort: nothing here aborts the install.  If Piper or the
@@ -424,14 +425,14 @@ if [ $SKIP_VOICE -eq 0 ]; then
   step "voice (speech in / speech out)"
 
   if command -v apt-get >/dev/null; then
-    sudo apt-get install -y espeak-ng pulseaudio-utils alsa-utils 2>/dev/null \
+    sudo apt-get install -y espeak-ng pulseaudio-utils alsa-utils ffmpeg 2>/dev/null \
       && ok "voice packages installed (espeak-ng, recorder, player)" \
       || warn "some voice packages unavailable on this mirror"
   elif command -v pacman >/dev/null; then
-    sudo pacman -Sy --needed --noconfirm espeak-ng libpulse alsa-utils 2>/dev/null \
+    sudo pacman -Sy --needed --noconfirm espeak-ng libpulse alsa-utils ffmpeg 2>/dev/null \
       && ok "voice packages installed" || warn "some voice packages unavailable"
   elif command -v dnf >/dev/null; then
-    sudo dnf install -y espeak-ng pulseaudio-utils alsa-utils 2>/dev/null \
+    sudo dnf install -y espeak-ng pulseaudio-utils alsa-utils ffmpeg 2>/dev/null \
       && ok "voice packages installed" || warn "some voice packages unavailable"
   fi
 

@@ -323,6 +323,7 @@ DEFAULT_SETTINGS = {
                                         # tool args are safety-screened + logged)
     "mcp_servers":             [],      # list of {name, command, args, env, cwd}
     "chat_render_images":      True,    # fetch & show images inline in chat
+    "notif_sound":             True,    # play a chime when a notification arrives
                                         # (off → image links shown as text;
                                         # turn off for OPSEC / no host contact)
     "vision_model":            "Qwen/Qwen2.5-VL-7B-Instruct",  # vision-capable
@@ -5288,6 +5289,19 @@ def _osint_check_one(entry: Tuple[str, str, str, str], username: str,
     return {"site": name, "url": url, "status": "unknown"}
 
 
+# Severity weighting for the audit score -> letter grade.  Tuned to the grade
+# ladder below (0=A+, <=3 A, <=8 B, <=16 C, <=30 D, else F): a single critical
+# drops you to C, a lone high to B, housekeeping lows barely move the needle.
+SEVERITY_WEIGHTS = {
+    "critical": 10,
+    "high": 5,
+    "medium": 2,
+    "low": 1,
+    "info": 0,
+}
+
+
+@dataclass
 class Finding:
     check_id: str
     title: str

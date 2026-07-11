@@ -110,7 +110,7 @@ except Exception as _ve:  # noqa
 
 APP_ID  = "org.thepriest.basilisk"
 APP_NAME = "Basilisk"
-VERSION = "6.9.0"
+VERSION = "6.10.0"
 
 # ── Tool-chain efficiency knobs ──
 # How many model round-trips a single user turn may chain through.  With
@@ -2194,6 +2194,7 @@ _BTN_BELL     = _find_btn_png("bell")     or "bell"
 _BTN_TERMINAL = _find_btn_png("terminal") or "terminal"
 _BTN_MINIMISE = _find_btn_png("minimise") or "minimise"
 _BTN_CLOSE    = _find_btn_png("close")    or "close"
+_BTN_EXPAND   = _find_btn_png("expand")   or "expand"
 _BTN_ATTACH   = _find_btn_png("attach")   or "attach"
 _BTN_CAMERA   = _find_btn_png("camera")   or "camera"
 _BTN_SUGGEST  = _find_btn_png("suggest")  or "suggest"
@@ -3417,6 +3418,17 @@ class SettingsDialog(Adw.PreferencesDialog):
             lambda r, _ps: self._set_render_images(r.get_active()))
         iv_g.add(self.render_images_row)
 
+        self.notif_sound_row = Adw.SwitchRow()
+        self.notif_sound_row.set_title("Notification sound")
+        self.notif_sound_row.set_subtitle(
+            "Play a chime when Basilisk raises a notification.")
+        self.notif_sound_row.set_active(
+            bool(parent.settings.get("notif_sound", True)))
+        self.notif_sound_row.connect(
+            "notify::active",
+            lambda r, _ps: self._set("notif_sound", r.get_active()))
+        iv_g.add(self.notif_sound_row)
+
         self.vision_provider_row = Adw.ComboRow()
         self.vision_provider_row.set_title("Vision provider")
         self.vision_provider_row.set_subtitle(
@@ -4492,8 +4504,8 @@ class MainWindow(Adw.ApplicationWindow):
         # Custom dragon-forged window controls (minimise / close). Only take over
         # from the compositor's buttons when the art is actually present, so we
         # never leave the window with no way to close.
-        _close_art = _btn_art(_BTN_CLOSE)
-        _min_art = _btn_art(_BTN_MINIMISE)
+        _close_art = _btn_art(_BTN_CLOSE, px=_COMPOSER_BTN_PX)
+        _min_art = _btn_art(_BTN_MINIMISE, px=_COMPOSER_BTN_PX)
         if _close_art is not None and _min_art is not None:
             hb.set_show_end_title_buttons(False)
             _close_btn = Gtk.Button()
@@ -4502,12 +4514,25 @@ class MainWindow(Adw.ApplicationWindow):
             _close_btn.set_tooltip_text("Close")
             _close_btn.connect("clicked", lambda *_: self.close())
             hb.pack_end(_close_btn)            # first packed_end = far right
+            # Expand / restore (maximise toggle) — sits between minimise and
+            # close.  Optional: shown only when its art is present.
+            _exp_art = _btn_art(_BTN_EXPAND, px=_COMPOSER_BTN_PX)
+            if _exp_art is not None:
+                _exp_btn = Gtk.Button()
+                _exp_btn.set_child(_exp_art)
+                _exp_btn.add_css_class("art-button")
+                _exp_btn.set_tooltip_text("Expand / restore")
+                _exp_btn.connect(
+                    "clicked",
+                    lambda *_: (self.unmaximize() if self.is_maximized()
+                                else self.maximize()))
+                hb.pack_end(_exp_btn)          # sits left of close
             _min_btn = Gtk.Button()
             _min_btn.set_child(_min_art)
             _min_btn.add_css_class("art-button")
             _min_btn.set_tooltip_text("Minimise")
             _min_btn.connect("clicked", lambda *_: self.minimize())
-            hb.pack_end(_min_btn)              # sits left of close
+            hb.pack_end(_min_btn)              # leftmost of the three
         # The sidebar toggle IS the dragon logo now — tap the emblem to show/hide
         # the sidebar (one branded button instead of a plain toggle + a logo).
         sb_toggle = Gtk.Button()
@@ -4565,7 +4590,7 @@ class MainWindow(Adw.ApplicationWindow):
         # green/red dot next to BASILISK in the sidebar header.)
 
         menu_btn = Gtk.MenuButton()
-        _mset = _btn_art(_BTN_SETTINGS)
+        _mset = _btn_art(_BTN_SETTINGS, px=_COMPOSER_BTN_PX)
         if _mset is not None:
             menu_btn.set_child(_mset)
             menu_btn.add_css_class("art-button")
@@ -4587,7 +4612,7 @@ class MainWindow(Adw.ApplicationWindow):
         # symbolic icon, so set_icon_name rendered a blank button. A bell glyph
         # renders in any font.
         self.notif_btn = Gtk.MenuButton()
-        _bellart = _btn_art(_BTN_BELL)
+        _bellart = _btn_art(_BTN_BELL, px=_COMPOSER_BTN_PX)
         if _bellart is not None:
             self.notif_btn.set_child(_bellart)
             self.notif_btn.add_css_class("art-button")
@@ -7491,10 +7516,72 @@ class MainWindow(Adw.ApplicationWindow):
         })
         self._notifications = self._notifications[-200:]
         self._save_notifications()
+        self._play_notification_sound()
         try:
             GLib.idle_add(self._refresh_notifications)
         except Exception:
             pass
+
+    def _play_notification_sound(self):
+        """Chime when a notification arrives.  Best-effort and non-blocking:
+        synthesises a small WAV once (cached in the data dir), then fires it
+        through whatever audio player exists.  Silent no-op when disabled in
+        settings or no player is available."""
+        try:
+            if not self.settings.get("notif_sound", True):
+                return
+        except Exception:
+            return
+        import shutil as _sh, subprocess as _sp
+        player = getattr(self, "_notif_player", "unset")
+        if player == "unset":
+            player = None
+            for cand in (["paplay"], ["pw-play"], ["aplay", "-q"],
+                         ["ffplay", "-nodisp", "-autoexit",
+                          "-loglevel", "quiet"], ["play", "-q"]):
+                if _sh.which(cand[0]):
+                    player = cand
+                    break
+            self._notif_player = player
+        if not player:
+            return
+        path = os.path.expanduser("~/.local/share/basilisk/notify.wav")
+        if not os.path.isfile(path):
+            try:
+                self._write_notify_wav(path)
+            except Exception:
+                return
+        try:
+            _sp.Popen(list(player) + [path], stdin=_sp.DEVNULL,
+                      stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
+        except Exception:
+            pass
+
+    @staticmethod
+    def _write_notify_wav(path):
+        """Synthesise a soft two-note ascending chime (G5 -> C6) once."""
+        import wave as _wave, struct as _st, math as _m
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        sr = 44100
+        notes = [(784.0, 0.0, 0.16), (1046.5, 0.10, 0.30)]
+        n = int(sr * 0.44)
+        samples = [0.0] * n
+        for freq, start, dur in notes:
+            s0 = int(start * sr)
+            s1 = min(n, int((start + dur) * sr))
+            for i in range(s0, s1):
+                t = (i - s0) / sr
+                env = _m.exp(-t * 5.5)
+                atk = min(1.0, (i - s0) / (0.005 * sr))   # tiny attack, no click
+                samples[i] += 0.5 * env * atk * _m.sin(2 * _m.pi * freq * t)
+        peak = max(1e-6, max(abs(s) for s in samples))
+        with _wave.open(path, "w") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(sr)
+            w.writeframes(b"".join(
+                _st.pack("<h", int(max(-1.0, min(1.0, s / peak * 0.9)) * 32767))
+                for s in samples))
 
     def _unread_count(self) -> int:
         return sum(1 for n in self._notifications if not n.get("read"))
@@ -7615,6 +7702,7 @@ class MainWindow(Adw.ApplicationWindow):
         })
         self._notifications = self._notifications[-200:]
         self._save_notifications()
+        self._play_notification_sound()
         try:
             GLib.idle_add(self._refresh_notifications)
         except Exception:

@@ -1378,11 +1378,16 @@ class TextToSpeech:
         # -g 0 = no extra word gap; keeps espeak from dragging between words.
         cmd = [self._espeak, "-s", str(wpm), "-g", "0"]
         if on:
-            cmd += ["-p", "30"]     # lower base pitch (0-99, 50 = default)
+            # Drop espeak's OWN base pitch with depth, so the voice is already
+            # deep and monstrous even when no sox/ffmpeg is installed to pitch-
+            # shift it further.  (0-99, 50 = default; lower = deeper.)
+            base_pitch = int(max(0, min(50, 35 - _depth * 4)))
+            cmd += ["-p", str(base_pitch)]
         if voice:
             cmd += ["-v", voice]
-        if on:
-            # Route through a WAV so the monster FX can process it.
+        if on and self._player:
+            # Route through a WAV so the monster FX can process it — but only
+            # when a WAV player exists; otherwise this would be silent.
             fd, wav = tempfile.mkstemp(prefix="basilisk_tts_", suffix=".wav")
             os.close(fd)
             try:
@@ -1411,7 +1416,9 @@ class TextToSpeech:
                 except Exception:
                     pass
             return
-        # Monster voice off: speak directly, as before.
+        # Monster off, or no WAV player available: speak directly through
+        # espeak's own audio.  The deep base pitch/voice above still applies
+        # when monster is on, so it stays deep even on this path.
         cmd += ["--", text]
         p = subprocess.Popen(cmd, stdin=subprocess.DEVNULL,
                              stdout=subprocess.DEVNULL,

@@ -1,5 +1,13 @@
 # Changelog
 
+## v7.0.0 — the serpent comes of age
+
+**You can finally reach the monster.** The Monster-voice switch and its depth dial were being greyed out whenever the speech engine wasn't detected at startup — which meant if espeak/ffmpeg weren't found the instant the app booted, you couldn't even *arm* the thing. That's backwards: it's a preference, not a live action. Both controls (and the Read-aloud switch) are now settable whenever the voice module is loaded, so you flip monster on once and it takes hold the moment an engine is present — no fighting a locked toggle. `tts_monster` and `tts_depth` also got proper entries in the defaults table instead of surviving on inline fallbacks, so the setting persists and reads back cleanly everywhere.
+
+**Everything from the 6.x run, sealed into a major cut.** The titlebar now wears the full serpent — Notifications, Settings, Minimise, **Expand**, and Close as dragon-forged plaques sized to match the composer rail. The monster voice is robust on a bare box (deep espeak base with no post-processing, direct-audio fallback when there's no WAV player, ffmpeg in the installer). Notifications chime. Memory recalls by meaning, not just matching words. And the security audit — which had been crashing on its first finding — runs clean end to end.
+
+**Settings swept.** Every voice, notification, and memory control now has a backing default and a live handler; nothing references a setting that doesn't exist. All 40 modules compile, pyflakes is clean, 14/14 tests green, the CSS blob is pure ASCII, and every button plaque loads on disk and embedded.
+
 ## v6.10.0 — new scales on the titlebar, and the audit crawls out of its grave
 
 **The whole titlebar wears the serpent now.** Notifications and Settings swapped to the new dragon-forged word-plaques, Minimise re-carved to match, and two new controls joined them: **Expand** (maximise / restore toggle) and **Close**. All five are sized to the same height as the composer buttons along the bottom, so the top and bottom rails finally read as one set instead of two different art styles. The plaques ship on disk AND embedded as base64 in the button-art module, so they can never go missing on an update.

@@ -366,8 +366,16 @@ class MemoryStore:
     # clears BOTH an absolute floor AND the query's own typical (median)
     # similarity by a margin: a query truly about nothing stored produces a
     # flat distribution with no standout, so nothing passes.
-    _SEM_MIN = 0.35
-    _SEM_MARGIN = 0.08
+    # Semantic gating.  Sentence embeddings are anisotropic — even unrelated
+    # text sits at a moderate baseline cosine — so a fixed floor alone lets
+    # noise through.  A memory counts as a semantic hit only if its cosine
+    # clears an absolute floor AND stands out above the query's TYPICAL
+    # UNRELATED similarity (a low percentile of the distribution, not the
+    # median: the median breaks when only a couple of memories exist because
+    # the match itself becomes the midpoint).  A query about nothing stored
+    # yields a flat distribution with no standout, so nothing passes.
+    _SEM_MIN = 0.45
+    _SEM_MARGIN = 0.10
 
     def _recall_hybrid(self, query: str, qv: Optional[List[float]],
                        k: int) -> List[sqlite3.Row]:
@@ -387,8 +395,15 @@ class MemoryStore:
                 emb.append((_cosine(qv, _unpack(r["embedding"])), r))
             if emb:
                 sims = sorted(s for s, _ in emb)
-                med = sims[len(sims) // 2]
-                gate = max(self._SEM_MIN, med + self._SEM_MARGIN)
+                if len(sims) >= 3:
+                    # ~33rd percentile = a typical UNRELATED similarity; a real
+                    # match must beat it by a margin.  Stays correct for small
+                    # stores (for n=2 this is the lower/unrelated one).
+                    baseline = sims[len(sims) // 3]
+                    gate = max(self._SEM_MIN, baseline + self._SEM_MARGIN)
+                else:
+                    # too few to estimate a baseline — absolute floor only.
+                    gate = self._SEM_MIN
                 for s, r in emb:
                     if s >= gate:
                         sem_score[r["id"]] = s

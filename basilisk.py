@@ -110,7 +110,7 @@ except Exception as _ve:  # noqa
 
 APP_ID  = "org.thepriest.basilisk"
 APP_NAME = "Basilisk"
-VERSION = "6.10.0"
+VERSION = "7.0.0"
 
 # ── Tool-chain efficiency knobs ──
 # How many model round-trips a single user turn may chain through.  With
@@ -3655,7 +3655,7 @@ class SettingsDialog(Adw.PreferencesDialog):
         self.tts_enabled_row = Adw.SwitchRow()
         self.tts_enabled_row.set_title("Read assistant replies aloud")
         self.tts_enabled_row.set_active(bool(parent.settings.get("tts_enabled")))
-        self.tts_enabled_row.set_sensitive(tts is not None and tts.available())
+        self.tts_enabled_row.set_sensitive(tts is not None)
         self.tts_enabled_row.connect("notify::active", self._on_tts_enable)
         og.add(self.tts_enabled_row)
 
@@ -3678,7 +3678,10 @@ class SettingsDialog(Adw.PreferencesDialog):
             "ffmpeg for the full pitch-down; install one if it sounds flat.")
         self.tts_monster_row.set_active(
             bool(parent.settings.get("tts_monster", True)))
-        self.tts_monster_row.set_sensitive(tts is not None and tts.available())
+        # A preference, not an action — keep it settable whenever the voice
+        # module loaded, so you can turn it on and have it ready even before
+        # espeak/ffmpeg are installed (it applies the moment they are).
+        self.tts_monster_row.set_sensitive(tts is not None)
         self.tts_monster_row.connect("notify::active", self._on_tts_monster)
         og.add(self.tts_monster_row)
 
@@ -3690,7 +3693,7 @@ class SettingsDialog(Adw.PreferencesDialog):
         self.tts_depth_row.set_value(
             float(parent.settings.get("tts_depth", 4.0) or 4.0))
         self.tts_depth_row.set_sensitive(
-            tts is not None and tts.available()
+            tts is not None
             and bool(parent.settings.get("tts_monster", True)))
         self.tts_depth_row.connect(
             "notify::value",

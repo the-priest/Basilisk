@@ -348,6 +348,8 @@ DEFAULT_SETTINGS = {
     # falls back to espeak-ng.  All optional; off until you turn it on.
     "tts_enabled":      False,          # read assistant replies aloud
     "tts_engine":       "auto",         # auto | piper | espeak
+    "tts_monster":      True,           # deep growling monster voice FX
+    "tts_depth":        4.0,            # semitones the monster voice drops (0-8)
     "tts_voice":        "",             # path to a Piper .onnx (blank = auto-find)
     "tts_voice_espeak": "",             # espeak voice id, e.g. "en-gb" (blank = default)
     "tts_rate":         1.15,           # 0.5 (slow) .. 2.0 (fast); 1.0 = normal

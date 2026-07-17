@@ -1,5 +1,13 @@
 # Changelog
 
+## v7.5.3 — the serpent finally knows when to stop (the real "it won't stop" bug)
+
+**From your terminal log, not from reading code. The task finished — docker up, Juice Shop listening on 3000 — and it looped forever anyway. Root cause found and fixed.**
+
+- **BUG — `notify` defeated completion, so a finished mission never ended.** Completion takes two claims in a row (a premature "done" can't slip through). But the model announces "done" by *also* firing a `notify`, and any tool call — including `notify` — reset the pending-completion flag. So the sequence was: claim done → (notify clears the flag) → claim done → (notify clears it) → **forever**. Fixed: `notify` is the model talking to *you*, not progress toward the objective — it no longer resets the completion claim, counts as "acting", or resets the loop counters. Only substantive tool calls do. Two "done"s now actually land and the mission ends.
+- **BUG — a finished model that goes quiet looped on degraded-retries.** When it's done, it has nothing left to say, so it emits empty/repetitive replies. Those tripped the degraded-output auto-retry, which cycled providers 3× and then **fell through to another mission turn** — producing more empty replies, forever. Fixed two ways: (1) if it already claimed completion and then produces only empty output after retries, that IS done — accept it; (2) if it keeps bottoming out on empty replies without ever claiming done, it's stuck or silently finished — stop after two such streaks instead of re-kicking into more empty replies. A clean reply or any real action resets the streak, so a genuinely working run is untouched. It also correctly does NOT stop early when it claims done but then finds more real work (verified).
+- **Traced against the exact log.** Replayed the state machine for the observed sequence (docker work → claim → degraded → notify → claim) and three neighbours (notify-then-claim, never-claims-just-degrades, claim-then-more-work): the first three now terminate, the last correctly keeps working. Suite 15/15.
+
 ## v7.5.2 — line-by-line pass: four real bugs, including one that ate autonomous file writes
 
 **A genuine read of the execution core, not a grep. Four bugs, one of them significant.**

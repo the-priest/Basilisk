@@ -113,7 +113,7 @@ except Exception as _ve:  # noqa
 
 APP_ID  = "org.thepriest.basilisk"
 APP_NAME = "Basilisk"
-VERSION = "7.5.2"
+VERSION = "7.5.3"
 
 # ── Tool-chain efficiency knobs ──
 # How many model round-trips a single user turn may chain through.  With
@@ -4403,6 +4403,7 @@ class MainWindow(Adw.ApplicationWindow):
         self._mission_kicks: int = 0            # consecutive no-progress re-kicks
         self._recent_commands: list = []        # tail of run commands, for loop-break
         self._mission_verify_pending: bool = False   # first completion signal seen
+        self._mission_degraded_streak: int = 0       # empty/degraded replies in a row
         self._mission_directive: str = ""       # transient nudge for the next kick
         self._error_retries: int = 0            # consecutive stream-error retries
 
@@ -5727,6 +5728,7 @@ class MainWindow(Adw.ApplicationWindow):
             self._mission_kicks = 0
             self._recent_commands = []      # fresh objective — clear loop history
             self._mission_verify_pending = False
+            self._mission_degraded_streak = 0
             self._mission_directive = ""
             self._error_retries = 0
             # Relentlessness is unbounded ONLY once it has actually acted (run a
@@ -6704,14 +6706,17 @@ class MainWindow(Adw.ApplicationWindow):
         # turned agent mode off or hit stop, don't execute even if the
         # model emitted a tool tag.
         if executable and not cancelled and self.current_agent_mode:
-            # Progress this turn (a tool is running) → reset the no-progress
-            # backoff and clear any pending completion claim (work resumed, so
-            # the objective isn't done).
-            self._mission_kicks = 0
-            self._mission_verify_pending = False
-            # It has now ACTED — from here the mission is truly relentless (no
-            # idle cap); only Stop or a verified completion ends it.
-            self._mission_ever_acted = True
+            # A bare `notify` is the model ANNOUNCING to the operator — not
+            # progress toward the objective. It must NOT reset the completion-
+            # verify state or count as acting, or "done → notify → done → notify"
+            # loops forever (two completion claims never land in a row, because
+            # the notify between them clears the pending flag). Only SUBSTANTIVE
+            # tool calls (anything but notify) count as work.
+            if any(c.name != "notify" for c in executable):
+                self._mission_kicks = 0
+                self._mission_verify_pending = False
+                self._mission_ever_acted = True
+                self._mission_degraded_streak = 0
             # EFFICIENCY: gather the leading run of read-only tools and run
             # them together in ONE round-trip (parallel), instead of one
             # model call per lookup.  Stop at the first side-effecting tool
@@ -6767,12 +6772,42 @@ class MainWindow(Adw.ApplicationWindow):
                     return
                 else:
                     self._degraded_retries = 0
+                    # Count how many times THIS mission has bottomed out on
+                    # empty/degraded output after exhausting provider retries.
+                    self._mission_degraded_streak = getattr(
+                        self, "_mission_degraded_streak", 0) + 1
+                    # If it already claimed completion once, a now-empty reply
+                    # means it's genuinely DONE — a finished model has nothing
+                    # left to add. Accept rather than loop forever on "done →
+                    # verify → (nothing) → done → …".
+                    if self._mission_active and self._mission_verify_pending:
+                        self._mission_active = False
+                        self._mission_verify_pending = False
+                        self.terminal_log(
+                            "✅ mission complete — claimed done and has nothing "
+                            "left to add", "ok")
+                        self._show_toast("Mission complete.", timeout=5)
+                        self._finish_turn_cleanup()
+                        return
+                    # Otherwise it keeps producing empty replies without ever
+                    # signalling completion — it's stuck or silently done. Stop
+                    # rather than re-kick into more empty replies forever.
+                    if (self._mission_active
+                            and self._mission_degraded_streak >= 2):
+                        self._mission_active = False
+                        self.terminal_log(
+                            "■ stopped — repeated empty/degraded replies with no "
+                            "progress; nothing left to do (send a message to "
+                            "resume)", "error")
+                        self._finish_turn_cleanup()
+                        return
                     self._show_toast(
                         "That reply looked degraded after retries. Tap send to "
                         "try again.", timeout=6)
             elif not cancelled and not executable:
-                # A clean, non-degraded settle → reset the retry counter.
+                # A clean, non-degraded settle → reset the retry counters.
                 self._degraded_retries = 0
+                self._mission_degraded_streak = 0
             # Turn has fully settled (no tool chaining).  Record it for
             # persistent memory in the background — no-op unless memory is on.
             if getattr(self, "_ext", None) and not cancelled:

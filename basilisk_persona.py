@@ -408,6 +408,9 @@ Two kinds of action, and they are not the same:
   <tool name="email_header_injection">{"mode": "inject"}</tool>  // %0a/%0d%0a Bcc/Cc/header injection through an unsanitised contact/reset field into mail() — silently copy or forge mail. Confirm on a mailbox you control; try both newline forms.
   <tool name="websocket_probe">{"url": "wss://t/socket", "mode": "cswsh"}</tool>  // mode: cswsh (cross-site WebSocket hijacking PoC — reads the victim's authed stream when Origin isn't checked) | tamper (SQLi/XSS/NoSQL/mass-assign through WS frames, rarely re-validated per message).
   <tool name="oauth_probe">{"mode": "redirect_uri"}</tool>  // OAuth2/OIDC misconfig. mode: redirect_uri (steal the code/token via a loose redirect match — same bypass family as open_redirect) | state (missing = login-CSRF/takeover) | scope (scope/aud escalation) | pkce (downgrade).
+  <tool name="auth_attack">{"mode": "spray", "url": "http://t/login", "users": "users.txt"}</tool>  // credential attacks on an authorised login — builds the exact hydra/ffuf command. mode: defaults (published vendor default creds, try FIRST) | enum (username enumeration by text/status/TIMING so the spray is aimed) | spray (ONE password × many users, lockout-safe) | brute (many passwords × one user, no-lockout only) | lockout (lockout/2FA evasion). Pair with wordlist_find for lists.
+  <tool name="jwt_attack">{"mode": "weak_secret", "token": "<the jwt>"}</tool>  // JWT beyond alg:none/confusion (those → jwt_forge). mode: weak_secret (crack an HS256 secret with hashcat -m 16500 / jwt_tool, then jwt_forge with it) | kid (path-traversal/SQLi in the kid header → verify with a key you know) | jku (point the JWK-Set URL at a key you host) | jwk (embed your key in the token) | x5u (the X.509 equivalent). Run jwt_decode first.
+  <tool name="api_test">{"mode": "verb", "base": "http://t/api/resource"}</tool>  // API attacks the other builders don't cover (IDOR → idor_probe, hidden fields → mass_assignment). mode: verb (HTTP method/verb tampering — authz guards one verb, code honours others) | override (X-HTTP-Method-Override + path-normalise tricks) | ratelimit (rotate the keyed header / batch / alternate surface) | version (stale /v1/, /swagger.json, internal hosts, hidden endpoints) | content (content-type confusion → XXE/mass-assign/validator bypass).
 
   THE EYES — analysis tools (read what came back; fire nothing). Reach for these
   the moment something is confusing or a payload gets blocked:
@@ -1073,6 +1076,115 @@ def conversational_turn(text: str) -> bool:
     for m in _CHAT_MARKERS:
         if (" " + m + " ") in padded:
             return True
+    return False
+
+
+# imperative verbs that lead a TASK ("scan X", "exploit the login"). Deliberately
+# EXCLUDES do/go/get — those are ambiguous ("do you support…?" is a question) and
+# are handled by the confirmation set / question-word list instead.
+_TASK_VERBS = (
+    "scan", "exploit", "run", "execute", "pentest", "hack", "attack",
+    "enumerate", "enum", "find", "search", "probe", "test", "crack", "brute",
+    "bruteforce", "fuzz", "solve", "build", "make", "create", "fix", "write",
+    "edit", "install", "deploy", "launch", "compromise", "own", "pwn", "breach",
+    "map", "recon", "audit", "benchmark", "nmap", "sqlmap", "nuclei", "gobuster",
+    "ffuf", "hydra", "hashcat", "curl", "wget", "clone", "escalate", "bypass",
+    "inject", "spray", "phish", "capture", "sniff", "intercept", "deauth",
+    "scrape", "harvest", "dump", "extract", "grab", "brute-force", "start",
+)
+# question-leading words. A message that starts with one of these (and names no
+# concrete live target) wants an ANSWER, not an autonomous grind.
+_QUESTION_STARTS = (
+    "what", "whats", "how", "hows", "why", "whys", "when", "where", "which",
+    "who", "whose", "whom", "is", "are", "was", "were", "does", "do", "did",
+    "can", "could", "should", "would", "will", "has", "have", "had", "am",
+    "may", "might", "explain", "tell", "describe", "define", "difference",
+    "whens", "wheres",
+)
+# leading acknowledgment/filler peeled off before classifying.
+_LEAD_FILLER = (
+    "ok", "okay", "so", "now", "well", "right", "cool", "nice", "great",
+    "sweet", "yeah", "yep", "yes", "alright", "also", "and", "but", "hmm",
+    "oh", "ah", "then", "actually", "wait", "um", "uh", "please", "pls", "hey",
+    "hi", "lol", "haha",
+)
+# short elliptical imperatives — a confirmation to ACT on prior context, never a
+# question, even though some share a word with a question start.
+_TASK_CONFIRMATIONS = (
+    "do it", "do that", "do this", "do them", "go", "go on", "go ahead",
+    "go for it", "keep going", "keep at it", "carry on", "crack on", "continue",
+    "proceed", "resume", "run it", "run that", "try it", "try that",
+    "try again", "run again", "again", "get to it", "get to work", "get going",
+    "next", "next one", "the next", "onto the next", "handle it", "sort it",
+    "finish it", "more", "yeah do it", "yes do it", "sure", "send it",
+)
+# a concrete live target named in the message → it's an operation ON that target
+# (a task), not a conceptual question, however it's phrased.
+_TARGET_RE = re.compile(
+    r"https?://|www\.|\b\d{1,3}(?:\.\d{1,3}){3}\b|"
+    r"\b[a-z0-9][a-z0-9-]*\.(?:com|net|org|io|dev|op|local|sh|xyz|me|co|app|"
+    r"gov|edu|test|info|biz|cloud|api)\b")
+
+
+def direct_answer_turn(text: str) -> bool:
+    """True when the message is a genuine QUESTION / informational request that
+    should get a direct, concise answer — NOT a task to grind on in the relentless
+    autonomous loop. This is what lets 'how does the oracle decide a bug is
+    confirmed?' get answered and STOP, instead of dropping into never-stop mode.
+
+    High-precision on the QUESTION side; anything genuinely ambiguous, imperative,
+    or naming a live target defaults to task (return False) so a real engagement is
+    never softened into a chat. Broader than conversational_turn (which is only
+    greetings); this catches technical/advice/explanatory questions too.
+    """
+    raw = (text or "").strip().lower()
+    if not raw:
+        return False
+    has_q = "?" in raw
+    norm = re.sub(r"[^a-z0-9?]+", " ", raw).strip()
+    norm = re.sub(r"^(hey |hi |ok |okay )?basilisk\b\s*", "", norm).strip()
+    if not norm:
+        return False
+    # peel leading filler ("ok now …", "so …", "also …")
+    changed = True
+    while changed and norm:
+        changed = False
+        for f in _LEAD_FILLER:
+            if norm == f:
+                return False            # bare "ok"/"yeah" — not a question
+            if norm.startswith(f + " "):
+                norm = norm[len(f) + 1:].strip()
+                changed = True
+                break
+    if not norm:
+        return False
+    bare = norm.rstrip("?").strip()
+    words = bare.split()
+    if not words:
+        return False
+    first = words[0]
+
+    # ── TASK signals win (checked before the question test) ──
+    if bare in _TASK_CONFIRMATIONS:
+        return False
+    if any(bare == c or bare.startswith(c + " ") for c in _TASK_CONFIRMATIONS):
+        if len(words) <= 4:             # short elliptical command → act
+            return False
+    if _TARGET_RE.search(raw):          # a live target named → operate, don't lecture
+        return False
+    if first in _TASK_VERBS:            # leading imperative → task
+        return False
+    if first in ("can", "could", "would", "will", "please", "pls", "lets",
+                 "let"):               # "can you <taskverb> …" → task
+        for w in words[1:6]:
+            if w in _TASK_VERBS:
+                return False
+
+    # ── QUESTION signals ──
+    if first in _QUESTION_STARTS:
+        return True
+    if has_q and len(words) <= 40:
+        return True
     return False
 
 

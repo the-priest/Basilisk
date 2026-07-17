@@ -4648,6 +4648,31 @@ def tool_auth_bypass_headers(url: str = "", mode: str = "headers") -> Dict[str, 
     return _exp_call("auth_bypass_headers", url=url, mode=mode)
 
 
+def tool_auth_attack(mode: str = "spray", url: str = "",
+                     users: str = "users.txt", passwords: str = "") -> Dict[str, Any]:
+    """Credential attacks against an authorised login — builds the concrete hydra/
+    ffuf command for the target plus a public default-creds list and the
+    lockout-safe ordering (defaults → enum → spray → brute). PURE: plans the
+    command, you fire it through the gate. mode: defaults|enum|spray|brute|lockout."""
+    return _exp_call("auth_attack", mode=mode, url=url, users=users,
+                     passwords=passwords)
+
+
+def tool_jwt_attack(mode: str = "weak_secret", token: str = "",
+                    wordlist: str = "rockyou.txt") -> Dict[str, Any]:
+    """JWT attacks beyond alg:none/key-confusion (those are jwt_forge) — weak-secret
+    cracking (hashcat -m 16500 / jwt_tool) and kid/jku/jwk/x5u header-injection that
+    makes the server verify with a key YOU control. PURE. mode: weak_secret|kid|jku|jwk|x5u."""
+    return _exp_call("jwt_attack", mode=mode, token=token, wordlist=wordlist)
+
+
+def tool_api_test(mode: str = "verb", base: str = "") -> Dict[str, Any]:
+    """API attacks not covered by idor_probe (IDOR) / mass_assignment / auth_bypass_headers
+    — HTTP method/verb tampering, method-override, rate-limit bypass, stale versions
+    & hidden endpoints, content-type confusion. mode: verb|override|ratelimit|version|content."""
+    return _exp_call("api_test", mode=mode, base=base)
+
+
 def tool_cache_poisoning(url: str = "", mode: str = "poison") -> Dict[str, Any]:
     """Web cache poisoning (unkeyed-header probe) & cache deception (static-suffix
     path confusion). mode: poison | deception."""

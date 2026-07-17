@@ -33,6 +33,30 @@ for m in ["do it", "ok do it", "yeah do it", "go on", "yeah go on", "go ahead",
           "get to work", "onto the next target", "yeah go for it", "keep at it"]:
     ck(f"follow-up keeps tools: {m!r}", kp.conversational_turn(m) is False)
 
+print("-- direct_answer_turn: QUESTION -> answer & stop (no mission) --")
+for m in ["how does the oracle system decide a bug is confirmed?",
+          "what does the kid injection payload actually do",
+          "why did that sqli payload fail?", "should i use spray or brute here",
+          "whats the difference between jku and jwk", "explain the mission loop",
+          "how do i use jwt_attack", "is HS256 crackable if the secret is long?",
+          "can you explain how autonomous mode works", "describe the memory system",
+          "ok so how does auth_attack pick a wordlist?", "do you support websocket testing?",
+          "which is better for blind sqli, timing or oob?", "what is a polyglot upload"]:
+    ck(f"question: {m!r}", kp.direct_answer_turn(m) is True)
+
+print("-- direct_answer_turn: TASK -> stays a mission --")
+for m in ["scan example.com", "pentest 10.0.0.5", "find vulnerabilities in https://target.io",
+          "run auth_attack against the login", "exploit the SSTI on the app", "do it",
+          "go ahead", "ok do it", "yeah run that", "the next one", "continue",
+          "enumerate the subdomains", "can you scan example.com",
+          "could you brute force the admin panel", "what vulnerabilities does example.com have",
+          "crack this jwt for me", "go", "nmap the target", "find zero days in this codebase"]:
+    ck(f"task: {m!r}", kp.direct_answer_turn(m) is False)
+
+ck("empty is not a direct-answer", kp.direct_answer_turn("") is False)
+ck("bare greeting is not a direct-answer (conversational handles it)",
+   kp.direct_answer_turn("hey") is False)
+
 print("-- prompt sizes --")
 lean = len(kp.build_system_prompt(agent_mode=False)) // 4
 full = len(kp.build_system_prompt(agent_mode=True)) // 4

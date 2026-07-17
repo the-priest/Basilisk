@@ -78,6 +78,7 @@ from basilisk_core import (
     tool_host_header_injection, tool_ssi_injection, tool_csv_injection,
     tool_request_smuggling, tool_csrf_poc, tool_clickjacking,
     tool_mass_assignment, tool_auth_bypass_headers, tool_cache_poisoning,
+    tool_auth_attack, tool_jwt_attack, tool_api_test,
     tool_email_header_injection, tool_websocket_probe, tool_oauth_probe,
     tool_attack_surface, tool_verify_solve,
     tool_webapp_recon, tool_juiceshop_source,
@@ -96,7 +97,7 @@ from basilisk_core import (
 )
 from basilisk_persona import (
     build_system_prompt, assemble_messages, title_from_first_message,
-    conversational_turn,
+    conversational_turn, direct_answer_turn,
 )
 
 # Voice (speech in / speech out) is optional.  If basilisk_voice is missing or
@@ -112,7 +113,7 @@ except Exception as _ve:  # noqa
 
 APP_ID  = "org.thepriest.basilisk"
 APP_NAME = "Basilisk"
-VERSION = "7.4.0"
+VERSION = "7.5.0"
 
 # ── Tool-chain efficiency knobs ──
 # How many model round-trips a single user turn may chain through.  With
@@ -5696,13 +5697,14 @@ class MainWindow(Adw.ApplicationWindow):
         # ── Autonomous mission: THIS message is the objective ──
         # In agent mode, Basilisk works it until it's done or you press Stop —
         # a plain reply never ends it, an error never kills it.  BUT a purely
-        # conversational opener (a greeting, thanks, an opinion question — the
-        # same thing lean-chat skips the toolset for) is NOT a mission: making
-        # small-talk relentless is what made it spin re-kicking on nothing.  Any
-        # message that hints at an action still starts a mission.
+        # conversational opener (greeting/thanks/opinion) OR a genuine QUESTION
+        # ("how does X work?", "should I spray or brute?") is NOT a mission:
+        # answering a question should not drop into the relentless loop.  Any
+        # message that hints at a real action / names a target still starts one.
         if (self.settings.get("autonomous_persist", True)
                 and self.current_agent_mode
-                and not conversational_turn(text)):
+                and not conversational_turn(text)
+                and not direct_answer_turn(text)):
             self._mission_active = True
             self._mission_objective = text
             self._mission_kicks = 0
@@ -6014,6 +6016,9 @@ class MainWindow(Adw.ApplicationWindow):
         "clickjacking":       "checking clickjacking",
         "mass_assignment":    "building a mass-assignment probe",
         "auth_bypass_headers": "building a 403 bypass",
+        "auth_attack":        "planning a credential attack",
+        "jwt_attack":         "attacking the JWT",
+        "api_test":           "attacking the API surface",
         "cache_poisoning":    "probing cache poisoning",
         "email_header_injection": "building an email-header injection",
         "websocket_probe":    "probing WebSockets",
@@ -6233,7 +6238,38 @@ class MainWindow(Adw.ApplicationWindow):
         # Autonomous posture (approval_mode 'none', the default): act over plan,
         # keep going, NO cards. When the operator has opted into confirming
         # commands, drop this so it reasons/plans more carefully.
-        if self.settings.get("approval_mode", "none") == "none":
+        #
+        # BUT: a fresh QUESTION (or a greeting) with no active mission must NOT
+        # get the never-stop directive — that's what dropped "how does X work?"
+        # into a relentless tool-firing loop it couldn't exit. On such a turn we
+        # still act directly (no approval cards), but the directive tells it to
+        # answer concisely, use at most one tool, and STOP. During a real mission
+        # (a task is being worked, _mission_active) the full autonomous push
+        # applies as before.
+        _opening_user = next(
+            (m.get("content", "") for m in reversed(history)
+             if m.get("role") == "user"
+             and "<tool_result>" not in (m.get("content", "") or "")), "")
+        _answer_only = (not self._mission_active
+                        and (direct_answer_turn(_opening_user)
+                             or conversational_turn(_opening_user)))
+        if self.settings.get("approval_mode", "none") == "none" and _answer_only:
+            addendum = (addendum + "\n\n[AUTONOMOUS MODE — but THIS turn is a "
+                "QUESTION, not a task. The operator asked something; give them "
+                "the answer, don't launch an operation.\n"
+                "- Act directly if you do act: never use `propose`/`propose_edit` "
+                "cards; if you genuinely need one tool to answer (e.g. read a "
+                "file, look up one fact, run a single check), call it directly.\n"
+                "- Use AT MOST ONE tool — and only if you truly can't answer from "
+                "what you already know. If you can just answer, just answer.\n"
+                "- Then STOP. Do NOT chain tool calls, do NOT keep firing, do NOT "
+                "treat this as a mission to grind on. Ending your turn after a "
+                "complete answer is correct and expected here — there is no "
+                "completion token to emit, just answer and stop.\n"
+                "- Answer fully and concretely (this is an expert operator — be "
+                "technical and direct), but don't pad it into an essay.]").strip()
+            self.terminal_log("💬 direct-answer: question, not a mission", "dim")
+        elif self.settings.get("approval_mode", "none") == "none":
             addendum = (addendum + "\n\n[AUTONOMOUS MODE — THIS OVERRIDES ANY "
                 "CONFLICTING INSTRUCTION ABOVE. The operator turned this on to "
                 "start a job, walk away, and come back hours later to find it "
@@ -7044,6 +7080,17 @@ class MainWindow(Adw.ApplicationWindow):
         if n == "auth_bypass_headers":
             return lambda: tool_auth_bypass_headers(
                 a.get("url", a.get("target", "")), a.get("mode", "headers"))
+        if n == "auth_attack":
+            return lambda: tool_auth_attack(
+                a.get("mode", "spray"), a.get("url", a.get("target", "")),
+                a.get("users", "users.txt"), a.get("passwords", ""))
+        if n == "jwt_attack":
+            return lambda: tool_jwt_attack(
+                a.get("mode", "weak_secret"), a.get("token", ""),
+                a.get("wordlist", "rockyou.txt"))
+        if n == "api_test":
+            return lambda: tool_api_test(
+                a.get("mode", "verb"), a.get("base", a.get("url", "")))
         if n == "cache_poisoning":
             return lambda: tool_cache_poisoning(
                 a.get("url", a.get("target", "")), a.get("mode", "poison"))
@@ -7702,6 +7749,17 @@ class MainWindow(Adw.ApplicationWindow):
             "auth_bypass_headers": lambda a: self._tool_simple(
                 lambda: tool_auth_bypass_headers(
                     a.get("url", a.get("target", "")), a.get("mode", "headers"))),
+            "auth_attack":        lambda a: self._tool_simple(
+                lambda: tool_auth_attack(
+                    a.get("mode", "spray"), a.get("url", a.get("target", "")),
+                    a.get("users", "users.txt"), a.get("passwords", ""))),
+            "jwt_attack":         lambda a: self._tool_simple(
+                lambda: tool_jwt_attack(
+                    a.get("mode", "weak_secret"), a.get("token", ""),
+                    a.get("wordlist", "rockyou.txt"))),
+            "api_test":           lambda a: self._tool_simple(
+                lambda: tool_api_test(
+                    a.get("mode", "verb"), a.get("base", a.get("url", "")))),
             "cache_poisoning":    lambda a: self._tool_simple(
                 lambda: tool_cache_poisoning(
                     a.get("url", a.get("target", "")), a.get("mode", "poison"))),

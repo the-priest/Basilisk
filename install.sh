@@ -115,7 +115,8 @@ OPTIONAL_FILES=(org.thepriest.basilisk.svg basilisk-dragon.svg basilisk-watermar
 # and fresh boxes get the full toolset (headroom / verify / pentest plus the
 # memory/skills/foresight extensions), not just the core four files.
 EXT_FILES=(__init__.py bench.py codescan.py engage.py exploits.py extman.py foresight.py headroom.py mcp.py memory.py \
-           juiceshop.py pentest.py reach.py sandbox.py skills.py verify.py webshield.py worker.py xbow.py)
+           oracle.py juiceshop.py pentest.py reach.py sandbox.py skills.py verify.py webshield.py worker.py xbow.py \
+           zdayfind.py)
 GITHUB_REPO="${BASILISK_REPO:-the-priest/Basilisk}"
 GITHUB_BRANCH="${BASILISK_BRANCH:-main}"
 
@@ -596,6 +597,36 @@ else
   if curl -fsSL "${EXT_URL_BASE}/__init__.py" -o "${TMP}/.ext_init_probe" 2>/dev/null; then
     mkdir -p "${TMP}/basilisk_ext"
     mv "${TMP}/.ext_init_probe" "${TMP}/basilisk_ext/__init__.py"
+    # Self-heal the module list: ask the repo which *.py actually live in
+    # basilisk_ext and fold in anything not already listed in EXT_FILES above.
+    # The hand list has silently rotted twice (oracle.py, then zdayfind.py were
+    # both dropped) — and because the completeness check below only inspects
+    # names that ARE in EXT_FILES, a missing-but-unlisted module false-passed
+    # the check and shipped an install that crashed on `import`. This makes the
+    # remote fetch track the real directory. Best-effort only: on rate-limit /
+    # 404 / offline we keep EXT_FILES exactly as-is. No jq — parse with python3
+    # (already a hard dependency) and reject dirs, non-.py, and unsafe names.
+    _ext_extra="$(curl -fsSL "https://api.github.com/repos/${GITHUB_REPO}/contents/basilisk_ext?ref=${GITHUB_BRANCH}" 2>/dev/null | python3 -c '
+import sys, json, re
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+if not isinstance(data, list):
+    sys.exit(0)
+for e in data:
+    if not isinstance(e, dict):
+        continue
+    n = e.get("name", "")
+    if e.get("type") == "file" and n.endswith(".py") and re.fullmatch(r"[A-Za-z0-9_.-]+", n):
+        print(n)
+' 2>/dev/null)"
+    for _n in ${_ext_extra}; do
+      case " ${EXT_FILES[*]} " in
+        *" ${_n} "*) : ;;                 # already listed — skip
+        *) EXT_FILES+=("${_n}") ;;        # newly-added module the list forgot
+      esac
+    done
     for f in "${EXT_FILES[@]}"; do
       [ "$f" = "__init__.py" ] && continue
       curl -fsSL "${EXT_URL_BASE}/${f}" -o "${TMP}/basilisk_ext/${f}" 2>/dev/null || true

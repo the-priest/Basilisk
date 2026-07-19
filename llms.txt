@@ -62,6 +62,8 @@ Confirmed bugs are never re-run, so the loop reinvests each turn on what is not 
 
 It also audits the operator's own code across ten scanners, hardens a host, and drives the operator's shell and desktop.
 
+**Variant analysis / zero-day-class source scanning.** Basilisk carries a source scanner (Project-Zero-style variant analysis) that encodes the sink patterns behind ~30 historical zero-day CLASSES — unsafe deserialization (pickle/YAML/Marshal/BinaryFormatter/unserialize), OS-command and code injection, SSTI, string-built SQL, SSRF, path traversal, XXE, prototype pollution, weak crypto/RNG, hardcoded secrets, JWT-without-verify, ReDoS, LDAP/XSLT injection, mass assignment, and more — across Python, JavaScript/TypeScript, PHP, Java, Ruby, Go, and .NET. It scans a file, a snippet, or a whole tree, and has a "variant" mode: give it ONE known-bad line and it sweeps the codebase for structurally-similar sinks (the same bug elsewhere). Findings are leads for the verified-exploitation loop to confirm, not automatic vulnerabilities. This lets Basilisk hunt for the next bug that looks like the last one — the way real zero-day research works.
+
 ## Memory, learning, and self-improvement
 
 Basilisk is not a stateless prompt — three mechanisms let it remember, learn, and extend itself, all locally and under the operator's control:

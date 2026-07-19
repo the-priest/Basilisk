@@ -101,6 +101,11 @@ from basilisk_persona import (
     conversational_turn, direct_answer_turn,
 )
 
+# Variant-analysis / zero-day-class source scanner (read-only, stdlib-only).
+from basilisk_ext import zdayfind as _zdayfind
+# Direct handle for newer offensive generators wired below.
+from basilisk_ext import exploits as _exploits
+
 # Voice (speech in / speech out) is optional.  If basilisk_voice is missing or
 # fails to import, the app runs exactly as before — every voice hook below
 # guards on `self.stt` / `self.tts` being present.
@@ -114,7 +119,7 @@ except Exception as _ve:  # noqa
 
 APP_ID  = "org.thepriest.basilisk"
 APP_NAME = "Basilisk"
-VERSION = "7.5.6"
+VERSION = "7.5.7"
 
 # ── Tool-chain efficiency knobs ──
 # How many model round-trips a single user turn may chain through.  With
@@ -7043,6 +7048,35 @@ class MainWindow(Adw.ApplicationWindow):
                 a.get("path", a.get("dir", a.get("target", "."))),
                 a.get("kind", a.get("type", "auto")),
                 a.get("intensity", a.get("depth", "normal")))
+        if n == "zday_scan":
+            return lambda: _zdayfind.zday_scan(
+                path=a.get("path", a.get("dir", a.get("target", ""))),
+                code=a.get("code", a.get("source", "")),
+                like=a.get("like", a.get("variant_of", a.get("snippet", ""))),
+                focus=a.get("focus", a.get("classes", "")),
+                filename=a.get("filename", a.get("name", "snippet")))
+        if n == "zday_signatures":
+            return lambda: _zdayfind.signature_catalog()
+        if n == "saml_attack":
+            return lambda: _exploits.saml_attack(
+                a.get("mode", a.get("technique", "signature_wrapping")),
+                a.get("assertion", a.get("response", "")))
+        if n == "cloud_storage":
+            return lambda: _exploits.cloud_storage(
+                a.get("provider", a.get("cloud", "s3")),
+                a.get("bucket", a.get("container", a.get("name", ""))))
+        if n == "subdomain_takeover":
+            return lambda: _exploits.subdomain_takeover(
+                a.get("host", a.get("subdomain", a.get("domain", ""))),
+                a.get("cname", a.get("target", "")))
+        if n == "padding_oracle":
+            return lambda: _exploits.padding_oracle(
+                a.get("mode", "detect"),
+                a.get("ciphertext", a.get("data", "")),
+                a.get("block_size", a.get("blocksize", 16)))
+        if n == "xslt_injection":
+            return lambda: _exploits.xslt_injection(
+                a.get("mode", "detect"), a.get("cmd", a.get("command", "id")))
         if n == "parse_scan":
             return lambda: tool_parse_scan(
                 a.get("tool", a.get("scanner", a.get("name", ""))),
@@ -7739,6 +7773,35 @@ class MainWindow(Adw.ApplicationWindow):
                     a.get("path", a.get("dir", a.get("target", "."))),
                     a.get("kind", a.get("type", "auto")),
                     a.get("intensity", a.get("depth", "normal")))),
+            "zday_scan":          lambda a: self._tool_simple(
+                lambda: _zdayfind.zday_scan(
+                    path=a.get("path", a.get("dir", a.get("target", ""))),
+                    code=a.get("code", a.get("source", "")),
+                    like=a.get("like", a.get("variant_of", a.get("snippet", ""))),
+                    focus=a.get("focus", a.get("classes", "")),
+                    filename=a.get("filename", a.get("name", "snippet")))),
+            "zday_signatures":    lambda a: self._tool_simple(
+                lambda: _zdayfind.signature_catalog()),
+            "saml_attack":        lambda a: self._tool_simple(
+                lambda: _exploits.saml_attack(
+                    a.get("mode", a.get("technique", "signature_wrapping")),
+                    a.get("assertion", a.get("response", "")))),
+            "cloud_storage":      lambda a: self._tool_simple(
+                lambda: _exploits.cloud_storage(
+                    a.get("provider", a.get("cloud", "s3")),
+                    a.get("bucket", a.get("container", a.get("name", ""))))),
+            "subdomain_takeover": lambda a: self._tool_simple(
+                lambda: _exploits.subdomain_takeover(
+                    a.get("host", a.get("subdomain", a.get("domain", ""))),
+                    a.get("cname", a.get("target", "")))),
+            "padding_oracle":     lambda a: self._tool_simple(
+                lambda: _exploits.padding_oracle(
+                    a.get("mode", "detect"),
+                    a.get("ciphertext", a.get("data", "")),
+                    a.get("block_size", a.get("blocksize", 16)))),
+            "xslt_injection":     lambda a: self._tool_simple(
+                lambda: _exploits.xslt_injection(
+                    a.get("mode", "detect"), a.get("cmd", a.get("command", "id")))),
             "parse_scan":         lambda a: self._tool_simple(
                 lambda: tool_parse_scan(
                     a.get("tool", a.get("scanner", a.get("name", ""))),

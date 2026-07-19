@@ -58,6 +58,9 @@
     "Fully autonomous, black-box penetration testing (no target source required)",
     "Provider-agnostic: bring your own LLM key (SiliconFlow, Groq)",
     "Verified-exploitation loop: every exploit is proven against ground truth before it counts",
+    "Persistent memory across sessions with relevance-scoped recall (local SQLite, keyword or embeddings)",
+    "Learns within an engagement: confirmed bugs are never re-run and dead ends are not retried",
+    "Writes, tests, and keeps its own Python tools (sandboxed, test-gated skills)",
     "Out-of-band canary listener for blind SSRF/RCE/XXE/OOB SQLi",
     "Exploit builders for SQLi, JWT, NoSQL, XXE, SSTi, SSRF, deserialization/RCE, XSS, IDOR, race conditions, file upload, GraphQL, CORS",
     "API-security classes: BOLA, BFLA, mass assignment, business-logic abuse",
@@ -426,6 +429,7 @@
       <a href="#what">Overview</a>
       <a href="#benchmarks">Benchmarks</a>
       <a href="#how">How it works</a>
+      <a href="#learns">Memory</a>
       <a href="#security">Security</a>
       <a href="#faq">FAQ</a>
       <a class="nav-cta" href="https://github.com/the-priest/Basilisk">
@@ -442,9 +446,9 @@
   <section class="hero">
     <div class="wrap hero-grid">
       <div>
-        <span class="eyebrow">Autonomous offensive security · open source · v7.5.6</span>
-        <h1>It doesn't guess.<br><span class="neon-text">It confirms.</span></h1>
-        <p class="sub"><strong>Basilisk is an open-source, autonomous AI penetration-testing agent</strong> — a native Linux desktop app that turns any large language model into a working pentester. It runs the whole engagement on its own, on your machine, and answers only to you. The only thing that leaves is the API call to the model you chose.</p>
+        <span class="eyebrow">Basilisk · autonomous offensive security · open source · v7.5.6</span>
+        <h1>The autonomous AI pentester that <span class="neon-text">proves</span> every exploit.</h1>
+        <p class="sub"><strong>Basilisk is an open-source, autonomous AI penetration-testing agent</strong> — a native Linux desktop app that turns any large language model into a working penetration tester. On the OWASP Juice Shop benchmark it scores <strong>81 of 113, fully autonomous and black-box</strong> — beating Cascade (36) and a bare Claude Opus 4.8 (23) on the same board, including their white-box runs — and <strong>22 of 22</strong> on Escape's contamination-free Duck Store API benchmark. It runs entirely on your own machine, brings your own model key, and is MIT-licensed. <em>It doesn't guess — it confirms.</em></p>
         <div class="cta-row">
           <a class="btn btn-primary" href="https://github.com/the-priest/Basilisk">
             <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
@@ -452,7 +456,7 @@
           </a>
           <a class="btn btn-ghost" href="#benchmarks">See the numbers</a>
         </div>
-        <p class="thesis"><b>Every exploit is armed with the marker that would prove it</b> — a dumped row, another user's token, an out-of-band callback — then fired and checked against ground truth <b>before it counts</b>. No partial credit. No assumed wins.</p>
+        <p class="thesis"><b>Why it beats bare models:</b> most autonomous "AI pentesters" ask the model whether a bug worked and record its answer, so findings drift and scores collapse on unseen targets. Basilisk <b>arms every exploit with the marker that would prove it</b> — a dumped row, another user's token, an out-of-band callback — fires, then checks against ground truth <b>before it counts</b>. No proof, no finding.</p>
       </div>
       <div class="hero-art reveal">
         <span class="halo" aria-hidden="true"></span>
@@ -475,7 +479,7 @@
             <span class="dot r"></span><span class="dot"></span><span class="dot"></span>
             <span class="term-title"><span class="term-live-dot"></span>basilisk — <span class="live">autonomous engagement</span></span>
           </div>
-          <div class="term-body" id="term" aria-label="Example of an autonomous engagement log"></div>
+          <div class="term-body" id="term" aria-label="Example of an autonomous engagement: Basilisk arms each exploit with a proof marker, fires, and only counts it when the marker is confirmed"><span class="ln"><span class="tag">$</span> basilisk --target https://shop.internal --autonomous</span><span class="ln"><span class="tag recon">[recon]</span>   Express 4 · PostgreSQL · JWT session</span><span class="ln"><span class="tag">[analyze]</span> /products?sort= reflects ORDER BY  →  SQLi</span><span class="ln"><span class="tag">[oracle]</span>  arm  sqli.boolean  marker=row(admin@…)  id=e7f1</span><span class="ln"><span class="tag fire">[fire]</span>    sqli.boolean  dbms=postgres  ⤳ 200  Δlen 1180  z=6.4</span><span class="ln"><span class="ok">[oracle]  check e7f1  →  CONFIRMED ✓  sha256:9c1a…4d2f</span></span><span class="ln"><span class="tag">[access]</span>  IDOR /api/users/{uuid}  →  200 foreign profile</span><span class="ln"><span class="ok">[oracle]  check a3d9  →  CONFIRMED ✓  sha256:1f77…b0e3</span></span><span class="ln"><span class="tag">[ssrf]</span>    blind — out-of-band canary armed  oob=…/c/8831</span><span class="ln"><span class="pend">[oracle]  check 8831  →  PENDING … waiting on callback</span></span><span class="ln"><span class="ok">[oracle]  8831  →  CALLBACK RECEIVED ✓  proven</span></span><span class="ln"><span class="ok">[done]    22/22 confirmed · 0 assumed · ledger sealed</span></span></div>
         </div>
       </div>
     </div>
@@ -591,6 +595,9 @@ docker run -d -p 3000:3000 -e NODE_ENV=unsafe \
         <h2>A closed loop, not a payload spray.</h2>
         <p>Basilisk reads a target's behaviour to identify the vulnerability class, reaches for the matching exploit builder, fires it, and confirms the hit against ground truth before moving on. Every attempt and verdict lands in an exploitation oracle — so the loop never re-runs a solved bug and gets sharper about what's left.</p>
       </div>
+      <div class="reveal" style="margin-bottom:clamp(30px,4vw,48px)">
+        <img src="architecture.svg" alt="Basilisk architecture pipeline: (1) the model reads the target's behaviour, picks the vulnerability class, and directs the next move; (2) deterministic exploit builders generate the payload; (3) the execution layer fires it through a hard safety gate that blocks destructive commands; (4) a verified-exploitation oracle arms a proof marker, fires, then confirms or discards the result; (5) an evidence ledger stores a hashed receipt and never re-runs a solved bug. The verdict feeds back to the model so nothing counts until it is proven." style="width:100%;height:auto;border:1px solid var(--line);border-radius:var(--r);box-shadow:0 0 40px -22px var(--glow)" loading="lazy">
+      </div>
       <div class="reveal">
         <div class="loop-steps">
           <div class="step"><div class="idx">01</div><h3>Read the behaviour</h3><p>Fingerprint the stack and watch how the target responds — reflections, timing, error shapes — to name the vulnerability class.</p></div>
@@ -624,6 +631,31 @@ docker run -d -p 3000:3000 -e NODE_ENV=unsafe \
   </section>
 
   <!-- SECURITY -->
+  <!-- MEMORY / LEARNING / SKILLS -->
+  <section class="block" id="learns">
+    <div class="wrap">
+      <div class="sec-head reveal">
+        <span class="eyebrow">Memory &amp; self-improvement</span>
+        <h2>It remembers, it learns, and it writes its own tools.</h2>
+        <p>Basilisk is not a stateless prompt. It carries persistent memory across sessions, sharpens itself inside an engagement, and can extend its own toolset when something is missing — all on your machine, all under your control.</p>
+      </div>
+      <div class="grid g3 reveal">
+        <div class="card">
+          <h3>Persistent memory across sessions</h3>
+          <p>Facts, preferences, past fixes, and prior findings persist in a local SQLite store <b>you own</b>. Recall is <b>relevance-scoped</b>: each turn pulls only the handful of memories most relevant to the current task, so history can grow indefinitely without ever bloating the context window or the token bill. It's keyword-based by default — zero model compute, fast enough to run on a phone — and upgrades to embedding similarity when a model provides it. One settings toggle, one <span class="inline-code">memory_forget</span> tool, and nothing leaves the box.</p>
+        </div>
+        <div class="card">
+          <h3>Learns within the engagement</h3>
+          <p>Every attempt and verdict lands in the exploitation oracle. <b>Confirmed bugs are never re-run and dead ends aren't retried</b>, so the longer Basilisk works a target the sharper its next move gets — it spends its turns on what isn't proven yet. When an approach stalls, it pulls the exact technique from a vetted source and applies it on the following move instead of flailing.</p>
+        </div>
+        <div class="card">
+          <h3>Writes and keeps its own tools</h3>
+          <p>When the toolbox is missing something, Basilisk can <b>write a new Python tool, test it, and keep it — but only if it passes.</b> A proposed skill runs nothing until you click Apply; then it's parsed, run against its own test in the sandbox, and saved only if that test succeeds. A tool that can't prove it works is never kept. Every later call runs in the sandbox too, and unused skills are archived rather than deleted.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section class="block" id="security">
     <div class="wrap">
       <div class="sec-head reveal">
@@ -783,43 +815,21 @@ less install.sh          <span class="c"># read it first</span>
     }
   }
 
-  var lines=[
-    ['$ basilisk --target https://shop.internal --autonomous',''],
-    ['[recon]   Express 4 · PostgreSQL · JWT session','tag recon'],
-    ['[analyze] /products?sort= reflects ORDER BY  →  SQLi','tag'],
-    ['[oracle]  arm  sqli.boolean  marker=row(admin@…)  id=e7f1','tag'],
-    ['[fire]    sqli.boolean  dbms=postgres  ⤳ 200  Δlen 1180  z=6.4','tag fire'],
-    ['[oracle]  check e7f1  →  CONFIRMED ✓  sha256:9c1a…4d2f','ok'],
-    ['[access]  IDOR /api/users/{uuid}  →  200 foreign profile','tag'],
-    ['[oracle]  check a3d9  →  CONFIRMED ✓  sha256:1f77…b0e3','ok'],
-    ['[ssrf]    blind — out-of-band canary armed  oob=…/c/8831','tag'],
-    ['[oracle]  check 8831  →  PENDING … waiting on callback','pend'],
-    ['[oracle]  8831  →  CALLBACK RECEIVED ✓  proven','ok'],
-    ['[done]    22/22 confirmed · 0 assumed · ledger sealed','ok']
-  ];
   var host=document.getElementById('term');
   if(host){
-    var nodes=lines.map(function(l){
-      var d=document.createElement('span'); d.className='ln';
-      var m=l[0].match(/^(\[[^\]]+\]|\$)(\s*)(.*)$/);
-      if(m){
-        var pre=document.createElement('span'); pre.className=l[1]||'tag'; pre.textContent=m[1];
-        d.appendChild(pre); d.appendChild(document.createTextNode(m[2]+m[3]));
-      } else { d.textContent=l[0]; }
-      host.appendChild(d); return d;
-    });
+    var nodes=Array.prototype.slice.call(host.querySelectorAll('.ln'));
     var cursor=document.createElement('span'); cursor.className='cursor';
     if(reduce || !hasIO){
       nodes.forEach(function(n){n.classList.add('show');});
-      nodes[nodes.length-1].appendChild(cursor);
+      if(nodes.length) nodes[nodes.length-1].appendChild(cursor);
     } else {
       var i=0;
       var reveal=function(){
         if(cursor.parentNode) cursor.parentNode.removeChild(cursor);
         if(i<nodes.length){
           nodes[i].classList.add('show'); nodes[i].appendChild(cursor); i++;
-          setTimeout(reveal, i===1?550:(360+Math.random()*220));
-        } else { nodes[nodes.length-1].appendChild(cursor); }
+          setTimeout(reveal, i===1?500:(340+Math.random()*200));
+        } else if(nodes.length){ nodes[nodes.length-1].appendChild(cursor); }
       };
       var to=new IntersectionObserver(function(es){
         es.forEach(function(e){ if(e.isIntersecting){ reveal(); to.disconnect(); }});

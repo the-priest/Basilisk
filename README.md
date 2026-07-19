@@ -22,6 +22,24 @@ You bring the model; Basilisk gives it hands — a full offensive toolchain, she
 
 ---
 
+## Results first
+
+Basilisk is scored the way the security community actually measures agents — on **OWASP Juice Shop**, where a challenge counts only when the exploit genuinely fires. Run **fully autonomous and black-box** (no source on the machine, no per-command approval), on the same board scored the same way:
+
+| Agent | Juice Shop — black-box | with source |
+|---|---:|---:|
+| **Basilisk** (v7.5.3) | **81 / 113** | — |
+| Cascade (Windsurf / Escape) | 36 / 113 | 49 / 113 |
+| Claude Opus 4.8 (bare model) | 23 / 113 | 24 / 113 |
+
+Basilisk's **81/113 black-box beats every other agent listed — including their white-box runs.** Published autonomous LLM pentest agents generally land around 20–30%; Basilisk clears ~72%. It also scores **22/22 on Escape's Duck Store**, a contamination-free API benchmark built specifically to defeat the training-data memorization that inflates Juice Shop numbers for everyone else. [Full board, difficulty breakdown, and reproduce-it commands below. ↓](#benchmark)
+
+**Why it's different — it proves the exploit.** Most "AI pentesters" ask a model whether it thinks a bug worked and take its word for it, so their findings drift and their scores collapse on targets the model hasn't memorized. Basilisk instead **arms every attempt with the marker that would confirm it** — a dumped database row, another user's token, a measurable timing difference, an out-of-band callback — fires, then checks for that marker before anything counts as a solve. No proof, no finding. That is why its numbers hold up under scrutiny and why it works on clean targets it has never seen.
+
+**The architecture, honestly.** The LLM does one job: read the target's behaviour, pick the vulnerability class, and direct the next move. It does **not** improvise payloads or trust its own memory. Deterministic exploit builders generate the payloads, the execution layer fires them through a hard safety gate, and a verified-exploitation oracle confirms or discards each result and writes it to a ledger it never re-runs. Model plans; tools execute and prove. That division is what keeps token cost low and success high across long multi-step chains.
+
+**Open and local.** Unlike the closed enterprise autonomous pentesters (e.g. Horizon3 NodeZero, XBOW), Basilisk is **open source, MIT-licensed, and runs entirely on your own machine** — bring your own model key, nothing phones home, no per-seat SaaS.
+
 ## What it is
 
 Basilisk is a GTK4/libadwaita desktop application (Python, ~46k LOC) that turns an off-the-shelf LLM into a working pentester. Point it at an authorized target and it runs the full engagement end to end — recon, exploitation across every web-vuln class, verification, and a reproducible write-up — turn after turn, on its own, until the objective is confirmed or you stop it.
@@ -108,6 +126,10 @@ Juice Shop is a web app; the second benchmark is a **deliberately-vulnerable RES
 
 Basilisk runs a **closed loop**, not a payload spray. It reads a target's *behaviour* to identify the vuln class, reaches for the matching **exploit builder**, fires it, and **confirms the hit against ground truth** before moving on. Every attempt and verdict lands in an exploitation oracle, so the loop never re-runs a solved bug and gets sharper about what's left.
 
+<div align="center">
+<img src="architecture.svg" alt="Basilisk architecture: the model plans and picks the vulnerability class; deterministic exploit builders generate the payload; the execution layer fires through a hard safety gate; a verified-exploitation oracle arms a proof marker and confirms or discards each result; an evidence ledger keeps a hashed receipt and never re-runs a solved bug; the verdict feeds back to the model." width="880">
+</div>
+
 **Exploit builders** — general-purpose generators, parameterised for any authorized target (not Juice-Shop-bound toys):
 
 - **SQLi** — DBMS-aware (MySQL / PostgreSQL / MSSQL / Oracle / SQLite), plus sqlmap
@@ -127,6 +149,14 @@ Basilisk runs a **closed loop**, not a payload spray. It reads a target's *behav
 - **Verified-exploitation oracle** — before firing, Basilisk *arms* an attempt with the marker that would prove it (a dumped row, another user's token, a status, a measurable difference); after, it *checks* the response and records **confirmed / failed / pending** in a ledger it consults every planning turn. For blind bugs that echo nothing back (blind SSRF/RCE/XXE, OOB SQLi) it stands up a local **out-of-band canary listener** — the payload carries a unique callback URL, and a hit proves the bug with certainty (interactsh technique, running locally and offline).
 
 When an approach stalls, it **researches** — pulls the exact technique from a vetted source and applies it on the next move. It clears easy wins first, then goes deep on hard chains, hashing every command into the evidence ledger as it goes. You can **walk away**: it survives errors, retries past them, and runs until the objective is *verifiably* done or you press Stop.
+
+## Memory, learning &amp; self-improvement
+
+Basilisk isn't a stateless prompt. Three mechanisms let it remember, learn, and grow — all local, all yours:
+
+- **Persistent memory across sessions.** Facts, preferences, past fixes, and prior findings live in a local SQLite store you own. Recall is **relevance-scoped** — each turn injects only the handful of memories most relevant to the current task (keyword + recency + salience), so history can grow forever without bloating the context window or your token bill. Keyword-based by default (zero model compute, runs on a phone); upgrades to embedding similarity when a model provides it. One toggle, one `memory_forget` tool, nothing leaves the box.
+- **Learns within the engagement.** Every attempt and verdict lands in the exploitation oracle — **confirmed bugs are never re-run and dead ends aren't retried**, so the longer it works a target the sharper its next move gets. When an approach stalls, it pulls the exact technique from a vetted source and applies it on the next move.
+- **Writes and keeps its own tools.** When the toolbox is missing something, Basilisk can **write a new Python tool and a test for it** — nothing runs until you click Apply, then it's AST-parsed, statically screened, and run against its own test in the sandbox, and saved **only if the test passes**. A tool that can't prove it works is discarded; every later call runs in the sandbox too, and unused skills are archived, not deleted.
 
 ## Security model
 

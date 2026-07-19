@@ -62,6 +62,14 @@ Confirmed bugs are never re-run, so the loop reinvests each turn on what is not 
 
 It also audits the operator's own code across ten scanners, hardens a host, and drives the operator's shell and desktop.
 
+## Memory, learning, and self-improvement
+
+Basilisk is not a stateless prompt — three mechanisms let it remember, learn, and extend itself, all locally and under the operator's control:
+
+- **Persistent memory across sessions.** Facts, preferences, past fixes, and prior findings are stored in a local SQLite database the operator owns. Recall is relevance-scoped: each turn injects only the handful (default top 6) of memories most relevant to the current message, scored by keyword match plus recency and salience — so history can grow without bound while the token window stays small. It runs with zero model compute by default (keyword/FTS5, fast enough for a phone) and upgrades to embedding cosine similarity when a model provides embeddings. There is a settings toggle and a memory_forget tool; nothing leaves the machine beyond the API calls Basilisk already makes.
+- **Learning within an engagement.** Every attempt and verdict is written to the exploitation oracle. Confirmed bugs are never re-run and failed approaches are not blindly retried, so the longer Basilisk works a target the more efficient it gets — it reinvests each turn on what is not yet proven. When an approach stalls it pulls the exact technique from a vetted source and applies it on the next move.
+- **Self-written tools (skills).** When the toolbox is missing something, the model can write a new Python tool, along with a test for it. Nothing runs until the operator approves; on approval the code is AST-parsed, statically screened, and run against its own test inside a sandbox — and it is saved only if the test passes. A tool that cannot prove it works is discarded. Every later invocation runs in the sandbox too, and unused skills are archived rather than deleted. This lets Basilisk grow new capabilities safely over time.
+
 ## Security model
 
 Basilisk is an agent that both reads the outside world and runs shell commands, which makes it a prompt-injection target. Its approach is to remove the dangerous doors rather than filter them:

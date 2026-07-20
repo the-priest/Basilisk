@@ -43,7 +43,7 @@
   "applicationCategory": "SecurityApplication",
   "applicationSubCategory": "Autonomous Penetration Testing Agent",
   "operatingSystem": "Linux (GTK4 / libadwaita, X11 or Wayland)",
-  "description": "Basilisk is an open-source autonomous AI penetration-testing agent. It is a native Linux desktop application that turns an off-the-shelf large language model into a working penetration tester: it runs recon, exploitation across every web-vulnerability class, verification, and a reproducible write-up on its own, locally, until the objective is confirmed. It scores 87/113 fully autonomous and black-box on OWASP Juice Shop and 22/22 on Escape's Duck Store API benchmark, verifying every exploit against ground truth before counting it.",
+  "description": "Basilisk is an open-source autonomous AI penetration-testing agent. It is a native Linux desktop application that turns an off-the-shelf large language model into a working penetration tester: it runs recon, exploitation across every web-vulnerability class, verification, and a reproducible write-up on its own, locally, until the objective is confirmed. It scores 87/113 fully autonomous and black-box on OWASP Juice Shop and 22/22 on Escape's Duck Store API benchmark, verifying every exploit against ground truth before counting it. Every benchmark run uses DeepSeek-V4-Flash, a low-cost model — a fraction of the price of the frontier models the compared agents use — which is the point: the verified-exploitation scaffolding produces the score, not an expensive model.",
   "url": "https://the-priest.github.io/Basilisk/",
   "downloadUrl": "https://github.com/the-priest/Basilisk",
   "codeRepository": "https://github.com/the-priest/Basilisk",
@@ -56,6 +56,7 @@
   "image": "https://the-priest.github.io/Basilisk/banner.png",
   "featureList": [
     "One-tap Unleash mode: Basilisk confirms the target, then runs fully autonomously and does not stop until the objective is verified-complete",
+    "Top-of-board results on a cheap, fast model (DeepSeek-V4-Flash): the verified-exploitation scaffolding does the work, not an expensive frontier model",
     "Fully autonomous, black-box penetration testing (no target source required)",
     "Provider-agnostic: bring your own LLM key (SiliconFlow, Groq)",
     "Verified-exploitation loop: every exploit is proven against ground truth before it counts",
@@ -449,7 +450,7 @@
       <div>
         <span class="eyebrow">Basilisk · autonomous offensive security · open source · v7.6.0</span>
         <h1>The autonomous AI pentester that <span class="neon-text">proves</span> every exploit.</h1>
-        <p class="sub"><strong>Basilisk is an open-source, autonomous AI penetration-testing agent</strong> — a native Linux desktop app that turns any large language model into a working penetration tester. On the OWASP Juice Shop benchmark it scores <strong>87 of 113, fully autonomous and black-box</strong> — beating Cascade (36) and a bare Claude Opus 4.8 (23) on the same board, including their white-box runs — and <strong>22 of 22</strong> on Escape's contamination-free Duck Store API benchmark. It runs entirely on your own machine, brings your own model key, and is MIT-licensed. <em>It doesn't guess — it confirms.</em></p>
+        <p class="sub"><strong>Basilisk is an open-source, autonomous AI penetration-testing agent</strong> — a native Linux desktop app that turns any large language model into a working penetration tester. On the OWASP Juice Shop benchmark it scores <strong>87 of 113, fully autonomous and black-box</strong> — <strong>running on DeepSeek-V4-Flash, one of the cheapest models available</strong> — beating Cascade (36) and a bare Claude Opus 4.8 (23) on the same board, including their white-box runs — and <strong>22 of 22</strong> on Escape's contamination-free Duck Store API benchmark. It runs entirely on your own machine, brings your own model key, and is MIT-licensed. <em>It doesn't guess — it confirms.</em></p>
         <div class="cta-row">
           <a class="btn btn-primary" href="https://github.com/the-priest/Basilisk">
             <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
@@ -528,7 +529,7 @@
           <div class="meta">
             <span class="hi">77%</span> solved · fully autonomous · black-box<br>
             no per-command approval · no source on the machine<br>
-            <span style="color:var(--steel)">full board · NODE_ENV=unsafe · v7.6.0 · exploit builders + <span class="inline-code" style="font-size:.8em">run</span> only</span>
+            <span style="color:var(--steel)">full board · NODE_ENV=unsafe · v7.6.0 · DeepSeek-V4-Flash · exploit builders + <span class="inline-code" style="font-size:.8em">run</span> only</span>
           </div>
         </div>
         <div class="diff" id="diff">
@@ -543,7 +544,7 @@
 
         <div class="cmp">
           <table>
-            <caption class="mono" style="text-align:left;color:var(--steel);font-size:.78rem;padding:.7rem 1.1rem;background:var(--ink);border-bottom:1px solid var(--line)">Same board, same scoring — how autonomous agents compare</caption>
+            <caption class="mono" style="text-align:left;color:var(--steel);font-size:.78rem;padding:.7rem 1.1rem;background:var(--ink);border-bottom:1px solid var(--line)">Same board, same scoring — Basilisk ran this on DeepSeek-V4-Flash, a budget model</caption>
             <thead><tr><th>Agent</th><th>Black-box</th><th>White-box <small>(source given)</small></th></tr></thead>
             <tbody>
               <tr class="me"><td>Basilisk <small style="color:var(--steel)">v7.6.0</small></td><td>87 / 113</td><td>—</td></tr>
@@ -565,7 +566,11 @@
         </div>
         <div class="callout">
           <div class="big"><span class="hi">~77%</span> vs ~20–30%</div>
-          <p>Published work generally puts fully-autonomous LLM pentest agents around 20–30% on comparable tasks. Basilisk clears roughly 77% on the full board, black-box — well above that line.</p>
+          <p>Published work generally puts fully-autonomous LLM pentest agents around 20–30% on comparable tasks. Basilisk clears roughly 77% on the full board, black-box — well above that line, and on one of the cheapest models on the market at that.</p>
+        </div>
+        <div class="callout" style="margin-top:1rem">
+          <div class="big">Cheapest model on the board. <span class="hi">Top score.</span></div>
+          <p>Every number here was produced by Basilisk driving <b style="color:var(--bone)">DeepSeek-V4-Flash</b> — a cheap, fast model, not a frontier one. The same board, run by Cascade and by a bare Claude Opus 4.8 on their own pricier models, scored 36 and 23. The result isn't the model — it's the verified-exploitation loop wrapped around it: give a budget model the right scaffolding and it beats agents costing many times more.</p>
         </div>
       </div>
 

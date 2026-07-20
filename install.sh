@@ -620,7 +620,7 @@ for e in data:
     n = e.get("name", "")
     if e.get("type") == "file" and n.endswith(".py") and re.fullmatch(r"[A-Za-z0-9_.-]+", n):
         print(n)
-' 2>/dev/null)"
+' 2>/dev/null || true)"
     for _n in ${_ext_extra}; do
       case " ${EXT_FILES[*]} " in
         *" ${_n} "*) : ;;                 # already listed — skip
@@ -685,7 +685,7 @@ ok "incoming files parse cleanly"
 # Report the version transition (purely informational; never blocks).
 _ver_of() {
   grep -oE 'VERSION[[:space:]]*=[[:space:]]*"[^"]+"' "$1" 2>/dev/null \
-    | head -1 | sed -E 's/.*"([^"]+)".*/\1/'
+    | head -1 | sed -E 's/.*"([^"]+)".*/\1/' || true
 }
 NEW_VER="$(_ver_of "${SRC_DIR}/basilisk.py")"
 OLD_VER=""

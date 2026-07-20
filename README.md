@@ -34,7 +34,7 @@ Basilisk is scored the way the security community actually measures agents — o
 | Cascade (Windsurf / Escape) | 36 / 113 | 49 / 113 |
 | Claude Opus 4.8 (bare model) | 23 / 113 | 24 / 113 |
 
-Basilisk's **87/113 black-box beats every other agent listed — including their white-box runs.** Published autonomous LLM pentest agents generally land around 20–30%; Basilisk clears ~77%. It also scores **22/22 on Escape's Duck Store**, a contamination-free API benchmark built specifically to defeat the training-data memorization that inflates Juice Shop numbers for everyone else. [Full board, difficulty breakdown, and reproduce-it commands below. ↓](#benchmark)
+Basilisk's **87/113 black-box beats every other agent listed — including their white-box runs.** And it does it driving **DeepSeek-V4-Flash — one of the cheapest models available** — while Cascade and Claude Opus 4.8 run on far pricier frontier models. Published autonomous LLM pentest agents generally land around 20–30%; Basilisk clears ~77%. It also scores **22/22 on Escape's Duck Store**, a contamination-free API benchmark built specifically to defeat the training-data memorization that inflates Juice Shop numbers for everyone else. [Full board, difficulty breakdown, and reproduce-it commands below. ↓](#benchmark)
 
 **Why it's different — it proves the exploit.** Most "AI pentesters" ask a model whether it thinks a bug worked and take its word for it, so their findings drift and their scores collapse on targets the model hasn't memorized. Basilisk instead **arms every attempt with the marker that would confirm it** — a dumped database row, another user's token, a measurable timing difference, an out-of-band callback — fires, then checks for that marker before anything counts as a solve. No proof, no finding. That is why its numbers hold up under scrutiny and why it works on clean targets it has never seen.
 
@@ -85,7 +85,7 @@ The claim is only worth the number you can regenerate. Basilisk is scored agains
 
 Turned loose **fully autonomously** and **black-box** — no per-command approval, no source on the machine — Basilisk solved **87 of 113 challenges (77%)**.
 
-*Full board, `NODE_ENV=unsafe`, v7.6.0, target `192.168.1.151:3000` (Docker). Solved through the exploit builders + `run` only — no web reader, no source. Scorecard: [`benchmarks/juice-shop-scoreboard-2026-07-20.txt`](benchmarks/juice-shop-scoreboard-2026-07-20.txt).*
+*Full board, `NODE_ENV=unsafe`, v7.6.0, model **DeepSeek-V4-Flash** (a cheap, fast model), target `192.168.1.151:3000` (Docker). Solved through the exploit builders + `run` only — no web reader, no source. Scorecard: [`benchmarks/juice-shop-scoreboard-2026-07-20.txt`](benchmarks/juice-shop-scoreboard-2026-07-20.txt).*
 
 | Difficulty | Solved | Rate |
 |---|---|---|
@@ -98,7 +98,7 @@ Turned loose **fully autonomously** and **black-box** — no per-command approva
 
 The curve is the honest part: it now clears the entire lower half — every one- and two-star, and 24 of 26 three-star — then thins as the chains get deeper, the shape a real tool should have. It still takes **7 of 12 6-star** challenges (SSRF, SSTi, Forged Coupon, Forged Signed JWT, Login Support Team, Premium Paywall, Arbitrary File Write) and **13 of 19 5-star** (unsigned JWT, XXE DoS, NoSQL exfiltration, three password resets, frontend typosquatting, retrieve blueprint, leaked access logs/API key, and more). Misses cluster where one builder isn't enough and the chain runs long: RCE/DoS variants, NoSQL manipulation/DoS, and the LLM-chatbot challenges (prompt injection, system-prompt extraction).
 
-**Context.** Published work generally puts fully-autonomous LLM pentest agents around **20–30%** on comparable tasks, so ~77% black-box on the full board sits well above that. The same board, scored the same way (other agents' figures are from the earlier v6-era session, not re-run):
+**Context.** Published work generally puts fully-autonomous LLM pentest agents around **20–30%** on comparable tasks, so ~77% black-box on the full board sits well above that — and Basilisk ran it on **DeepSeek-V4-Flash**, a budget model, while the agents below use pricier ones. The same board, scored the same way (other agents' figures are from the earlier v6-era session, not re-run):
 
 | Agent | Black-box | White-box *(source provided)* |
 |---|---|---|
@@ -108,6 +108,8 @@ The curve is the honest part: it now clears the entire lower half — every one-
 | Basilisk *(v6.0.0)* | 58 / 113 | — |
 | Cascade *(Windsurf)* | 36 / 113 | 49 / 113 |
 | Claude Opus 4.8 | 23 / 113 | 24 / 113 |
+
+> **The model is the point.** Every Basilisk figure above was produced driving **DeepSeek-V4-Flash** — a cheap, fast model, not a frontier one. The agents it beats run on far pricier models and still scored lower. The result comes from the verified-exploitation loop wrapped around the model, not from the model itself — so a budget model tops the board.
 
 Progression, same scoring: **51 → 58 (v6.0.0) → 73 (v7.1.0) → 81 (v7.5.3) → 87 (v7.6.0)**. The gains over v7.1.0 are concentrated in the deep end — 5-star jumped 42% → 68% and 6-star 33% → 58% — as the oracle stopped re-running solved bugs and the verified-exploitation loop got sharper about what was left. The v7.6.0 gains push the lower half to a clean sweep — two-star to 100%, three-star to 92% — while the deep end holds. A separate coverage run confirms all **14 OWASP vuln classes** end to end (F1 0.95).
 

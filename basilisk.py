@@ -16,6 +16,17 @@ gi.require_version("GdkPixbuf", "2.0")
 from gi.repository import (Gtk, Adw, GLib, Gdk, Gio, Pango, GObject,  # noqa
                           GdkPixbuf)
 
+# Two harmless GTK4 deprecation warnings come from image calls we still use —
+# the logo texture (Gdk.Texture.new_for_pixbuf) and the watermark blit
+# (Gdk.cairo_set_source_pixbuf). Both work fine on current GTK/libadwaita; this
+# just keeps the console clean. Matched by message so any OTHER (new/real)
+# deprecation still prints.
+import warnings as _warnings
+_warnings.filterwarnings("ignore", category=DeprecationWarning,
+                         message=r"Gdk\.cairo_set_source_pixbuf")
+_warnings.filterwarnings("ignore", category=DeprecationWarning,
+                         message=r"Gdk\.Texture\.new_for_pixbuf")
+
 import sys
 import os
 import gc
